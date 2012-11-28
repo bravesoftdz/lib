@@ -5,20 +5,25 @@ uses Classes,sysutils;
 
 type
 
+StreamingClassSaveFormat=(fBinary,fAscii,fCyr);
+
 TstreamingClass=class(TComponent)
   protected
     procedure   GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function    GetChildOwner: TComponent; override;
-    procedure   SetOwner( aComponent: TComponent );
   public
-    constructor Create(owner: TComponent; _name: TComponentName); overload; virtual;
-    constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
+    saveFormat: StreamingClassSaveFormat;
+//    constructor Create(owner: TComponent; _name: TComponentName); overload;
+    constructor LoadFromFile(filename: string);  //неужели до меня дошло?
+    constructor LoadFromString(text: string);
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
     procedure LoadBinaryFromFile(filename: string);
     function SaveToString: string;
-    procedure LoadFromString(text: string);
     function CreateFromString(text: string): TComponent;
+
+    procedure Assign(source: TPersistent); override;
+    function IsEqual(what: TStreamingClass): boolean;
   end;
 
 implementation
@@ -26,8 +31,6 @@ implementation
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;
     i: Integer;
-    count: Integer;
-    size: Integer;
     inside_string: Integer;
     apostr: Char;
 begin
@@ -73,19 +76,13 @@ begin
   end;
 end;
 
-
+(*
 constructor TstreamingClass.Create(owner: TComponent;_name: TComponentName);
 begin
   inherited Create(owner);
   name:=_name;
 end;
-
-procedure TstreamingClass.SetOwner(aComponent: TComponent);
-begin
-  if aComponent.Owner<>nil then
-    aComponent.Owner.RemoveComponent( aComponent );
-  InsertComponent( aComponent );
-end;
+*)
 
 function TstreamingClass.GetChildOwner: TComponent;
 begin
@@ -98,7 +95,8 @@ var
 begin
   inherited;
   for i := 0 to ComponentCount-1 do
-    Proc( Components[i] );
+    if not (csSubComponent in Components[i].ComponentStyle) then
+      Proc( Components[i] );
 end;
 
 procedure TstreamingClass.SaveToFile(filename: string);
@@ -107,22 +105,23 @@ var
   BinStreamCyr: TMemoryStream;
   FileStream: TFileStream;
 begin
-  BinStream := TMemoryStream.Create;
+  FileStream := TFileStream.Create(filename,fmCreate);
   try
-    FileStream := TFileStream.Create(filename,fmCreate);
-    try
+    if saveFormat=fBinary then FileStream.WriteComponent(Self)
+    else begin
+      BinStream:=TMemoryStream.Create;
       BinStream.WriteComponent(Self);
       BinStream.Seek(0, soFromBeginning);
-      BinStreamCyr:=TMemoryStream.Create;
-      ObjectBinaryToText(BinStream, BinStreamCyr);
-      ObjectTextToCyr(BinStreamCyr,FileStream);
-//        ObjectBinaryToText(BinStream,FileStream);
-    finally
-      FileStream.Free;
-
+      if saveFormat=fAscii then ObjectBinaryToText(BinStream,Filestream)
+      else begin
+        BinStreamCyr:=TMemoryStream.Create;
+        ObjectBinaryToText(BinStream, BinStreamCyr);
+        ObjectTextToCyr(BinStreamCyr,FileStream);
+      end;
+    BinStream.Free
     end;
   finally
-    BinStream.Free
+    FileStream.Free;
   end;
 
 end;
@@ -147,29 +146,39 @@ constructor TstreamingClass.LoadFromFile(filename: string);
 var
   FileStream: TFileStream;
   BinStream: TMemoryStream;
-  tmp: TComponent;
+  s: array [0..5] of char;
 begin
   Create(nil);
   FileStream := TFileStream.Create(filename, fmOpenRead	);
   try
-    BinStream := TMemoryStream.Create;
-    try
-      ObjectTextToBinary(FileStream, BinStream);
-      BinStream.Seek(0, soFromBeginning);
-      BinStream.ReadComponent(self);
-    finally
-      BinStream.Free;
+    FileStream.Read(s,6);
+    FileStream.Seek(0,soFromBeginning);
+    if uppercase(s)='OBJECT' then begin
+      BinStream := TMemoryStream.Create;
+      try
+        ObjectTextToBinary(FileStream, BinStream);
+        BinStream.Seek(0, soFromBeginning);
+        BinStream.ReadComponent(self);
+      finally
+        BinStream.Free;
+      end;
+      saveFormat:=fAscii;
+    end
+    else begin
+      FileStream.ReadComponent(self);
+      saveFormat:=fBinary;
     end;
   finally
     FileStream.Free;
   end;
 end;
 
-procedure TstreamingClass.LoadFromString(text: string);
+constructor TstreamingClass.LoadFromString(text: string);
 var
   StrStream: TStringStream;
   BinStream: TMemoryStream;
 begin
+  Create(nil);
   BinStream:=TMemoryStream.Create;
   StrStream:=TStringStream.Create(text);
   ObjectTextToBinary(StrStream,BinStream);
@@ -197,26 +206,39 @@ end;
 procedure TstreamingClass.SaveBinaryToFile(filename: string);
 var FileStream: TFileStream;
 begin
-  try
   FileStream:=TFileStream.Create(filename,fmCreate);
-  FileStream.WriteComponent(Self);
+  try
+    FileStream.WriteComponent(Self);
   finally
-  FileStream.Free;
+    FileStream.Free;
   end;
 end;
 
 procedure TstreamingClass.LoadBinaryFromFile(filename: string);
 var FileStream: TFileStream;
 begin
-  try
   FileStream:=TFileStream.Create(filename,fmOpenRead);
-  FileStream.Seek(0, soFromBeginning);
-  FileStream.ReadComponent(self);
+  try
+    FileStream.Seek(0, soFromBeginning);
+    FileStream.ReadComponent(self);
   finally
-  FileStream.Free;
+    FileStream.Free;
   end;
 end;
 
+procedure TStreamingClass.Assign(source: TPersistent);
+var s: string;
+begin
+  if source is TStreamingClass then begin
+    s:=TStreamingClass(source).SaveToString;
+    self.LoadFromString(s);
+  end
+  else inherited Assign(source);
+end;
 
+function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
+begin
+  Result:=(SaveToString=what.SaveToString);
+end;
 
 end.

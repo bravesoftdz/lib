@@ -79,7 +79,6 @@ var i: Integer;
     s: string;
 begin
   skip_spaces;
-  i:=_pos;
   while _pos<=Length(_str) do begin
     ch:=_str[_pos];
     if ((ch>'9') or (ch<'0')) and (ch<>'+') and (ch<>'-') and (ch<>'E') and (ch<>'e') and (ch<>'.') and (ch<>',') and (not isSpace(ch)) then break;

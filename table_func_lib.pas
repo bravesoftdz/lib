@@ -1,6 +1,10 @@
 unit table_func_lib;
 (*
-version 0.83
+version 0.9
+изменения в 0.9
+- description теперь TStringList - это быстрее работает и красивее сохраняет в файле
+- корректно загружаются файлы, где desription на много строк
+
 изменения в 0.83
 - наконец-то, прибавление константы!
 
@@ -147,7 +151,7 @@ type
     _Yname: string;
     _Xunit: string;
     _Yunit: string;
-    _description: TstringList;
+    _description: Tstrings;
     iOrder: Integer;
 
     _length: Integer;
@@ -174,6 +178,8 @@ type
     procedure write_to_stream(var F: Textfile);
     procedure read_from_stream(var F: TextFile);
 
+    procedure SetDescription(Strings: TStrings);
+
       protected
 
     procedure DefineProperties(Filer: TFiler); override;
@@ -197,8 +203,8 @@ type
     function deletepoint(Xn:Real): Boolean;
     property enabled: Boolean read isen;
     constructor Create(owner: TComponent); overload; override;
-    constructor Create; overload;
-    constructor Create(filename: string); overload;
+    constructor Create; reintroduce; overload;
+    constructor Create(filename: string); reintroduce; overload;
     destructor Destroy; override;
     procedure draw;
     procedure Add(c: Real);
@@ -215,7 +221,7 @@ type
     property Yname: string read _Yname write _Yname;
     property Xunit: string read _Xunit write _Xunit;
     property Yunit: string read _Yunit write _Yunit;
-    property Description: TstringList read _description write _description;
+    property Description: Tstrings read _description write SetDescription;
     property order: Integer read iorder write update_order default 3;
     property zero_out_of_bounds: boolean read _oub write _oub; //поведение за границами обл. опред
     property count: Integer read _length stored false;
@@ -276,7 +282,7 @@ end;
 constructor table_func.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  description:=TStringList.Create;
+  _description:=TStringList.Create;
   iorder:=3;
   _oub:=true;
   Clear;
@@ -292,7 +298,7 @@ end;
 
 destructor table_func.Destroy;
 begin
-  description.Free;
+  _description.Free;
   inherited Destroy;
 end;
 
@@ -307,6 +313,14 @@ r: Real;
 label found;
 begin
   if changed then update_spline;
+    {сначала двоичный поиск нужного отрезка сплайна}
+  i:=0;
+  j:=count-1;
+  //цикл может не выполниться, если массив пустой (High(X)=-1)
+  if j<i then begin
+    splinevalue:=NAN;
+    Exit;
+  end;
 
   if xi>xmax then begin
     if _oub then splinevalue:=0 else splinevalue:=Y[count-1];
@@ -316,16 +330,7 @@ begin
     if _oub then splinevalue:=0 else splinevalue:=Y[0];
     exit;
   end;
-  
 
-  {сначала двоичный поиск нужного отрезка сплайна}
-  i:=0;
-  j:=count-1;
-  //цикл может не выполниться, если массив пустой (High(X)=-1)
-  if j<i then begin
-    splinevalue:=NAN;
-    Exit;
-  end;
   k:=0;
   while j>=i do begin
   k:=(i+j) shr 1;
@@ -897,8 +902,10 @@ begin
   end;
 end;
 
-
-
+procedure table_func.SetDescription(strings: TStrings);
+begin
+  _description.Assign(strings);
+end;
 
 
 
