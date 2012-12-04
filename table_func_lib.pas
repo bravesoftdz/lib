@@ -141,7 +141,7 @@ value:=func.integrate;
 *)
 
 interface
-uses SysUtils,math,TeEngine, Series, ExtCtrls, TeeProcs, Chart,classes,streaming_class_lib,streamio,simple_parser_lib;
+uses SysUtils,math,TeEngine, Series, ExtCtrls, TeeProcs, Chart,classes,streaming_class_lib,streamio,simple_parser_lib,Graphics;
 
 type
   table_func=class(TstreamingClass)
@@ -162,6 +162,9 @@ type
 
     _oub: Boolean;
     changed: boolean;
+
+//    fLineColor: TColor; //цвет линий на графике при выполнении Draw
+
     procedure plus_one; //приготовить место для еще одного числа
     function splinevalue(xi:Real): Real;
     procedure update_spline();
@@ -197,6 +200,7 @@ type
     function LoadFromTextFile(filename: string): Boolean;
     procedure LoadConstant(new_Y:Real;new_xmin:Real;new_xmax:Real);
     procedure Clear;
+    procedure ClearPoints;
     function SaveToTextFile(filename: string): Boolean;
     procedure normalize();
     function addpoint(Xn:Real;Yn:Real): Boolean;
@@ -208,6 +212,7 @@ type
     destructor Destroy; override;
     procedure draw;
     procedure Add(c: Real);
+    procedure Shift(amount: Real);
     procedure multiply(by: table_func); overload;
     procedure multiply(by: Real); overload;
     procedure assign(Source:TPersistent); override;
@@ -223,8 +228,9 @@ type
     property Yunit: string read _Yunit write _Yunit;
     property Description: Tstrings read _description write SetDescription;
     property order: Integer read iorder write update_order default 3;
-    property zero_out_of_bounds: boolean read _oub write _oub; //поведение за границами обл. опред
+    property zero_out_of_bounds: boolean read _oub write _oub default true; //поведение за границами обл. опред
     property count: Integer read _length stored false;
+//    property LineColor: TColor read fLineColor write fLineColor default clBlack;
     end;
 implementation
 const eol: string=#13+#10;
@@ -285,6 +291,7 @@ begin
   _description:=TStringList.Create;
   iorder:=3;
   _oub:=true;
+//  LineColor:=clBlack;
   Clear;
   chart_series:=nil;
   SetSubComponent(true);
@@ -492,7 +499,7 @@ begin
   end;
   //на этом месте i указывает на элемент, который надо удалить.
   k:=l-1;
-  while i<k do begin
+  while i<l do begin
   X[i]:=X[i+1];
   Y[i]:=Y[i+1];
   inc(i);
@@ -757,6 +764,19 @@ end;
 procedure table_func.Clear;
 begin
 //очищаем функцию, но не интерфейс!
+  title:='';
+  Xname:='';
+  Yname:='';
+  Xunit:='';
+  Yunit:='';
+  description.Clear;
+  changed:=false;
+  ClearPoints;
+end;
+
+procedure table_func.ClearPoints;
+begin
+  //очищаем только точки, названия оставляем
   SetLength(X,0);
   SetLength(Y,0);
   SetLength(b,0);
@@ -768,13 +788,6 @@ begin
   ixmax:=0;
   iymin:=0;
   iymax:=0;
-  title:='';
-  Xname:='';
-  Yname:='';
-  Xunit:='';
-  Yunit:='';
-  description.Clear;
-  changed:=false;
 end;
 
 procedure table_func.morepoints;
@@ -900,6 +913,12 @@ begin
   for i:=0 to Count-1 do begin
     Y[i]:=Y[i]+c;
   end;
+end;
+
+procedure table_func.Shift(amount: Real);
+var i: Integer;
+begin
+  for i:=0 to count-1 do X[i]:=X[i]+amount;
 end;
 
 procedure table_func.SetDescription(strings: TStrings);

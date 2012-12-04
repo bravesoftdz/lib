@@ -69,7 +69,7 @@ type
     public
       constructor Create(owner: TComponent); override;
 
-      procedure DispatchCommand(command: TAbstractCommand);
+
       procedure Add(command: TAbstractCommand);
       procedure Undo;
       procedure Redo;
@@ -83,15 +83,26 @@ type
 
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
-//      FUndoList: TCommandList;
-//      function GetUndoList: TCommandList;
+      initial_pos: Integer;
+      new_commands_added: Boolean;
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     public
       SaveWithUndo: boolean;
+      FileName: string;
+      onDocumentChange: TNotifyEvent;
       constructor Create(owner: TComponent); override;
+      constructor LoadFromFile(aFileName: string); override;
       procedure AfterConstruction; override;
       destructor Destroy; override;
+
+      procedure Undo;
+      procedure Redo;
+
+      function isEmpty: Boolean;
+      function Changed: Boolean;
+      procedure DispatchCommand(command: TAbstractCommand);
+      procedure Save;
     published
       UndoList: TCommandList;
 //      property UndoList: TCommandList read GetUndoList write FUndoList stored false;
@@ -301,16 +312,6 @@ begin
   end;
 end;
 
-procedure TCommandList.DispatchCommand(command: TAbstractCommand);
-begin
-  FRoot.InsertComponent(command);
-  if command.Execute then begin
-    FRoot.RemoveComponent(command);
-    Add(command)
-  end
-  else command.Free;
-end;
-
 procedure TCommandList.Add(command: TAbstractCommand);
 var i:Integer;
 begin
@@ -321,17 +322,21 @@ begin
 end;
 
 procedure TCommandList.Undo;
+var res: Boolean;
 begin
   if UndoEnabled then begin
     dec(fcurrent);
-    (components[fcurrent] as TAbstractCommand).Undo;
+    res:=(components[fcurrent] as TAbstractCommand).Undo;
+    Assert(res,'undo command failed');
   end;
 end;
 
 procedure TCommandList.Redo;
+var res: Boolean;
 begin
   if RedoEnabled then begin
-    (components[fcurrent] as TAbstractCommand).Execute;
+    res:=(components[fcurrent] as TAbstractCommand).Execute;
+    Assert(res,'redo command failed');
     inc(fcurrent);
   end;
 end;
@@ -408,7 +413,19 @@ constructor TAbstractDocument.Create(owner: TComponent);
 begin
   inherited Create(owner);
   UndoList:=nil;
+  FileName:='';
+  onDocumentChange:=nil;
   SaveWithUndo:=true;
+  initial_pos:=0;
+  new_commands_added:=false;
+end;
+
+constructor TAbstractDocument.LoadFromFile(aFileName: string);
+begin
+  inherited LoadFromFile(aFileName);
+  FileName:=aFileName;
+  new_commands_added:=false;
+  if Assigned(UndoList) then initial_pos:=UndoList.current;
 end;
 
 procedure TAbstractDocument.afterConstruction;
@@ -434,6 +451,51 @@ begin
       Proc( Components[i] );
 end;
 
+function TAbstractDocument.isEmpty: Boolean;
+begin
+  Result:=(UndoList.count=0);
+end;
+
+function TAbstractDocument.Changed: Boolean;
+begin
+  Result:=(UndoList.current<>initial_pos) or new_commands_added;
+end;
+
+procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
+begin
+  self.InsertComponent(command);
+  if command.Execute then begin
+    self.RemoveComponent(command);
+    UndoList.Add(command);
+    if Assigned(onDocumentChange) then onDocumentChange(self);
+    new_commands_added:=true;
+  end
+  else command.Free;
+end;
+
+procedure TAbstractDocument.Save;
+begin
+  Assert(FileName<>'','WTF: empty filename');
+  self.SaveToFile(FileName);
+  initial_pos:=UndoList.current;
+  new_commands_added:=false;
+end;
+
+procedure TAbstractDocument.Undo;
+begin
+  if UndoList.UndoEnabled then begin
+    UndoList.Undo;
+    if Assigned(onDocumentChange) then onDocumentChange(self);
+  end;
+end;
+
+procedure TAbstractDocument.Redo;
+begin
+  if UndoList.RedoEnabled then begin
+    UndoList.Redo;
+    if Assigned(onDocumentChange) then onDocumentChange(self);
+  end;
+end;
 
 initialization
 RegisterClasses([TCommandList,TChangeFloatProperty]);

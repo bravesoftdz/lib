@@ -14,7 +14,7 @@ TstreamingClass=class(TComponent)
   public
     saveFormat: StreamingClassSaveFormat;
 //    constructor Create(owner: TComponent; _name: TComponentName); overload;
-    constructor LoadFromFile(filename: string);  //неужели до меня дошло?
+    constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
     constructor LoadFromString(text: string);
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
@@ -162,11 +162,12 @@ begin
       finally
         BinStream.Free;
       end;
-      saveFormat:=fAscii;
+// пожалуй, не стоит. Если нам это так важно, то добавим отдельным property!
+//      saveFormat:=fAscii;
     end
     else begin
       FileStream.ReadComponent(self);
-      saveFormat:=fBinary;
+//      saveFormat:=fBinary;
     end;
   finally
     FileStream.Free;
