@@ -36,6 +36,27 @@ type
       function caption: string; override;
   end;
 
+  TChangeIntegerProperty=class(TAbstractCommand)
+    private
+      fPropPath: string;
+      fBackUp,fVal: Integer;
+      procedure ReadPath(reader: TReader);
+      procedure WritePath(writer: TWriter);
+      procedure ReadValue(reader: TReader);
+      procedure WriteValue(writer: TWriter);
+      procedure ReadBackup(reader: TReader);
+      procedure WriteBackup(writer: TWriter);
+    protected
+      procedure DefineProperties(Filer: TFiler); override;
+    public
+      constructor Create(aPropPath: string; value: Integer); reintroduce; overload;
+
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    end;
+
+
   TChangeBoolProperty=class(TAbstractCommand)
     private
       fPropPath: string;
@@ -184,6 +205,7 @@ begin
   if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
   if fPropInfo.PropType^.Kind<>tkFloat then Raise Exception.Create('error: property is not float number');
   SetFloatProp(instance,fPropInfo,fBackup);
+  fBackUp:=0; //чтобы места не занимал
   Result:=true;
 end;
 
@@ -228,6 +250,85 @@ procedure TChangeFloatProperty.WriteBackup(writer: TWriter);
 begin
   writer.WriteFloat(fBackup);
 end;
+
+(*
+              TChangeIntegerProperty
+                                        *)
+constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer);
+begin
+  inherited Create(nil);
+  fPropPath:=aPropPath;
+  fVal:=value;
+end;
+
+
+function TChangeIntegerProperty.Execute: boolean;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if fPropInfo.PropType^.Kind<>tkInteger then Raise Exception.Create('error: property is not integer');
+  //вот теперь уж все получится)
+  //но надо еще проверить, изменилось ли свойство от наших действий
+  fBackUp:=GetOrdProp(instance,fPropInfo);
+  if fBackUp=fVal then result:=false
+  else begin
+    SetOrdProp(instance,fPropInfo,fVal);
+    Result:=true;
+  end;
+end;
+
+function TChangeIntegerProperty.Undo: Boolean;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if fPropInfo.PropType^.Kind<>tkInteger then Raise Exception.Create('error: property is not integer');
+  SetOrdProp(instance,fPropInfo,fBackup);
+  fBackup:=0;
+  Result:=true;
+end;
+
+function TChangeIntegerProperty.caption: string;
+begin
+  Result:=fPropPath+'='+IntToStr(fVal);
+end;
+
+procedure TChangeIntegerProperty.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineProperty('Path',ReadPath,WritePath,true); //не будем жадничать, путь всегда ненулевой!
+  Filer.DefineProperty('value',ReadValue,WriteValue,(fVal<>0));
+  Filer.DefineProperty('backup',ReadBackup,WriteBackup,(fBackup<>0));
+end;
+
+procedure TChangeIntegerProperty.ReadPath(reader: TReader);
+begin
+  fPropPath:=reader.ReadString;
+end;
+
+procedure TChangeIntegerProperty.WritePath(writer: TWriter);
+begin
+  writer.WriteString(fPropPath);
+end;
+
+procedure TChangeIntegerProperty.ReadValue(reader: TReader);
+begin
+  fVal:=reader.ReadInteger;
+end;
+
+procedure TChangeIntegerProperty.WriteValue(writer: TWriter);
+begin
+  writer.WriteInteger(fVal);
+end;
+
+procedure TChangeIntegerProperty.ReadBackup(reader: TReader);
+begin
+  fBackup:=reader.ReadInteger;
+end;
+
+procedure TChangeIntegerProperty.WriteBackup(writer: TWriter);
+begin
+  writer.WriteInteger(fBackup);
+end;
+
 
 (*
               TChangeBoolProperty

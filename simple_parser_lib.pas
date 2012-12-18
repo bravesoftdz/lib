@@ -19,6 +19,7 @@ TSimpleParser=class
     procedure AssignString(str: String);
     function eof: boolean;
     function getChar: char;
+    function NextChar: char;
     function getFloat: Real;
   end;
 
@@ -62,6 +63,12 @@ end;
 procedure TSimpleParser.find_next_space;
 begin
   while (_pos<=Length(_str)) and (not isSpace(_str[_pos])) do inc(_pos);
+end;
+
+function TSimpleParser.NextChar: char;
+begin
+  skip_spaces;
+  if _pos<=Length(_str) then result:=_str[_pos] else Raise Exception.Create('TParser.NextChar: unexpected end of string');
 end;
 
 function TSimpleParser.getChar: char;
