@@ -1,22 +1,25 @@
 unit vector_lib;
 
 interface
-uses Classes,streaming_class_lib,sysUtils,simple_parser_lib,quaternion_lib;
+uses Classes,streaming_class_lib,sysUtils,simple_parser_lib,quaternion_lib,variants,TypInfo;
+
+function VarVector: TVarType;
+function VarVectorCreate(x: Real=0; y:Real=0; z:Real=0): Variant; overload;
+function VarVectorCreate(str: string): Variant; overload;
+
 type
 
 TVector=class(TStreamingClass)
   private
+    fx,fy,fz: Real;
     function vector2str: string;
     procedure str2vector(str: string);
   public
-    x,y,z: Real;
-
-//    constructor Create; overload;
-//    constructor Create(owner: TComponent;_x: Real=0;_y: Real=0;_z: Real=0); overload; override;
-    constructor Create(owner: TComponent=nil); override;
+    constructor Create(ax: Real=0;ay: Real=0;az: Real=0); reintroduce; overload;
+    constructor Create(str: string); reintroduce; overload;
 
     procedure Assign(source: TPersistent); overload; override;
-    procedure Assign(_x,_y,_z: Real); overload;
+    procedure Assign(_x,_y,_z: Real); reintroduce; overload;
 
     procedure add(source: TVector);
     procedure sub(by: TVector);
@@ -36,21 +39,54 @@ TVector=class(TStreamingClass)
     class function cos_between(M0,M1: TVector): Real;
     class function line_distance(M0,M1: TVector): Real;
   published
-    property Value: string read vector2str write str2vector;
+    property X: Real read fX write fX;
+    property Y: Real read fY write fY;
+    property Z: Real read fZ write fZ;
+    property Value: string read vector2str write str2vector stored false;
 end;
 
+TVectorVarData = packed record
+  VType: TVarType;
+  Reserved1, Reserved2, Reserved3: Word;
+  VVector: TVector;
+  Reserved4: LongInt;
+end;
+
+TVectorVariantType=class(TPublishableVariantType)
+protected
+  function GetInstance(const V: TVarData): TObject; override;
+  function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
+  function LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
+public
+//  function DoFunction(var Dest: TVarData; const V: TVarData; const Name: string; const Arguments: TVarDataArray): Boolean; override;
+  procedure Clear(var V: TVarData); override;
+  procedure Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean); override;
+  procedure Cast(var Dest: TVarData; const Source: TVarData); override;
+  procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
+  procedure BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp); override;
+end;
+
+
+
 implementation
-(*
-constructor TVector.Create;
+
+var VectorVariantType: TVectorVariantType;
+
+constructor TVector.Create(ax: Real=0; ay: Real=0; az: Real=0);
 begin
-  inherited Create;
+  Create(nil);
+  x:=ax;
+  y:=ay;
+  z:=az;
 end;
-*)
-// constructors, copy constructors and streaming procedures
-constructor TVector.Create(owner: TComponent);
+
+constructor TVector.Create(str: string);
 begin
-  inherited Create(owner);
+  Create(nil);
+  value:=str;
 end;
+
+
 
 procedure TVector.Assign(source: TPersistent);
 var t: TVector;
@@ -72,7 +108,6 @@ begin
 end;
 
 function TVector.vector2str: string;
-var str: string;
 begin
   result:='('+FloatToStr(x)+';'+FloatToStr(y)+';'+FloatToStr(z)+')';
 end;
@@ -221,5 +256,180 @@ begin
   n.Free;
 end;
 
+(*
+            TVectorVariantType
+                                          *)
+function TVectorVariantType.GetInstance(const V: TVarData): TObject;
+begin
+  Result:=TVectorVarData(V).VVector;
+end;
+
+procedure TVectorVariantType.Clear(var V: TVarData);
+begin
+  V.VType:=varEmpty;
+  FreeAndNil(TVectorVarData(V).VVector);
+end;
+
+procedure TVectorVariantType.Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean);
+begin
+  if Indirect and VarDataIsByRef(Source) then
+    VarDataCopyNoInd(Dest, Source)
+  else
+    with TVectorVarData(Dest) do
+    begin
+      VType := VarType;
+      VVector := TVector.Create;
+      VVector.Assign(TVectorVarData(source).VVector);
+    end;
+end;
+
+procedure TVectorVariantType.Cast(var Dest: TVarData; const Source: TVarData);
+begin
+  TVectorVarData(Dest).VVector:=TVector.Create;
+  TVectorVarData(Dest).VVector.Value:=VarDataToStr(Source);
+  //вряд ли кто-то будет подсовывать числа, а если даже подсунет
+  //они преобразуются в строку, а в этой строке вектор по-любому не выйдет.
+  Dest.VType:=varType;
+end;
+
+procedure TVectorVariantType.CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType);
+var
+  LTemp: TVarData;
+begin
+  if Source.VType = VarType then //бывает еще не определенный Variant
+    case AVarType of
+      varOleStr:
+        VarDataFromOleStr(Dest, TVectorVarData(Source).VVector.Value);
+      varString:
+        VarDataFromStr(Dest, TVectorVarData(Source).VVector.Value);
+      varSingle,varDouble,varCurrency,varInteger:
+        RaiseCastError;
+    else
+      VarDataInit(LTemp);
+      try
+        VarDataFromStr(Ltemp,TVectorVarData(Source).VVector.Value);
+        VarDataCastTo(Dest, LTemp, AVarType);
+      finally
+        VarDataClear(LTemp);
+      end;
+    end
+  else
+    inherited;
+end;
+
+function TVectorVariantType.RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+  if Operator=opMultiply then
+    Case V.VType of
+      varInteger, varSingle,varDouble,varCurrency,varShortInt,varByte,varWord,varLongWord: RequiredVarType:=V.VType;
+    else RequiredVarType:=VarType;
+    end
+  else RequiredVarType:=VarType;
+  Result:=True;
+end;
+
+function TVectorVariantType.LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+  if Operator=opMultiply then
+    Case V.VType of
+      varInteger, varSingle,varDouble,varCurrency,varShortInt,varByte,varWord,varLongWord: RequiredVarType:=V.VType;
+    else RequiredVarType:=VarType;
+    end
+  else  if (Operator = opAdd) and VarDataIsStr(V) then
+    RequiredVarType:=varString
+  else
+    RequiredVarType := VarType;
+
+  Result:=True;
+end;
+
+procedure TVectorVariantType.BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp);
+var LTemp: TVarData;
+begin
+  if Right.VType = VarType then
+    case Left.VType of
+      varString:
+        case Operator of
+          opAdd:
+            Variant(Left) := Variant(Left) + TVectorVarData(Right).VVector.Value;
+        else
+          RaiseInvalidOp;
+        end;
+
+        varInteger, varSingle,varDouble,varCurrency,varShortInt,varByte,varWord,varLongWord:
+        case Operator of
+          opMultiply:
+          begin
+            VarDataInit(LTemp);
+            try
+              VarDataCastTo(LTemp, Left, varDouble);
+              Variant(Left):=VarVectorCreate;
+              TVectorVarData(Left).VVector.Assign(TVectorVarData(right).VVector);
+              TVectorVarData(Left).VVector.Mul(LTemp.VDouble);
+            finally
+              VarDataClear(LTemp);
+            end;
+          end;
+        else RaiseInvalidOp;
+        end;
+      else
+      if Left.VType = VarType then
+        case Operator of
+          opAdd:
+            TVectorVarData(Left).VVector.Add(TVectorVarData(Right).VVector);
+          opSubtract:
+            TVectorVarData(Left).VVector.Sub(TVectorVarData(Right).VVector);
+          opMultiply:
+            RaiseInvalidop;
+        else
+          RaiseInvalidOp;
+        end
+      else
+        RaiseInvalidOp;
+    end
+  else
+    if Operator=opMultiply then begin
+      VarDataInit(LTemp);
+      try
+        VarDataCastTo(LTemp, Right, varDouble);
+        TVectorVarData(Left).VVector.Mul(LTemp.VDouble);
+      finally
+        VarDataClear(LTemp);
+      end;
+    end
+    else RaiseInvalidOp;
+end;
+
+(*
+            'Fabric'
+                              *)
+
+function VarVector: TVarType;
+begin
+  Result:=VectorVariantType.VarType;
+end;
+
+procedure VarVectorCreateInto(var ADest: Variant; const AVector: TVector);
+begin
+  VarClear(ADest);
+  TVectorVarData(ADest).VType := VarVector;
+  TVectorVarData(ADest).VVector := AVector;
+end;
+
+function VarVectorCreate(X: Real=0; Y: Real=0; Z: Real=0): Variant;
+begin
+  VarVectorCreateInto(Result,TVector.Create(X,Y,Z));
+end;
+
+function VarVectorCreate(str: string): Variant;
+begin
+  VarVectorCreateInto(Result,TVector.Create(str));
+end;
+
+
+initialization
+  VectorVariantType:=TVectorVariantType.Create;
+finalization
+  FreeAndNil(VectorVariantType);
 end.
  

@@ -266,6 +266,7 @@ begin
     inc(i);
   end;
   Reader.ReadListEnd;
+  p.Free;
   changed:=true;
 end;
 
@@ -514,10 +515,8 @@ var s0,s,t: string;
     i,j,k: Integer;
     section: (general,descr,data);
     separator: char;
-    formatSettings : TFormatSettings;
 begin
-  GetLocaleFormatSettings($0800, formatSettings);
-  separator:=formatsettings.DecimalSeparator;
+  separator:=DecimalSeparator;
   Reset(F);
   _length:=0;
   section:=data;
