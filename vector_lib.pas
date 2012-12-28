@@ -3,10 +3,6 @@ unit vector_lib;
 interface
 uses Classes,streaming_class_lib,sysUtils,simple_parser_lib,quaternion_lib,variants,TypInfo;
 
-function VarVector: TVarType;
-function VarVectorCreate(x: Real=0; y:Real=0; z:Real=0): Variant; overload;
-function VarVectorCreate(str: string): Variant; overload;
-
 type
 
 TVector=class(TStreamingClass)
@@ -14,9 +10,12 @@ TVector=class(TStreamingClass)
     fx,fy,fz: Real;
     function vector2str: string;
     procedure str2vector(str: string);
+    function getLength: Real;
   public
+    constructor Create(owner: TComponent); overload; override;
     constructor Create(ax: Real=0;ay: Real=0;az: Real=0); reintroduce; overload;
     constructor Create(str: string); reintroduce; overload;
+    constructor CopyFrom(vector: TVector);
 
     procedure Assign(source: TPersistent); overload; override;
     procedure Assign(_x,_y,_z: Real); reintroduce; overload;
@@ -25,7 +24,7 @@ TVector=class(TStreamingClass)
     procedure sub(by: TVector);
 
     procedure normalize;
-    function Length: Real;
+
     procedure Mul(by: Real);
     procedure Vector_multiply(by: TVector);
 
@@ -43,6 +42,7 @@ TVector=class(TStreamingClass)
     property Y: Real read fY write fY;
     property Z: Real read fZ write fZ;
     property Value: string read vector2str write str2vector stored false;
+    property Length: Real read getLength;
 end;
 
 TVectorVarData = packed record
@@ -58,7 +58,7 @@ protected
   function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
   function LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
 public
-//  function DoFunction(var Dest: TVarData; const V: TVarData; const Name: string; const Arguments: TVarDataArray): Boolean; override;
+  function DoProcedure(const V: TVarData; const Name: string; const Arguments: TVarDataArray): Boolean; override;
   procedure Clear(var V: TVarData); override;
   procedure Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean); override;
   procedure Cast(var Dest: TVarData; const Source: TVarData); override;
@@ -67,10 +67,23 @@ public
 end;
 
 
+function VarVector: TVarType;
+function VarVectorCreate(x: Real=0; y:Real=0; z:Real=0): Variant; overload;
+function VarVectorCreate(str: string): Variant; overload;
+function VarVectorCreate(vector: TVector): Variant; overload;
+
+function LineDistance(p1,p2: Variant): Real;
+
 
 implementation
 
 var VectorVariantType: TVectorVariantType;
+
+constructor TVector.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  SetSubComponent(true);
+end;
 
 constructor TVector.Create(ax: Real=0; ay: Real=0; az: Real=0);
 begin
@@ -84,6 +97,12 @@ constructor TVector.Create(str: string);
 begin
   Create(nil);
   value:=str;
+end;
+
+constructor TVector.CopyFrom(vector: TVector);
+begin
+  Create(nil);
+  Assign(vector);
 end;
 
 
@@ -157,7 +176,7 @@ begin
   z:=z/norm; 
 end;
 
-function TVector.Length: Real;
+function TVector.getLength: Real;
 begin
   result:=sqrt(x*x+y*y+z*z);
 end;
@@ -400,6 +419,18 @@ begin
     else RaiseInvalidOp;
 end;
 
+function TVectorVariantType.DoProcedure(const V: TVarData; const Name: string; const Arguments: TVarDataArray): Boolean;
+begin
+  Result:=true;
+  If (Name='ROTATEBYX') and (Length(Arguments)=1) then
+    TVectorVarData(V).VVector.rotateX(Variant(Arguments[0]))
+  else if (Name='ROTATEBYY') and (Length(Arguments)=1) then
+    TVectorVarData(V).VVector.rotateY(Variant(Arguments[0]))
+  else if (Name='ROTATEBYZ') and (Length(Arguments)=1) then
+    TVectorVarData(V).VVector.rotateZ(Variant(Arguments[0]))
+  else Result:=False;
+end;
+
 (*
             'Fabric'
                               *)
@@ -426,8 +457,22 @@ begin
   VarVectorCreateInto(Result,TVector.Create(str));
 end;
 
+function VarVectorCreate(vector: TVector): Variant;
+begin
+  VarVectorCreateInto(Result,TVector.CopyFrom(vector));
+end;
+
+function LineDistance(p1,p2: Variant): Real;
+begin
+  if (TVectorVarData(p1).VType=varVector) and (TVectorVarData(p2).VType=varVector) then begin
+    Result:=TVector.line_distance(TVectorVarData(p1).VVector,TVectorVarData(p2).VVector);
+  end
+  else Raise Exception.Create('LineDistance: wrong variant type, should be vector');
+end;
+
 
 initialization
+  RegisterClass(TVector);
   VectorVariantType:=TVectorVariantType.Create;
 finalization
   FreeAndNil(VectorVariantType);
