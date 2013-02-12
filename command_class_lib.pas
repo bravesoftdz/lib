@@ -35,11 +35,12 @@ type
       function Undo: boolean; override;
       function caption: string; override;
   end;
-
+  TChIntCaptionFormat=(cfDec,cfHex);
   TChangeIntegerProperty=class(TAbstractCommand)
     private
       fPropPath: string;
       fBackUp,fVal: Integer;
+      fCaptionFormat: TChIntCaptionFormat;
       procedure ReadPath(reader: TReader);
       procedure WritePath(writer: TWriter);
       procedure ReadValue(reader: TReader);
@@ -49,7 +50,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
-      constructor Create(aPropPath: string; value: Integer); reintroduce; overload;
+      constructor Create(aPropPath: string; value: Integer; CaptionFormat: TChIntCaptionFormat=cfDec); reintroduce; overload;
 
       function Execute: Boolean; override;
       function Undo: Boolean; override;
@@ -74,6 +75,25 @@ type
       function Undo: Boolean; override;
       function Caption: string; override;
     end;
+
+  TChangeEnumProperty=class(TAbstractCommand)
+    private
+      fPropPath:string;
+      fValName: string;
+      procedure ReadPath(reader: TReader);
+      procedure WritePath(writer: TWriter);
+      procedure ReadValName(reader: TReader);
+      procedure WriteValName(writer: TWriter);
+    protected
+      procedure DefineProperties(Filer: TFiler); override;
+    public
+      constructor Create(aPropPath: string; valName: string); reintroduce; overload;
+
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    end;
+
 
   TCommandList=class(TStreamingClass) //список для undo/redo и даже для сохранения данных в файл
     private
@@ -254,11 +274,12 @@ end;
 (*
               TChangeIntegerProperty
                                         *)
-constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer);
+constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer; CaptionFormat: TChIntCaptionFormat=cfDec);
 begin
   inherited Create(nil);
   fPropPath:=aPropPath;
   fVal:=value;
+  fCaptionFormat:=CaptionFormat;
 end;
 
 
@@ -289,7 +310,10 @@ end;
 
 function TChangeIntegerProperty.caption: string;
 begin
-  Result:=fPropPath+'='+IntToStr(fVal);
+  case fCaptionFormat of
+    cfDec: Result:=fPropPath+'='+IntToStr(fVal);
+    cfHex: Result:=Format('%s=%x',[fPropPath,fVal]);
+  end;
 end;
 
 procedure TChangeIntegerProperty.DefineProperties(Filer: TFiler);
@@ -341,25 +365,25 @@ begin
 end;
 
 function TChangeBoolProperty.Execute: boolean;
+var res: LongInt;
 begin
   _getPropInfo(fPropPath);
   if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
-//  if fPropInfo.PropType^.Kind<>tkBool then Raise Exception.Create('error: property is not boolean');
-  //вот теперь уж все получится)
-  //но надо еще проверить, изменилось ли свойство от наших действий
-//  if fVal=GetBoolProp(instance,fPropInfo) then result:=false
-//  else begin
-//    SetBoolProp(instance,fPropInfo,fVal);
+  if fPropInfo.PropType^.Kind<>tkEnumeration then Raise Exception.Create('error: property is not boolean');
+  res:=GetOrdProp(instance,fPropInfo);
+  if fVal=Boolean(res) then result:=false
+  else begin
+    SetOrdProp(instance,fPropInfo,Integer(fVal));
     Result:=true;
-  //end;
+  end;
 end;
 
 function TChangeBoolProperty.Undo: boolean;
 begin
   _getPropInfo(fPropPath);
   if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
-//  if fPropInfo.PropType^.Kind<>tkBool then Raise Exception.Create('error: property is not float number');
-//  SetBoolProp(instance,fPropInfo,not fVal);
+  if fPropInfo.PropType^.Kind<>tkEnumeration then Raise Exception.Create('error: property is not float number');
+    SetOrdProp(instance,fPropInfo,Integer(not fVal));
   Result:=true;
 end;
 
@@ -392,6 +416,70 @@ procedure TChangeBoolProperty.DefineProperties(Filer: TFiler);
 begin
   filer.DefineProperty('Path',ReadPath,WritePath,true);
   filer.DefineProperty('Value',ReadValue,WriteValue,true);
+end;
+
+(*
+            TChangeEnumProperty
+                                    *)
+constructor TChangeEnumProperty.Create(aPropPath: string; valName: string);
+begin
+  inherited Create(nil);
+  fPropPath:=aPropPath;
+  fValName:=valName;
+end;
+
+procedure TChangeEnumProperty.DefineProperties(Filer: TFiler);
+begin
+  filer.DefineProperty('Path',ReadPath,WritePath,true);
+  filer.DefineProperty('ValName',ReadValName,WriteValName,true);
+end;
+
+procedure TChangeEnumProperty.ReadPath(reader: TReader);
+begin
+  fPropPath:=reader.ReadString;
+end;
+
+procedure TChangeEnumProperty.WritePath(writer: TWriter);
+begin
+  writer.WriteString(fPropPath);
+end;
+
+procedure TChangeEnumProperty.ReadValName(reader: TReader);
+begin
+  fValName:=reader.ReadString;
+end;
+
+procedure TChangeEnumProperty.WriteValName(writer: TWriter);
+begin
+  writer.WriteString(fValName);
+end;
+
+function TChangeEnumProperty.Caption: string;
+begin
+  Result:=fPropPath+'='+fValName;
+end;
+
+function TChangeEnumProperty.Execute: Boolean;
+var tmp: string;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if fPropInfo.PropType^.Kind<>tkEnumeration then Raise Exception.Create('error: property is not enumeration');
+  tmp:=GetEnumProp(instance,fPropInfo);
+  if fValName=tmp then result:=false
+  else begin
+    SetEnumProp(instance,fPropInfo,fValName);
+    Result:=true;
+  end;
+end;
+
+function TChangeEnumProperty.Undo: Boolean;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if fPropInfo.PropType^.Kind<>tkEnumeration then Raise Exception.Create('error: property is not enumeration');
+  SetEnumProp(instance,fPropInfo,fValName);
+  Result:=true;
 end;
 
 
@@ -491,7 +579,6 @@ procedure TCommandList.WriteCurrent(writer: TWriter);
 begin
   writer.writeInteger(fcurrent);
 end;
-
 
 
 (*
@@ -599,6 +686,6 @@ begin
 end;
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty]);
+RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty]);
 
 end.
