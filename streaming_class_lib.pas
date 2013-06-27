@@ -16,6 +16,7 @@ TstreamingClass=class(TComponent)
 //    constructor Create(owner: TComponent; _name: TComponentName); overload;
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
     constructor LoadFromString(text: string);
+    constructor Clone(source: TStreamingClass;owner: TComponent=nil);
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
     procedure LoadBinaryFromFile(filename: string);
@@ -24,6 +25,9 @@ TstreamingClass=class(TComponent)
 
     procedure Assign(source: TPersistent); override;
     function IsEqual(what: TStreamingClass): boolean;
+
+    function FindOwner: TComponent;
+
   end;
 
 implementation
@@ -240,6 +244,23 @@ end;
 function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
 begin
   Result:=(SaveToString=what.SaveToString);
+end;
+
+constructor TStreamingClass.Clone(source: TStreamingClass;owner: TComponent=nil);
+var s: string;
+begin
+  Create(Owner);
+  self.Assign(source);
+end;
+
+function TStreamingClass.FindOwner: TComponent;
+var tmp: TComponent;
+begin
+  tmp:=self;
+  repeat
+    Result:=tmp;
+    tmp:=tmp.Owner;
+  until tmp=nil;
 end;
 
 end.

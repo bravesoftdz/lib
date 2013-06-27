@@ -8,7 +8,7 @@ type
       instance: TPersistent;
       fPropInfo: PPropInfo;
       procedure _getPropInfo(propPath: string);
-      function FindOwner: TComponent;
+//      function FindOwner: TComponent;
     public
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
@@ -35,22 +35,25 @@ type
       function Undo: boolean; override;
       function caption: string; override;
   end;
-  TChIntCaptionFormat=(cfDec,cfHex);
+//  TChIntCaptionFormat=(cfDec,cfHex);
   TChangeIntegerProperty=class(TAbstractCommand)
     private
       fPropPath: string;
       fBackUp,fVal: Integer;
-      fCaptionFormat: TChIntCaptionFormat;
+//      fCaptionFormat: TChIntCaptionFormat;
+      fCaption: string;
       procedure ReadPath(reader: TReader);
       procedure WritePath(writer: TWriter);
       procedure ReadValue(reader: TReader);
       procedure WriteValue(writer: TWriter);
       procedure ReadBackup(reader: TReader);
       procedure WriteBackup(writer: TWriter);
+      procedure ReadCaption(reader: TReader);
+      procedure WriteCaption(writer: TWriter);
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
-      constructor Create(aPropPath: string; value: Integer; CaptionFormat: TChIntCaptionFormat=cfDec); reintroduce; overload;
+      constructor Create(aPropPath: string; value: Integer; aCaption: string=''); reintroduce; overload;
 
       function Execute: Boolean; override;
       function Undo: Boolean; override;
@@ -70,6 +73,25 @@ type
       procedure DefineProperties(Filer: TFiler); override;
     public
       constructor Create(aPropPath: string;value: Boolean); reintroduce; overload;
+
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    end;
+
+  TChangeStringProperty=class(TAbstractCommand)
+    private
+      fPropPath: string;
+      fVal: string;
+      fBackUp: string;
+      procedure ReadPath(reader: TReader);
+      procedure WritePath(writer: TWriter);
+      procedure ReadValue(reader: TReader);
+      procedure WriteValue(writer: TWriter);
+    protected
+      procedure DefineProperties(Filer: TFiler); override;
+    public
+      constructor Create(aPropPath: string; value: string); reintroduce; overload;
 
       function Execute: Boolean; override;
       function Undo: Boolean; override;
@@ -156,6 +178,7 @@ uses SysUtils;
 (*
         TAbstractCommand
                                   *)
+(*
 function TAbstractCommand.FindOwner: TComponent;
 var tmp: TComponent;
 begin
@@ -165,7 +188,7 @@ begin
     tmp:=tmp.Owner;
   until tmp=nil;
 end;
-
+*)
 procedure TAbstractCommand._getPropInfo(propPath: string);
 var i,j,L: Integer;
   PropValue: TObject;
@@ -274,12 +297,12 @@ end;
 (*
               TChangeIntegerProperty
                                         *)
-constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer; CaptionFormat: TChIntCaptionFormat=cfDec);
+constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer; aCaption: string='');
 begin
   inherited Create(nil);
   fPropPath:=aPropPath;
   fVal:=value;
-  fCaptionFormat:=CaptionFormat;
+  fCaption:=aCaption;
 end;
 
 
@@ -310,10 +333,8 @@ end;
 
 function TChangeIntegerProperty.caption: string;
 begin
-  case fCaptionFormat of
-    cfDec: Result:=fPropPath+'='+IntToStr(fVal);
-    cfHex: Result:=Format('%s=%x',[fPropPath,fVal]);
-  end;
+  if fCaption='' then Result:=fPropPath+'='+IntToStr(fVal)
+  else Result:=fCaption;
 end;
 
 procedure TChangeIntegerProperty.DefineProperties(Filer: TFiler);
@@ -321,6 +342,7 @@ begin
   Filer.DefineProperty('Path',ReadPath,WritePath,true); //не будем жадничать, путь всегда ненулевой!
   Filer.DefineProperty('value',ReadValue,WriteValue,(fVal<>0));
   Filer.DefineProperty('backup',ReadBackup,WriteBackup,(fBackup<>0));
+  Filer.DefineProperty('caption',ReadCaption,WriteCaption,(fCaption<>''));
 end;
 
 procedure TChangeIntegerProperty.ReadPath(reader: TReader);
@@ -351,6 +373,16 @@ end;
 procedure TChangeIntegerProperty.WriteBackup(writer: TWriter);
 begin
   writer.WriteInteger(fBackup);
+end;
+
+procedure TChangeIntegerProperty.ReadCaption(reader: TReader);
+begin
+  fCaption:=reader.ReadString;
+end;
+
+procedure TChangeIntegerProperty.WriteCaption(writer: TWriter);
+begin
+  writer.WriteString(fCaption);
 end;
 
 
@@ -484,6 +516,73 @@ end;
 
 
 (*
+          TChangeStringProperty
+                                  *)
+constructor TChangeStringProperty.Create(aPropPath: string; value: String);
+begin
+  inherited Create(nil);
+  fVal:=value;
+  fPropPath:=aPropPath;
+end;
+
+procedure TChangeStringProperty.ReadPath(reader: TReader);
+begin
+  fPropPath:=reader.ReadString;
+end;
+
+procedure TChangeStringProperty.ReadValue(reader: TReader);
+begin
+  fVal:=reader.ReadString;
+end;
+
+procedure TChangeStringProperty.WritePath(writer: TWriter);
+begin
+  writer.WriteString(fPropPath);
+end;
+
+procedure TChangeStringProperty.WriteValue(writer: TWriter);
+begin
+  writer.WriteString(fVal);
+end;
+
+procedure TChangeStringProperty.DefineProperties(Filer: TFiler);
+begin
+  filer.DefineProperty('path',ReadPath,WritePath,true);
+  filer.DefineProperty('value',ReadValue,WriteValue,Length(fval)>0);
+end;
+
+function TChangeStringProperty.Caption: string;
+begin
+  result:=fPropPath+'='+fVal;
+end;
+
+function TChangeStringProperty.Execute: Boolean;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if not (fPropInfo.PropType^.Kind in [tkString,tkLstring,tkWstring]) then Raise Exception.Create('error: property is not string');
+  //вот теперь уж все получится)
+  //но надо еще проверить, изменилось ли свойство от наших действий
+  fBackUp:=GetStrProp(instance,fPropInfo);
+//  GetFloatProp(instance,fPropInfo);
+  if fBackUp=fVal then result:=false
+  else begin
+    SetStrProp(instance,fPropInfo,fVal);
+    Result:=true;
+  end;
+end;
+
+function TChangeStringProperty.Undo: Boolean;
+begin
+  _getPropInfo(fPropPath);
+  if fPropInfo.SetProc=nil then Raise Exception.Create('error: write to read-only property');
+  if not (fPropInfo.PropType^.Kind in [tkString,tkLstring,tkWstring]) then Raise Exception.Create('error: property is not string');
+  SetStrProp(instance,fPropInfo,fBackup);
+  fBackUp:=''; //чтобы места не занимал
+  Result:=true;
+end;
+
+(*
             TCommandList
                                   *)
 
@@ -585,18 +684,6 @@ end;
               TAbstractDocument
                                       *)
 
-(*
-function TAbstractDocument.GetUndoList: TCommandList;
-begin
-
-  if (fUndoList=nil) and not (csLoading in ComponentState) then begin
-    fUndoList:=TCommandList.Create(self);
-    fUndoList.Name:='UndoList';
-  end;
-  Result:=fUndoList;
-end;
-*)
-
 constructor TAbstractDocument.Create(owner: TComponent);
 begin
   inherited Create(owner);
@@ -686,6 +773,6 @@ begin
 end;
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty]);
+RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty]);
 
 end.

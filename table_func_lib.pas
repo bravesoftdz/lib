@@ -153,6 +153,8 @@ type
     _Yunit: string;
     _description: Tstrings;
     iOrder: Integer;
+    fTolerance: Real;
+    fCyclic: Boolean;
 
     _length: Integer;
     allocated_length: Integer;
@@ -162,7 +164,7 @@ type
 
     _oub: Boolean;
     changed: boolean;
-
+    fchart_series: TLineSeries;
 //    fLineColor: TColor; //цвет линий на графике при выполнении Draw
 
     procedure plus_one; //приготовить место для еще одного числа
@@ -189,7 +191,6 @@ type
 
       public
     X,Y: array of Real;
-    chart_series: TLineSeries;
 
     property xmin: Real read get_xmin;
     property xmax: Real read get_xmax;
@@ -211,15 +212,21 @@ type
     constructor Create(filename: string); reintroduce; overload;
     destructor Destroy; override;
     procedure draw;
-    procedure Add(c: Real);
+    procedure Add(c: Real); overload;
+    procedure Add(term: table_func); overload;
+    procedure Sub(c: Real); overload;
+    procedure Sub(term: table_func); overload;
     procedure Shift(amount: Real);
     procedure multiply(by: table_func); overload;
     procedure multiply(by: Real); overload;
     procedure assign(Source:TPersistent); override;
     function integrate: Real;
     procedure morepoints;
-    procedure derivative;
+    procedure derivative; overload;
+    function derivative(xi: Real): Real; overload;
+    function FindInterval(xi: Real): Integer; //между какими табл. значениями лежит нужное нам
     procedure integral;
+    property chart_series: TLineSeries read fchart_series write fchart_series;
       published
     property title: string read _title write _title;
     property Xname: string read _Xname write _XName;
@@ -229,7 +236,9 @@ type
     property Description: Tstrings read _description write SetDescription;
     property order: Integer read iorder write update_order default 3;
     property zero_out_of_bounds: boolean read _oub write _oub default true; //поведение за границами обл. опред
+    property Cyclic: boolean read fCyclic write fCyclic;
     property count: Integer read _length stored false;
+    property Tolerance: Real read fTolerance write fTolerance;
 //    property LineColor: TColor read fLineColor write fLineColor default clBlack;
     end;
 implementation
@@ -315,9 +324,8 @@ begin
   isen:=(count>0);
 end;
 
-function table_func.splinevalue(xi: Real): Real;
+function table_func.FindInterval(xi: Real): Integer;
 var i,j,k: Integer;
-r: Real;
 label found;
 begin
   if changed then update_spline;
@@ -326,16 +334,16 @@ begin
   j:=count-1;
   //цикл может не выполниться, если массив пустой (High(X)=-1)
   if j<i then begin
-    splinevalue:=NAN;
+    Result:=-2;
     Exit;
   end;
 
   if xi>xmax then begin
-    if _oub then splinevalue:=0 else splinevalue:=Y[count-1];
+    Result:=count;
     exit;
   end
   else if xi<xmin then begin
-    if _oub then splinevalue:=0 else splinevalue:=Y[0];
+    Result:=-1;
     exit;
   end;
 
@@ -346,19 +354,41 @@ begin
   else if xi>X[k] then i:=k+1 else goto found;
   end;
   if xi<X[k] then dec(k);
-  if k<0 then begin splinevalue:=Y[0]; exit; end;
   found:
-  r:=xi-X[k];
-  splinevalue:=Y[k]+r*(b[k]+r*(c[k]+r*d[k]));
+  Result:=k;
+end;
+
+
+function table_func.splinevalue(xi: Real): Real;
+var k: Integer;
+r: Real;
+begin
+  k:=FindInterval(xi);
+  if k=-2 then splinevalue:=NAN
+  else if (k=-1) then
+    if _oub then Result:=0 else Result:=Y[0]
+    else if k>=count then
+      if _oub then Result:=0 else Result:=Y[count-1]
+      else begin
+        r:=xi-X[k];
+        Result:=Y[k]+r*(b[k]+r*(c[k]+r*d[k]));
+      end;
 end;
 
 procedure table_func.draw;
 var i,w: Integer;
-    t,st,t_xmin: Real;
+    t,st,t_xmin,t_xmax: Real;
 begin
   if (chart_series<>nil) and isen then begin
 //    w:=chart_series.ParentChart.ClientWidth;
     w:=1280;
+
+    if chart_series.GetHorizAxis.AutomaticMinimum then
+      t_xmin:=xmin else t_xmin:=max(chart_series.GetHorizAxis.Minimum,xmin);
+    if chart_series.GetHorizAxis.AutomaticMaximum then
+      t_xmax:=xmax else t_xmax:=min(chart_series.GetHorizAxis.Maximum,xmax);
+    st:=(t_xmax-t_xmin)/w;
+    (*
     if chart_series.ParentChart.BottomAxis.Automatic then begin
       t_xmin:=xmin;
       st:=(xmax-t_xmin)/w;
@@ -367,11 +397,13 @@ begin
       t_xmin:=chart_series.ParentChart.BottomAxis.Minimum;
       st:=(chart_series.ParentChart.BottomAxis.Maximum-t_xmin)/w;
     end;
+    *)
     chart_series.Clear;
     for i:=0 to w do begin
       t:=t_xmin+st*i;
       chart_series.AddXY(t,splinevalue(t));
     end;
+
   end;
 end;
 
@@ -413,6 +445,16 @@ begin
       if iorder=1 then begin
         for i:=0 to j-1 do b[i]:=(Y[i+1]-Y[i])/h[i];
         exit;
+      end;
+      if iorder=2 then begin
+        if j=0 then Exit;
+//        c[0]:=0; это и так выполняется
+          b[0]:=(Y[1]-Y[0])/h[0];
+          for i:=1 to j-1 do begin
+            b[i]:=b[i-1]+2*c[i-1]*h[i-1];
+            c[i]:=(y[i+1]-y[i]-b[i]*h[i])/h[i]/h[i];
+          end;
+        Exit;
       end;
       Setlength(alpha,count);
       SetLength(l,count);
@@ -483,7 +525,7 @@ begin
 end;
 
 function table_func.deletepoint(Xn: Real): boolean;
-var i,k,l: Integer;
+var i,l: Integer;
 begin
   if not enabled then begin
     result:=false;
@@ -491,7 +533,7 @@ begin
   end;
   l:=count-1;
   i:=l;
-  while (Xn<>X[i]) do begin
+  while (abs(Xn-X[i])>Tolerance) do begin
     dec(i);
     if i=-1 then begin
       result:=false;
@@ -499,7 +541,6 @@ begin
     end;
   end;
   //на этом месте i указывает на элемент, который надо удалить.
-  k:=l-1;
   while i<l do begin
   X[i]:=X[i+1];
   Y[i]:=Y[i+1];
@@ -701,6 +742,39 @@ begin
 
 end;
 
+procedure table_func.Add(term: table_func);
+var i,ls,ld: Integer;
+  Yt: array of Real;
+begin
+  if not (term.enabled and enabled) then Exit;
+  ls:=term.count-1;
+  SetLength(Yt,ls+1);
+  for i:=0 to ls do Yt[i]:=term.Y[i]+splinevalue(term.X[i]);
+
+  ld:=count-1;
+  for i:=0 to ld do Y[i]:=Y[i]+term[X[i]];
+
+  for i:=0 to ls do addpoint(term.X[i],Yt[i]);
+  changed:=true;
+end;
+
+procedure table_func.Sub(term: table_func);
+var i,ls,ld: Integer;
+  Yt: array of Real;
+begin
+  if not (term.enabled and enabled) then Exit;
+  ls:=term.count-1;
+  SetLength(Yt,ls+1);
+  for i:=0 to ls do Yt[i]:=-term.Y[i]+splinevalue(term.X[i]);
+
+  ld:=count-1;
+  for i:=0 to ld do Y[i]:=Y[i]-term[X[i]];
+
+  for i:=0 to ls do addpoint(term.X[i],Yt[i]);
+  changed:=true;
+end;
+
+
 procedure table_func.multiply(by: Real);
 var i,ld: Integer;
 begin
@@ -861,6 +935,18 @@ begin
   end;
 end;
 
+function table_func.derivative(xi: Real): Real;
+var k: Integer;
+    r: Real;
+begin
+  k:=FindInterval(xi);
+  if (k<0) or (k>=count) then Result:=0
+  else begin
+    r:=xi-X[k];
+    Result:=b[k]+r*(2*c[k]+3*d[k]*r);
+  end;
+end;
+
 procedure table_func.integral;
 var i,j :Integer;
     acc,prev_acc,r: Real;
@@ -912,6 +998,11 @@ begin
   for i:=0 to Count-1 do begin
     Y[i]:=Y[i]+c;
   end;
+end;
+
+procedure Table_func.Sub(c: Real);
+begin
+  Add(-c);
 end;
 
 procedure table_func.Shift(amount: Real);
