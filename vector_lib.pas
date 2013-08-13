@@ -32,7 +32,7 @@ TVector=class(TStreamingClass)
     procedure rotateZ(angle: Real);
     procedure rotateY(angle: Real);
 
-    procedure rotate_by_quat(q: TQuaternion);
+    procedure rotate_by_quat(q: TAbstractQuaternion);
 
     class function scalar_product(M0,M1: TVector): Real;
     class function cos_between(M0,M1: TVector): Real;
@@ -259,7 +259,7 @@ begin
   t.Free;
 end;
 
-procedure TVector.rotate_by_quat(q: TQuaternion);
+procedure TVector.rotate_by_quat(q: TAbstractQuaternion);
 var t,n: TQuaternion;
 begin
   t:=TQuaternion.Create(nil);
