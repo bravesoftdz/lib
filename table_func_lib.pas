@@ -203,6 +203,7 @@ type
     procedure Clear;
     procedure ClearPoints;
     function SaveToTextFile(filename: string): Boolean;
+    function AsTabbedText: string;
     procedure normalize();
     function addpoint(Xn:Real;Yn:Real): Boolean;
     function deletepoint(Xn:Real): Boolean;
@@ -219,6 +220,7 @@ type
     procedure Shift(amount: Real);
     procedure multiply(by: table_func); overload;
     procedure multiply(by: Real); overload;
+    procedure multiply_argument(by: Real);
     procedure assign(Source:TPersistent); override;
     function integrate: Real;
     procedure morepoints;
@@ -1016,7 +1018,26 @@ begin
   _description.Assign(strings);
 end;
 
+procedure table_func.multiply_argument(by: Real);
+var i: Integer;
+begin
+  for i:=0 to Length(X)-1 do begin
+    X[i]:=X[i]*by;
+  end;
+  changed:=true;
+end;
 
+function table_func.AsTabbedText: string;
+var i: Integer;
+    m: TStringList;
+begin
+  m:=TStringList.Create;
+  for i:=0 to Length(X)-1 do begin
+    m.Add(FloatToStr(X[i])+#9+FloatToStr(Y[i]));
+  end;
+  Result:=m.Text;
+  m.Free;
+end;
 
 
 initialization

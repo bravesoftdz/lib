@@ -5,26 +5,147 @@ interface
 uses classes,streaming_class_lib,sysUtils;
 
 type
-  Tquaternion=class(TstreamingClass)
+  TAbstractQuaternion=class(TStreamingClass)
+    protected
+      procedure set_A(val: Real); virtual; abstract;
+      procedure set_X(val: Real); virtual; abstract;
+      procedure set_Y(val: Real); virtual; abstract;
+      procedure set_Z(val: Real); virtual; abstract;
+      function get_A: Real; virtual; abstract;
+      function get_X: Real; virtual; abstract;
+      function get_Y: Real; virtual; abstract;
+      function get_Z: Real; virtual; abstract;
+    public
+      procedure left_mul(by: TAbstractQuaternion);
+      procedure right_mul(by: TAbstractQuaternion);
+      procedure conjugate;
+      procedure normalize;
+      procedure Assign(Source:TPersistent);overload; override;
+      procedure Assign(na,nx,ny,nz: Real); overload;
+      function toStr: string;
+
+      property a: Real read get_A write set_A;
+      property x: Real read get_X write set_X;
+      property y: Real read get_Y write set_Y;
+      property z: Real read get_Z write set_Z;
+  end;
+
+  Tquaternion=class(TAbstractQuaternion)
     private
       _a,_x,_y,_z: Real;
+    protected
+      procedure set_A(val: Real); override;
+      procedure set_X(val: Real); override;
+      procedure set_Y(val: Real); override;
+      procedure set_Z(val: Real); override;
+      function get_A: Real; override;
+      function get_X: Real; override;
+      function get_Y: Real; override;
+      function get_Z: Real; override;
     public
      Constructor Create(owner: TComponent); overload; override;
      Constructor Create(owner: TComponent;na,nx,ny,nz: Real); overload;
-     procedure left_mul(by: Tquaternion);
-     procedure right_mul(by: TQuaternion);
-     procedure conjugate;
-     procedure normalize;
-     procedure Assign(Source:TPersistent);overload; override;
-     procedure Assign(na,nx,ny,nz: Real); overload;
-     function toStr: string;
-    published
-      property a: Real read _a write _a;
-      property x: Real read _x write _x;
-      property y: Real read _y write _y;
-      property z: Real read _z write _z;
-  end;
+    end;
+
+  TstupidQuat=class(TAbstractQuaternion)
+    private
+      _a,_x,_y,_z: Single;
+    protected
+      procedure set_A(val: Real); override;
+      procedure set_X(val: Real); override;
+      procedure set_Y(val: Real); override;
+      procedure set_Z(val: Real); override;
+      function get_A: Real; override;
+      function get_X: Real; override;
+      function get_Y: Real; override;
+      function get_Z: Real; override;
+    public
+     Constructor Create(owner: TComponent); overload; override;
+     Constructor Create(owner: TComponent;na,nx,ny,nz: Real); overload;
+    end;
+
 implementation
+(*
+    TAbstractQuaternion
+                          *)
+
+function TAbstractQuaternion.toStr: string;
+begin
+  result:=FloatToStr(a)+#9+FloatToStr(x)+'i'+#9+FloatToStr(y)+'j'+#9+FloatToStr(z)+'k';
+end;
+
+procedure TAbstractQuaternion.conjugate;
+begin
+  x:=-x;
+  y:=-y;
+  z:=-z;
+end;
+
+procedure TAbstractQuaternion.normalize;
+var n: Real;
+begin
+  n:=a*a+x*x+y*y+z*z;
+  assert(n>0,'normalize: quaternion has zero length');
+  n:=sqrt(n);
+  a:=a/n;
+  x:=x/n;
+  y:=y/n;
+  z:=z/n;
+end;
+
+procedure TAbstractQuaternion.right_mul(by: TAbstractQuaternion); //умножение справа
+var at,xt,yt,zt: Real; //врем. значения
+begin
+  at:=a;
+  a:=a*by.a-x*by.x-Y*by.y-Z*by.Z;
+  xt:=x;
+  X:=at*by.X+X*by.A+Y*by.Z-Z*by.Y;
+  yt:=y;
+  Y:=at*by.Y-xt*by.Z+Y*by.A+Z*by.X;
+  Z:=at*by.Z+xt*by.Y-yt*by.X+Z*by.A
+end;
+
+procedure TAbstractQuaternion.left_mul(by: TAbstractQuaternion); //умножение слева
+var at,xt,yt,zt: Real; //врем. значения
+begin
+  at:=a;
+  a:=by.a*a-by.x*x-by.y*Y-by.z*z;
+//  _a:=_a*by._a-_x*by._x-_Y*by._y-_Z*by._Z;
+  xt:=x;
+  x:=by.a*x+by.x*at+by.y*z-by.z*y;
+//  _X:=at*by._X+_X*by._A+_Y*by._Z-_Z*by._Y;
+  yt:=y;
+  y:=by.a*y-by.x*z+by.y*at+by.z*xt;
+//  _Y:=at*by._Y-xt*by._Z+_Y*by._A+_Z*by._X;
+  z:=by.a*z+by.x*yt-by.y*xt+by.z*at;
+//  _Z:=at*by._Z+xt*by._Y-yt*by._X+_Z*by._A
+end;
+
+procedure TAbstractQuaternion.Assign(Source: TPersistent);
+var q: TAbstractQuaternion;
+begin
+  if Source is TAbstractQuaternion then begin
+    q:=Source as TAbstractQuaternion;
+    a:=q.a;
+    x:=q.x;
+    y:=q.y;
+    z:=q.z;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+procedure TAbstractQuaternion.Assign(na,nx,ny,nz: Real);
+begin
+  a:=na;
+  x:=nx;
+  y:=ny;
+  z:=nz;
+end;
+
+(*
+      TQuaternion
+                        *)
 
 constructor Tquaternion.Create(owner: TComponent);
 begin
@@ -34,86 +155,108 @@ end;
 constructor Tquaternion.Create(owner: TComponent; na,nx,ny,nz: Real);
 begin
   inherited Create(owner);
+  a:=na;
+  x:=nx;
+  y:=ny;
+  z:=nz;
+end;
+
+procedure TQuaternion.set_A(val: Real);
+begin
+  _a:=val;
+end;
+
+procedure TQuaternion.set_X(val: Real);
+begin
+  _x:=val;
+end;
+
+procedure TQuaternion.set_Y(val: Real);
+begin
+  _y:=val;
+end;
+
+procedure TQuaternion.set_Z(val: Real);
+begin
+  _z:=val;
+end;
+
+function TQuaternion.get_A: Real;
+begin
+  Result:=_a;
+end;
+
+function TQuaternion.get_X: Real;
+begin
+  Result:=_x;
+end;
+
+function TQuaternion.get_Y: Real;
+begin
+  Result:=_y;
+end;
+
+function TQuaternion.get_Z: Real;
+begin
+  Result:=_z;
+end;
+
+
+
+constructor TStupidQuat.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+end;
+
+constructor TStupidQuat.Create(owner: TComponent; na,nx,ny,nz: Real);
+begin
+  inherited Create(owner);
   _a:=na;
   _x:=nx;
   _y:=ny;
   _z:=nz;
 end;
 
-procedure Tquaternion.Assign(Source: TPersistent);
-var q: Tquaternion;
+procedure TStupidQuat.set_A(val: Real);
 begin
-  if Source is Tquaternion then begin
-    q:=Source as Tquaternion;
-    _a:=q._a;
-    _x:=q._x;
-    _y:=q._y;
-    _z:=q._z;
-  end
-  else
-    inherited Assign(Source);
+  _a:=val;
 end;
 
-procedure TQuaternion.Assign(na,nx,ny,nz: Real);
+procedure TStupidQuat.set_X(val: Real);
 begin
-  _a:=na;
-  _x:=nx;
-  _y:=ny;
-  _z:=nz;
+  _x:=val;
+end;
+
+procedure TStupidQuat.set_Y(val: Real);
+begin
+  _y:=val;
+end;
+
+procedure TStupidQuat.set_Z(val: Real);
+begin
+  _z:=val;
+end;
+
+function TStupidQuat.get_A: Real;
+begin
+  Result:=_a;
+end;
+
+function TStupidQuat.get_X: Real;
+begin
+  Result:=_x;
+end;
+
+function TStupidQuat.get_Y: Real;
+begin
+  Result:=_y;
+end;
+
+function TStupidQuat.get_Z: Real;
+begin
+  Result:=_z;
 end;
 
 
-
-function Tquaternion.toStr: string;
-begin
-  result:=FloatToStr(_a)+#9+FloatToStr(_x)+'i'+#9+FloatToStr(_y)+'j'+#9+FloatToStr(_z)+'k';
-end;
-
-procedure Tquaternion.conjugate;
-begin
-  _x:=-_x;
-  _y:=-_y;
-  _z:=-_z;
-end;
-
-procedure Tquaternion.normalize;
-var n: Real;
-begin
-  n:=_a*_a+_x*_x+_y*_y+_z*_z;
-  assert(n>0,'normalize: quaternion has zero length');
-  n:=sqrt(n);
-  _a:=_a/n;
-  _x:=_x/n;
-  _y:=_y/n;
-  _z:=_z/n;
-end;
-
-procedure Tquaternion.right_mul(by: Tquaternion); //умножение справа
-var at,xt,yt,zt: Real; //врем. значения
-begin
-  at:=_a;
-  _a:=_a*by._a-_x*by._x-_Y*by._y-_Z*by._Z;
-  xt:=_x;
-  _X:=at*by._X+_X*by._A+_Y*by._Z-_Z*by._Y;
-  yt:=_y;
-  _Y:=at*by._Y-xt*by._Z+_Y*by._A+_Z*by._X;
-  _Z:=at*by._Z+xt*by._Y-yt*by._X+_Z*by._A
-end;
-
-procedure TQuaternion.left_mul(by: TQuaternion); //умножение слева
-var at,xt,yt,zt: Real; //врем. значения
-begin
-  at:=_a;
-  _a:=by._a*_a-by._x*_x-by._y*_Y-by._z*_z;
-//  _a:=_a*by._a-_x*by._x-_Y*by._y-_Z*by._Z;
-  xt:=_x;
-  _x:=by._a*_x+by._x*at+by._y*_z-by._z*_y;
-//  _X:=at*by._X+_X*by._A+_Y*by._Z-_Z*by._Y;
-  yt:=_y;
-  _y:=by._a*_y-by._x*_z+by._y*at+by._z*xt;
-//  _Y:=at*by._Y-xt*by._Z+_Y*by._A+_Z*by._X;
-  _z:=by._a*_z+by._x*yt-by._y*xt+by._z*at;
-//  _Z:=at*by._Z+xt*by._Y-yt*by._X+_Z*by._A
-end;
 
 end.

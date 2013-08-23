@@ -81,24 +81,23 @@ TSpectrum=class(table_func)
 colorimetry_funcs=class
   private
     rt,gt,bt :table_func;
-    function XYZ2RGB(x:Real;y:Real;z:Real): RGBf;
+    class function XYZ2RGB(x:Real;y:Real;z:Real): RGBf;
     function XYZ2RGB_no_limit(x:Real;y:Real;z:Real): RGBf;
   public
-    xt,yt,zt: table_func;
     canvas: TCanvas;
     XLeft,XRight,YTop,YBottom :Integer;
     desat :Real; //насколько мы "забеляем" спектр ради точности
     //воспроизведения
     sat: Real; //насколько мы увеличиваем яркость цветов
     procedure draw;
-    function gamma_func(x: Real): Real;
-    function gamma(x:Real): Integer;
-    function ColorFromCCT(T: Real) :TColor;
-    function ColorFromWL(wl: Real) :TColor;
-    function ColorFromSpectrum(sp: table_func) :TColor;
-    function ColorFromYxY(L,x,y: Real): TColor;
-    function ColorFromNormedXYZ(x,y,z: Real): TColor;
-    function Spectrum2XYZ(sp: table_func): CIE1931;
+    class function gamma_func(x: Real): Real;
+    class function gamma(x:Real): Integer;
+    class function ColorFromCCT(T: Real) :TColor;
+    class function ColorFromWL(wl: Real) :TColor;
+    class function ColorFromSpectrum(sp: table_func) :TColor;
+    class function ColorFromYxY(L,x,y: Real): TColor;
+    class function ColorFromNormedXYZ(x,y,z: Real): TColor;
+    class function Spectrum2XYZ(sp: table_func): CIE1931;
 
     procedure AddRGB(X: Real; r:Real; g:Real; b:Real);
     procedure AddMonochr(X:Real; lambda: Real); overload;
@@ -189,13 +188,13 @@ begin
   inherited Destroy;
 end;
 
-function colorimetry_funcs.gamma_func(x: Real):Real;
+class function colorimetry_funcs.gamma_func(x: Real):Real;
 begin
   if x<0.0031308 then gamma_func:=x*12.92
   else gamma_func:=(1+0.055)*power(x,1/2.4)-0.055;
 end;
 
-function colorimetry_funcs.gamma(x: Real): Integer;
+class function colorimetry_funcs.gamma(x: Real): Integer;
 begin
   if x<0 then gamma:=0
   else if x<0.0031308 then gamma:=Round(x*12.92*255)
@@ -204,7 +203,7 @@ begin
       else gamma:=255;
 end;
 
-function colorimetry_funcs.XYZ2RGB(x:Real;y:Real;z:Real): RGBf;
+class function colorimetry_funcs.XYZ2RGB(x:Real;y:Real;z:Real): RGBf;
 var t:Real;
 begin
   t:=3.063*x-1.393*y-0.476*z;
@@ -225,7 +224,7 @@ begin
   XYZ2RGB_no_limit.B:=0.068*x-0.229*y+1.069*z;
 end;
 
-function colorimetry_funcs.ColorFromCCT(T: Real) :TColor;
+class function colorimetry_funcs.ColorFromCCT(T: Real) :TColor;
 var maxlength,xrel: Real;
   xi,yi,zi: Real;
   sum,val: Real;
@@ -258,7 +257,7 @@ begin
 
 end;
 
-function colorimetry_funcs.ColorFromWL(wl: Real) :TColor;
+class function colorimetry_funcs.ColorFromWL(wl: Real) :TColor;
 var temp: RGBf;
     m: Real;
 begin
@@ -273,7 +272,7 @@ ColorFromWL:=RGB(gamma(temp.R/m),gamma(temp.G/m),gamma(temp.B/m));
 end;
 
 
-function colorimetry_funcs.ColorFromSpectrum(sp: table_func) :TColor;
+class function colorimetry_funcs.ColorFromSpectrum(sp: table_func) :TColor;
 var temp: table_func;
     x,y,z,m: Real;
     t_rgb: rgbf;
@@ -441,7 +440,7 @@ begin
   ColorOfRGBSum:=RGB(ri,gi,bi);
 end;
 
-function colorimetry_funcs.ColorFromYxy(L,x,y: Real): TColor;
+class function colorimetry_funcs.ColorFromYxy(L,x,y: Real): TColor;
 var t_rgb: rgbf;
     m: Real;
 begin
@@ -451,7 +450,7 @@ begin
 
 end;
 
-function colorimetry_funcs.ColorFromNormedXYZ(X,Y,Z: Real): TColor;
+class function colorimetry_funcs.ColorFromNormedXYZ(X,Y,Z: Real): TColor;
 //y=1 должно преобр в 255
 var t_rgb: rgbf;
 begin
@@ -459,7 +458,7 @@ begin
   ColorFromNormedXYZ:=RGB(gamma(t_rgb.R),gamma(t_rgb.G),gamma(t_rgb.B));
 end;
 
-function colorimetry_funcs.Spectrum2XYZ(sp: table_func): CIE1931;
+class function colorimetry_funcs.Spectrum2XYZ(sp: table_func): CIE1931;
 var temp: table_func;
 begin
 //из заданного спектра получаем цвет

@@ -247,7 +247,6 @@ begin
 end;
 
 constructor TStreamingClass.Clone(source: TStreamingClass;owner: TComponent=nil);
-var s: string;
 begin
   Create(Owner);
   self.Assign(source);
