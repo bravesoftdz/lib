@@ -1,4 +1,4 @@
-package CautiousEditPack;
+package CautiousEditPackReg;
 
 {$R *.res}
 {$ALIGN 8}
@@ -22,13 +22,20 @@ package CautiousEditPack;
 {$WRITEABLECONST OFF}
 {$MINENUMSIZE 1}
 {$IMAGEBASE $400000}
+{$DESCRIPTION 'Persistent StringGrid allows to edit its contents at design-time and save/load them to file'}
+{$DESIGNONLY}
 {$IMPLICITBUILD OFF}
 
 requires
   rtl,
-  vcl;
+  vcl,
+  designide,
+  vclactnband,
+  vclx,
+  CautiousEditPack;
 
 contains
-  Cautious_Edit in 'Cautious_Edit.pas';
+  PersistentStringGridReg in 'PersistentStringGridReg.pas',
+  PersistentStringGridEditor in 'PersistentStringGridEditor.pas' {PersistentStringGridEditorForm};
 
 end.

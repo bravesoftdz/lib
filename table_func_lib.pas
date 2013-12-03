@@ -272,7 +272,6 @@ begin
     p.AssignString(Reader.readstring);
     p.getChar;
     X[i]:=p.getFloat;
-    p.getChar;
     Y[i]:=p.getFloat;
     inc(i);
   end;

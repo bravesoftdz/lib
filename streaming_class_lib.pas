@@ -37,6 +37,7 @@ var c: Char;
     i: Integer;
     inside_string: Integer;
     apostr: Char;
+    getback: string;
 begin
   apostr:='''';
   input.Seek(0,soFromBeginning);
@@ -66,7 +67,29 @@ begin
         i:=i*10+Ord(c)-Ord('0');
         input.Read(c,1);
       end;
+      input.Seek(-1,soFromCurrent);
       //теперь эту хренотень надо сконвертнуть в кириллицу
+
+      if i<255 then begin
+        if inside_string=1 then begin
+          inside_string:=0;
+          output.Write(apostr,1); //все-таки вышли наружу
+          //вернули апосторф, случайно стыренный ранее
+        end;
+        getback:='#'+IntToStr(i);
+        output.Write(getback[1],Length(getback));
+      end
+      else begin
+        c:=CHR(Byte(i+Ord('А')-1040));
+        if inside_string=0 then begin
+          inside_string:=1;
+          output.Write(apostr,1);
+        end;
+        output.Write(c,1);
+      end;
+
+      (*
+
       if i<255 then c:=CHR(i)
       else c:=CHR(Byte(i+Ord('А')-1040));
       if inside_string=0 then begin
@@ -75,6 +98,7 @@ begin
       end;
       output.Write(c,1);
       input.Seek(-1,soFromCurrent);
+*)
     end;
 
   end;

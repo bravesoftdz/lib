@@ -17,6 +17,7 @@ type
       procedure Set_Length(new_T: Integer);
       procedure old_inversion;
       procedure inversion;
+      procedure not_so_old_inversion;
       property Re[i: integer]: Real read Re_value write set_Re;
       property Im[i: integer]: Real read Im_value write set_Im;
       property N: Integer read _N;
@@ -255,6 +256,45 @@ begin
 end;
 
 procedure ComplexTernary1D.inversion;
+var i,k,j,ma,ik,ipos,jpos,lim: Integer;
+    tmp: Real;
+begin
+  i:=0;
+  ma:=_N-2;
+  ik:=_T div 3;
+  for j:=1 to ma do begin
+    k:=ik;
+    i:=i+k;
+    lim:=_N;
+    while i>_N do begin
+      i:=i-3*k;
+      lim:=lim-2*k;
+      k:=k div 3;
+      i:=i+k;
+    end;
+    if (j<i) or (i<0) then begin
+      ipos:=base+i;
+      jpos:=base+j;
+      tmp:=Re_data[ipos];
+      Re_data[ipos]:=Re_data[jpos];
+      Re_data[jpos]:=tmp;
+      tmp:=Im_data[ipos];
+      Im_data[ipos]:=Im_data[jpos];
+      Im_data[jpos]:=tmp;
+      ipos:=base-i;
+      jpos:=base-j;
+      tmp:=Re_data[ipos];
+      Re_data[ipos]:=Re_data[jpos];
+      Re_data[jpos]:=tmp;
+      tmp:=Im_data[ipos];
+      Im_data[ipos]:=Im_data[jpos];
+      Im_data[jpos]:=tmp;
+    end;
+  end;
+
+end;
+
+procedure ComplexTernary1D.not_so_old_inversion;
 var i,j,aT,aN,bT,bN,mi,ma,ipos,jpos: Integer;
     tmp: Real;
 begin
