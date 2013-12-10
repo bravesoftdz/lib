@@ -166,6 +166,7 @@ type
       function Changed: Boolean;
       procedure DispatchCommand(command: TAbstractCommand);
       procedure Save;
+      procedure Change; virtual;
     published
       UndoList: TCommandList;
 //      property UndoList: TCommandList read GetUndoList write FUndoList stored false;
@@ -739,10 +740,11 @@ end;
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
 begin
   self.InsertComponent(command);
+  command.Name:='command'+IntToStr(undolist.fcount+1);
   if command.Execute then begin
     self.RemoveComponent(command);
     UndoList.Add(command);
-    if Assigned(onDocumentChange) then onDocumentChange(self);
+    Change;
     new_commands_added:=true;
   end
   else command.Free;
@@ -760,7 +762,7 @@ procedure TAbstractDocument.Undo;
 begin
   if UndoList.UndoEnabled then begin
     UndoList.Undo;
-    if Assigned(onDocumentChange) then onDocumentChange(self);
+    Change;
   end;
 end;
 
@@ -768,8 +770,13 @@ procedure TAbstractDocument.Redo;
 begin
   if UndoList.RedoEnabled then begin
     UndoList.Redo;
-    if Assigned(onDocumentChange) then onDocumentChange(self);
+    Change;
   end;
+end;
+
+procedure TAbstractDocument.Change;
+begin
+  if Assigned(onDocumentChange) then onDocumentChange(self);
 end;
 
 initialization
