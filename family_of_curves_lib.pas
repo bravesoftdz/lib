@@ -92,7 +92,7 @@ end;
 
 
 function TFamilyofCurves.Interpolate(t1,t2: TFamilyMember;x,param: Real): Real;
-var r,fl,fr,xl,xr,f0: Real;
+var r,xl,xr,f0: Real;
   rx,ry,rz: Real;
   ny,k,distl,distr: Real;
   i: Integer;

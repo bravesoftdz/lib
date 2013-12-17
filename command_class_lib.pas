@@ -5,27 +5,32 @@ uses streaming_class_lib,classes,TypInfo;
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
-      fNext,fPrev,fFork: TAbstractCommand;
+      fNext,fPrev,fBranch: TAbstractCommand;
       fActiveBranch: Boolean;
+      fTurnLeft: Boolean;
     protected
       instance: TPersistent;
       fPropInfo: PPropInfo;
       procedure _getPropInfo(propPath: string);
-//      function FindOwner: TComponent;
     public
       constructor Create(owner: TComponent); override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
       function caption: string; virtual; abstract;
+      function NameToDateTime: TDateTime;
     published
       property Next: TAbstractCommand read fNext write fNext;
       property Prev: TAbstractCommand read fPrev write fPrev;
-      property Fork: TAbstractCommand read fFork write fFork;
-      property ActiveBranch: Boolean read fActiveBranch write fActiveBranch;
+      property Branch: TAbstractCommand read fBranch write fBranch;
+      property ActiveBranch: Boolean read fActiveBranch write fActiveBranch default false;
+      property TurnLeft: Boolean read fTurnLeft write fTurnLeft stored fActiveBranch;
     end;
 
-  TForkCommand=class(TAbstractCommand)
-
+  TBranchCommand=class(TAbstractCommand)
+    public
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function caption: string; override;
     end;
 
   TChangeFloatProperty=class(TAbstractCommand)
@@ -206,7 +211,7 @@ type
 
 implementation
 
-uses SysUtils;
+uses SysUtils,StrUtils;
 
 (*
         TAbstractCommand
@@ -220,9 +225,19 @@ begin
   //закодируем в него время и дату создания компоненты
   t:=DateTimeToTimeStamp(Now);
   Name:='c'+IntToHex(t.Date,8)+IntToHex(t.Time,8);
+  Next:=nil;
+  Prev:=nil;
+  Branch:=nil;
+  ActiveBranch:=false;
 end;
 
-
+function TAbstractCommand.NameToDateTime: TDateTime;
+var t: TTimeStamp;
+begin
+  t.Date:=StrToInt('0x'+midstr(Name,2,8));
+  t.Time:=StrToInt('0x'+MidStr(Name,10,8));
+  Result:=TimeStampToDateTime(t);
+end;
 
 procedure TAbstractCommand._getPropInfo(propPath: string);
 var i,j,L: Integer;
@@ -249,6 +264,28 @@ begin
       Inc(I);
     end;
     fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+end;
+
+(*
+            TBranchCommand
+                                          *)
+function TBranchCommand.Execute: Boolean;
+begin
+  //эта команда-лишь заглушка, чтобы можно было делать сколько угодно ветвлений
+  //и чтобы дерево сразу же имело корень
+  Result:=true;
+  //иначе команда не выполнится и не будет добавлена в список
+end;
+
+function TBranchCommand.Undo: Boolean;
+begin
+  Result:=true;
+  //сегодня я добрый
+end;
+
+function TBranchCommand.caption: string;
+begin
+  Result:='Ветвь создана '+DateTimeToStr(NameToDateTime);
 end;
 
 (*
@@ -826,43 +863,123 @@ end;
 procedure TCommandTree.AfterConstruction;
 begin
   if fRoot=nil then begin
-    fRoot:=TForkCommand.Create(self);
+    fRoot:=TBranchCommand.Create(self);
     fCurrent:=fRoot;
+    fRoot.ActiveBranch:=true;
   end;
 end;
 
 procedure TCommandTree.Add(command: TAbstractCommand);
+var iterator: TAbstractCommand;
 begin
+  insertComponent(command);
+  if (current.Next<>nil) and (not current.Next.IsEqual(command)) then begin
+    //придется отпочковать целую ветвь
+    //убедимся, что прокрутили все уже отпочкованные ветви
+    //чаще всего этот цикл не будет выполняться ни разу
+    while (current.Branch<>nil) do begin
+      current.ActiveBranch:=true;
+      current.TurnLeft:=true;
+      //для начала старую ветвь сделаем неактивной
+      iterator:=current.Next;
+      if iterator.ActiveBranch then begin
+        repeat
+          iterator.ActiveBranch:=false;
+          if iterator.TurnLeft then
+            iterator:=iterator.Branch
+          else
+            iterator:=iterator.Next;
+        until iterator=nil;
+      end;
+      current:=current.Branch;
+    end;
+    //создаем новую ветвь
+    current.Branch:=TBranchCommand.Create(self);
+    current.Branch.Prev:=current;
+    //делаем ее текущей
+    current:=current.Branch;
+    current.ActiveBranch:=true;
+    current.TurnLeft:=false;
 
+  end;
+  //теперь заведомо концевой узел, просто добавляем новый элемент
+  current.Next:=command;
+  command.ActiveBranch:=true;
+  command.TurnLeft:=false;
+  command.Prev:=current;
+  current:=command;
 end;
 
 procedure TCommandTree.Undo;
 begin
-
+  //проверка UndoEnabled гарантирует, что вызов undo будет произведен
+  //когда его можно сделать
+  if current.Undo then begin
+    current.ActiveBranch:=false;
+    current:=current.Prev;
+    while (current is TBranchCommand) do
+      current:=current.Prev;
+  end
+  else Raise Exception.Create('Undo command failed');
 end;
 
 procedure TCommandTree.Redo;
 begin
-
+  //проверка RedoEnabled гарантирует, что вызов undo будет произведен
+  //когда его можно сделать
+  if current.Execute then begin
+    while current.TurnLeft do current:=current.Branch;
+    current:=current.Next;
+  end
+  else Raise Exception.Create('Redo command failed');
 end;
 
 procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
+var b: TAbstractCommand;
 begin
-
+  //самая веселая команда
+  //нужно перейти на произвольное состояние
+  //первым делом, надо проторить путь от command до активного пути
+  b:=command;
+  while not b.ActiveBranch do begin
+    b.ActiveBranch:=true;
+    b.Prev.TurnLeft:=(b.Prev.Branch=b)
+    b:=b.Prev;
+  end;
+  //теперь b - это точка ветвления
+  //если command стояла выше по активной ветви, чем current, то b=current
+  //пойдем от текущего положения до b, по пути отменяя все операции
+  while current<>b do begin
+    if not current.Undo then Raise Exception.Create('Undo command failed');
+    current.ActiveBranch:=false;
+    current:=current.Prev;
+    while (current is TBranchCommand) and (current<>b) do
+      current:=current.Prev;
+  end;
+  //все, сомкнулись. Теперь дотопаем от b до command
+  while b<>command do begin
+    if not current.Execute then Exception.Create('Redo command failed');
+    while current.TurnLeft do current:=current.Branch;
+    current:=current.Next;
 end;
 
 function TCommandTree.UndoEnabled: Boolean;
 begin
-
+  Result:=(current.Prev<>nil);
+  //мы даже способны вообразить, что будет несколько корней
+  //не знаю, так ли это нужно, пускай будет
+  //обычно, undo нельзя сделать тогда лишь, когда мы в корне
 end;
 
 function TCommandTree.RedoEnabled: Boolean;
 begin
-
+  Result:=(current.Next<>nil);
+  //По правилам построения наших деревьев, если Next=nil,
+  //то Branch - и тем более.
 end;
 
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty]);
+RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand]);
 
 end.
