@@ -24,7 +24,7 @@ TstreamingClass=class(TComponent)
     function CreateFromString(text: string): TComponent;
 
     procedure Assign(source: TPersistent); override;
-    function IsEqual(what: TStreamingClass): boolean;
+    function IsEqual(what: TStreamingClass): boolean; virtual;
 
     function FindOwner: TComponent;
 

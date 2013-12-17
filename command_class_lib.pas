@@ -4,15 +4,27 @@ interface
 uses streaming_class_lib,classes,TypInfo;
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
+    private
+      fNext,fPrev,fFork: TAbstractCommand;
+      fActiveBranch: Boolean;
     protected
       instance: TPersistent;
       fPropInfo: PPropInfo;
       procedure _getPropInfo(propPath: string);
 //      function FindOwner: TComponent;
     public
+      constructor Create(owner: TComponent); override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
       function caption: string; virtual; abstract;
+    published
+      property Next: TAbstractCommand read fNext write fNext;
+      property Prev: TAbstractCommand read fPrev write fPrev;
+      property Fork: TAbstractCommand read fFork write fFork;
+      property ActiveBranch: Boolean read fActiveBranch write fActiveBranch;
+    end;
+
+  TForkCommand=class(TAbstractCommand)
 
     end;
 
@@ -144,6 +156,26 @@ type
       property current: Integer read fcurrent;
     end;
 
+  TCommandTree=class(TStreamingClass) //дерево для undo/redo с многими ветвями
+    private
+      fRoot: TAbstractCommand;
+      fCurrent: TAbstractCommand;
+    protected
+
+    public
+      constructor Create(owner: TComponent); override;
+      procedure AfterConstruction; override;
+      procedure Add(command: TAbstractCommand);
+      procedure Undo;
+      procedure Redo;
+      procedure JumpToBranch(command: TAbstractCommand);
+      function UndoEnabled: Boolean;
+      function RedoEnabled: Boolean;
+    published
+      property Root: TAbstractCommand read fRoot write fRoot;
+      property Current: TAbstractCommand read fCurrent write fCurrent;
+    end;
+
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
       initial_pos: Integer;
@@ -179,17 +211,19 @@ uses SysUtils;
 (*
         TAbstractCommand
                                   *)
-(*
-function TAbstractCommand.FindOwner: TComponent;
-var tmp: TComponent;
+
+constructor TAbstractCommand.Create(owner: TComponent);
+var t: TTimeStamp;
 begin
-  tmp:=self;
-  repeat
-    Result:=tmp;
-    tmp:=tmp.Owner;
-  until tmp=nil;
+  inherited Create(owner);
+  //у любой уважающей себя команды должно быть имя
+  //закодируем в него время и дату создания компоненты
+  t:=DateTimeToTimeStamp(Now);
+  Name:='c'+IntToHex(t.Date,8)+IntToHex(t.Time,8);
 end;
-*)
+
+
+
 procedure TAbstractCommand._getPropInfo(propPath: string);
 var i,j,L: Integer;
   PropValue: TObject;
@@ -740,7 +774,7 @@ end;
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
 begin
   self.InsertComponent(command);
-  command.Name:='command'+IntToStr(undolist.fcount+1);
+//  command.Name:='command'+IntToStr(undolist.fcount+1);
   if command.Execute then begin
     self.RemoveComponent(command);
     UndoList.Add(command);
@@ -778,6 +812,55 @@ procedure TAbstractDocument.Change;
 begin
   if Assigned(onDocumentChange) then onDocumentChange(self);
 end;
+
+(*
+      TCommandTree
+                      *)
+constructor TCommandTree.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  fRoot:=nil;
+  fCurrent:=nil;
+end;
+
+procedure TCommandTree.AfterConstruction;
+begin
+  if fRoot=nil then begin
+    fRoot:=TForkCommand.Create(self);
+    fCurrent:=fRoot;
+  end;
+end;
+
+procedure TCommandTree.Add(command: TAbstractCommand);
+begin
+
+end;
+
+procedure TCommandTree.Undo;
+begin
+
+end;
+
+procedure TCommandTree.Redo;
+begin
+
+end;
+
+procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
+begin
+
+end;
+
+function TCommandTree.UndoEnabled: Boolean;
+begin
+
+end;
+
+function TCommandTree.RedoEnabled: Boolean;
+begin
+
+end;
+
 
 initialization
 RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty]);
