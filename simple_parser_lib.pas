@@ -116,7 +116,7 @@ var ch: char;
 begin
   separator:=DecimalSeparator;
   skip_spaces;
-  while _pos<=Length(_str) do begin
+  while (_pos<=Length(_str)) and not isDelimiter(_str[_pos]) do begin
     ch:=_str[_pos];
     if ((ch>'9') or (ch<'0')) and (ch<>'+') and (ch<>'-') and (ch<>'E') and (ch<>'e') and (ch<>'.') and (ch<>',') and (not isSpace(ch)) then break;
     if (ch=',') or (ch='.') then ch:=separator;

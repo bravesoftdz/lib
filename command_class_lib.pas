@@ -23,7 +23,7 @@ type
       property Prev: TAbstractCommand read fPrev write fPrev;
       property Branch: TAbstractCommand read fBranch write fBranch;
       property ActiveBranch: Boolean read fActiveBranch write fActiveBranch default false;
-      property TurnLeft: Boolean read fTurnLeft write fTurnLeft stored fActiveBranch;
+      property TurnLeft: Boolean read fTurnLeft write fTurnLeft stored fActiveBranch default false;
     end;
 
   TBranchCommand=class(TAbstractCommand)
@@ -169,7 +169,6 @@ type
 
     public
       constructor Create(owner: TComponent); override;
-      procedure AfterConstruction; override;
       procedure Add(command: TAbstractCommand);
       procedure Undo;
       procedure Redo;
@@ -183,7 +182,7 @@ type
 
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
-      initial_pos: Integer;
+      initial_pos: TAbstractCommand;
       new_commands_added: Boolean;
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
@@ -205,7 +204,8 @@ type
       procedure Save;
       procedure Change; virtual;
     published
-      UndoList: TCommandList;
+//      UndoList: TCommandList;
+        UndoTree: TCommandTree;
 //      property UndoList: TCommandList read GetUndoList write FUndoList stored false;
     end;
 
@@ -759,11 +759,12 @@ end;
 constructor TAbstractDocument.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  UndoList:=nil;
+//  UndoList:=nil;
+  UndoTree:=nil;
   FileName:='';
   onDocumentChange:=nil;
   SaveWithUndo:=true;
-  initial_pos:=0;
+  initial_pos:=nil;
   new_commands_added:=false;
 end;
 
@@ -772,20 +773,25 @@ begin
   inherited LoadFromFile(aFileName);
   FileName:=aFileName;
   new_commands_added:=false;
-  if Assigned(UndoList) then initial_pos:=UndoList.current;
+  if Assigned(UndoTree) then initial_pos:=UndoTree.current;
 end;
 
 procedure TAbstractDocument.afterConstruction;
 begin
-  if UndoList=nil then begin
-    UndoList:=TCommandList.Create(self);
-    UndoList.Name:='UndoList';
+  if UndoTree=nil then begin
+    UndoTree:=TCommandTree.Create(self);
+    with UndoTree do begin
+      Name:='UndoTree';
+      Root:=TBranchCommand.Create(UndoTree);
+      Current:=Root;
+      Root.ActiveBranch:=true;
+    end;
   end;
 end;
 
 destructor TAbstractDocument.Destroy;
 begin
-  UndoList.Free;
+  UndoTree.Free;
   inherited Destroy;
 end;
 
@@ -794,27 +800,35 @@ var
   i : Integer;
 begin
   for i := 0 to ComponentCount-1 do
-    if not (csSubComponent in Components[i].ComponentStyle) and ((Components[i]<>UndoList) or SaveWithUndo) then
+    if not (csSubComponent in Components[i].ComponentStyle) and ((Components[i]<>UndoTree) or SaveWithUndo) then
       Proc( Components[i] );
 end;
 
 function TAbstractDocument.isEmpty: Boolean;
 begin
-  Result:=(UndoList.count=0);
+  Result:=(UndoTree.Root.Next=nil);
 end;
 
 function TAbstractDocument.Changed: Boolean;
 begin
-  Result:=(UndoList.current<>initial_pos) or new_commands_added;
+  Result:=(UndoTree.current<>initial_pos) or new_commands_added;
 end;
 
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
+//var t: TTimeStamp;
 begin
   self.InsertComponent(command);
-//  command.Name:='command'+IntToStr(undolist.fcount+1);
+(*
+  //у любой уважающей себя команды должно быть имя
+  //закодируем в него время и дату создания компоненты
+  t:=DateTimeToTimeStamp(Now);
+  Name:='c'+IntToHex(t.Date,8)+IntToHex(t.Time,8);
+  //end;
+  //  command.Name:='command'+IntToStr(undolist.fcount+1);
+  *)
   if command.Execute then begin
     self.RemoveComponent(command);
-    UndoList.Add(command);
+    UndoTree.Add(command);
     Change;
     new_commands_added:=true;
   end
@@ -825,22 +839,22 @@ procedure TAbstractDocument.Save;
 begin
   Assert(FileName<>'','WTF: empty filename');
   self.SaveToFile(FileName);
-  initial_pos:=UndoList.current;
+  initial_pos:=UndoTree.current;
   new_commands_added:=false;
 end;
 
 procedure TAbstractDocument.Undo;
 begin
-  if UndoList.UndoEnabled then begin
-    UndoList.Undo;
+  if UndoTree.UndoEnabled then begin
+    UndoTree.Undo;
     Change;
   end;
 end;
 
 procedure TAbstractDocument.Redo;
 begin
-  if UndoList.RedoEnabled then begin
-    UndoList.Redo;
+  if UndoTree.RedoEnabled then begin
+    UndoTree.Redo;
     Change;
   end;
 end;
@@ -858,15 +872,6 @@ begin
   inherited Create(owner);
   fRoot:=nil;
   fCurrent:=nil;
-end;
-
-procedure TCommandTree.AfterConstruction;
-begin
-  if fRoot=nil then begin
-    fRoot:=TBranchCommand.Create(self);
-    fCurrent:=fRoot;
-    fRoot.ActiveBranch:=true;
-  end;
 end;
 
 procedure TCommandTree.Add(command: TAbstractCommand);
@@ -943,7 +948,7 @@ begin
   b:=command;
   while not b.ActiveBranch do begin
     b.ActiveBranch:=true;
-    b.Prev.TurnLeft:=(b.Prev.Branch=b)
+    b.Prev.TurnLeft:=(b.Prev.Branch=b);
     b:=b.Prev;
   end;
   //теперь b - это точка ветвления
@@ -961,14 +966,15 @@ begin
     if not current.Execute then Exception.Create('Redo command failed');
     while current.TurnLeft do current:=current.Branch;
     current:=current.Next;
+  end;
 end;
 
 function TCommandTree.UndoEnabled: Boolean;
+var t: TAbstractCommand;
 begin
-  Result:=(current.Prev<>nil);
-  //мы даже способны вообразить, что будет несколько корней
-  //не знаю, так ли это нужно, пускай будет
-  //обычно, undo нельзя сделать тогда лишь, когда мы в корне
+  t:=root;
+  while (t<>current) or (t.Branch<>nil) do t:=t.Branch;
+  Result:=(t<>current);
 end;
 
 function TCommandTree.RedoEnabled: Boolean;

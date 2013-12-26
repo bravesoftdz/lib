@@ -21,7 +21,7 @@ type
       procedure conjugate;
       procedure normalize;
       procedure Assign(Source:TPersistent);overload; override;
-      procedure Assign(na,nx,ny,nz: Real); overload;
+      procedure Assign(na,nx,ny,nz: Real); reintroduce; overload;
       function toStr: string;
 
       property a: Real read get_A write set_A;
@@ -44,7 +44,7 @@ type
       function get_Z: Real; override;
     public
      Constructor Create(owner: TComponent); overload; override;
-     Constructor Create(owner: TComponent;na,nx,ny,nz: Real); overload;
+     Constructor Create(owner: TComponent;na,nx,ny,nz: Real);reintroduce; overload; 
     end;
 
   TstupidQuat=class(TAbstractQuaternion)
@@ -61,7 +61,7 @@ type
       function get_Z: Real; override;
     public
      Constructor Create(owner: TComponent); overload; override;
-     Constructor Create(owner: TComponent;na,nx,ny,nz: Real); overload;
+     Constructor Create(owner: TComponent;na,nx,ny,nz: Real);reintroduce; overload; 
     end;
 
 implementation
@@ -94,7 +94,7 @@ begin
 end;
 
 procedure TAbstractQuaternion.right_mul(by: TAbstractQuaternion); //умножение справа
-var at,xt,yt,zt: Real; //врем. значения
+var at,xt,yt: Real; //врем. значения
 begin
   at:=a;
   a:=a*by.a-x*by.x-Y*by.y-Z*by.Z;
@@ -106,7 +106,7 @@ begin
 end;
 
 procedure TAbstractQuaternion.left_mul(by: TAbstractQuaternion); //умножение слева
-var at,xt,yt,zt: Real; //врем. значения
+var at,xt,yt: Real; //врем. значения
 begin
   at:=a;
   a:=by.a*a-by.x*x-by.y*Y-by.z*z;
