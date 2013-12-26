@@ -12,15 +12,16 @@ type
       instance: TPersistent;
       fPropInfo: PPropInfo;
       procedure _getPropInfo(propPath: string);
+      procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public
       constructor Create(owner: TComponent); override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
-      function caption: string; virtual; abstract;
+      function caption: string; virtual;
       function NameToDateTime: TDateTime;
     published
-      property Next: TAbstractCommand read fNext write fNext;
       property Prev: TAbstractCommand read fPrev write fPrev;
+      property Next: TAbstractCommand read fNext write fNext;
       property Branch: TAbstractCommand read fBranch write fBranch;
       property ActiveBranch: Boolean read fActiveBranch write fActiveBranch default false;
       property TurnLeft: Boolean read fTurnLeft write fTurnLeft stored fActiveBranch default false;
@@ -216,6 +217,20 @@ uses SysUtils,StrUtils;
 (*
         TAbstractCommand
                                   *)
+procedure TAbstractCommand.ensureCorrectName(proposedName: string; aowner: TComponent);
+var FullName: string;
+    i: Integer;
+begin
+  FullName:=proposedName;
+  if assigned(aowner) then begin
+    i:=0;
+    while aowner.FindComponent(FullName)<>nil do begin
+      FullName:=proposedName+IntToStr(i);
+      inc(i);
+    end;
+  end;
+  Name:=FullName;
+end;
 
 constructor TAbstractCommand.Create(owner: TComponent);
 var t: TTimeStamp;
@@ -224,7 +239,9 @@ begin
   //у любой уважающей себя команды должно быть имя
   //закодируем в него время и дату создания компоненты
   t:=DateTimeToTimeStamp(Now);
-  Name:='c'+IntToHex(t.Date,8)+IntToHex(t.Time,8);
+  //дата и время до мс еще не гарантируют уникальность - много команд может возн.
+  //одновременно
+  ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),owner);
   Next:=nil;
   Prev:=nil;
   Branch:=nil;
@@ -264,6 +281,11 @@ begin
       Inc(I);
     end;
     fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+end;
+
+function TAbstractCommand.caption: string;
+begin
+  result:=self.ClassName;
 end;
 
 (*
@@ -877,25 +899,22 @@ end;
 procedure TCommandTree.Add(command: TAbstractCommand);
 var iterator: TAbstractCommand;
 begin
-  insertComponent(command);
-  if (current.Next<>nil) and (not current.Next.IsEqual(command)) then begin
+  if (current.Next<>nil) then begin
+    if current.Next.IsEqual(command) then begin
+      //но имена-то могут быть разными
+      //ладно, пока хрен с ним
+      self.Redo;
+      Exit;
+    end
+    else begin
     //придется отпочковать целую ветвь
     //убедимся, что прокрутили все уже отпочкованные ветви
     //чаще всего этот цикл не будет выполняться ни разу
+    current.ActiveBranch:=true;
+    current.TurnLeft:=true;
     while (current.Branch<>nil) do begin
       current.ActiveBranch:=true;
       current.TurnLeft:=true;
-      //для начала старую ветвь сделаем неактивной
-      iterator:=current.Next;
-      if iterator.ActiveBranch then begin
-        repeat
-          iterator.ActiveBranch:=false;
-          if iterator.TurnLeft then
-            iterator:=iterator.Branch
-          else
-            iterator:=iterator.Next;
-        until iterator=nil;
-      end;
       current:=current.Branch;
     end;
     //создаем новую ветвь
@@ -905,9 +924,12 @@ begin
     current:=current.Branch;
     current.ActiveBranch:=true;
     current.TurnLeft:=false;
-
+    end;
   end;
   //теперь заведомо концевой узел, просто добавляем новый элемент
+  command.ensureCorrectName(command.Name,self);
+  insertComponent(command);
+
   current.Next:=command;
   command.ActiveBranch:=true;
   command.TurnLeft:=false;
@@ -922,7 +944,7 @@ begin
   if current.Undo then begin
     current.ActiveBranch:=false;
     current:=current.Prev;
-    while (current is TBranchCommand) do
+    while (current is TBranchCommand) and (current.prev<>nil) do
       current:=current.Prev;
   end
   else Raise Exception.Create('Undo command failed');
@@ -932,11 +954,9 @@ procedure TCommandTree.Redo;
 begin
   //проверка RedoEnabled гарантирует, что вызов undo будет произведен
   //когда его можно сделать
-  if current.Execute then begin
-    while current.TurnLeft do current:=current.Branch;
-    current:=current.Next;
-  end
-  else Raise Exception.Create('Redo command failed');
+  while current.TurnLeft do current:=current.Branch;
+  current:=current.Next;
+  if not current.Execute then Raise Exception.Create('Redo command failed');
 end;
 
 procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
@@ -973,7 +993,8 @@ function TCommandTree.UndoEnabled: Boolean;
 var t: TAbstractCommand;
 begin
   t:=root;
-  while (t<>current) or (t.Branch<>nil) do t:=t.Branch;
+  while (t<>current) and (t.Branch<>nil) do
+    t:=t.Branch;
   Result:=(t<>current);
 end;
 
