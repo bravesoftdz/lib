@@ -142,7 +142,7 @@ begin
   doc:=nil;
   ButtonHeight:=40;
   CellPadding:=10;
-  frmHistory:=TFrmHistory.Create(owner);
+  frmHistory:=TFrmHistory.Create(self);
 end;
 
 function TAbstractDocumentActionList.ExecuteAction(Action: TBasicAction): boolean;
@@ -179,6 +179,7 @@ begin
   item:=br;
   CommandsCount:=0;
   wmax:=0;
+  pr:=nil;
   while Assigned(item) do begin
     //и немедленно создаем соотв. кнопочку
     btn:=TBitBtn.Create(frmHistory);
@@ -217,7 +218,6 @@ begin
   for i:=my_row+1 to ColumnsCount-1 do ColLeft[i]:=ColLeft[i-1]+ColWidth[i-1]+CellPadding;
   //возможно, у команд "выше" ширше описание
   //пора расположить кнопки так, как надо
-  item:=br;
   for i:=0 to CommandsCount-1 do begin
     buttons[i].Left:=ColLeft[my_row];
     buttons[i].Top:=(level+i)*ButtonHeight;

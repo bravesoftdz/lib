@@ -1125,8 +1125,10 @@ begin
   //все, сомкнулись. Теперь дотопаем от b до command
   while current<>command do begin
     while current.TurnLeft do current:=current.Branch;
-    current:=current.Next;
-    if not current.Execute then Exception.Create('Redo command failed');
+    if current<>command then begin
+      current:=current.Next;
+      if not current.Execute then Exception.Create('Redo command failed');
+    end;
   end;
 end;
 

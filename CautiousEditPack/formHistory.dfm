@@ -1,6 +1,6 @@
 object frmHistory: TfrmHistory
-  Left = 480
-  Top = 243
+  Left = 404
+  Top = 326
   Width = 272
   Height = 106
   HorzScrollBar.Smooth = True
