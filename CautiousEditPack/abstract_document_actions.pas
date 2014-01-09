@@ -283,6 +283,7 @@ begin
       btn:=TBitBtn(frmHistory.Components[i]);
       item:=TAbstractCommand(btn.Tag);
       if item.ActiveBranch then begin
+//        if not (item is TInfoCommand) then btn.Font.Style:=[fsBold];
         btn.Font.Style:=[fsBold];
         btn.Font.Color:=clBlack;
       end
@@ -447,6 +448,7 @@ begin
   doc:=Target as TAbstractDocument;
   if fSaveDialog.Execute then begin
     doc.FileName:=fSaveDialog.filename;
+    doc.DispatchCommand(TSavedAsInfoCommand.Create(doc.FileName));
     doc.Save;
   end;
 end;
@@ -489,8 +491,8 @@ begin
   doc:=Target as TAbstractDocument;
   if doc.FileName='' then inherited ExecuteTarget(Target)
   else begin
+    doc.DispatchCommand(TSavedInfoCommand.Create);
     doc.Save;
-    
   end;
 end;
 
@@ -617,7 +619,7 @@ begin
     iterator:=UndoTree.Current;
     i:=0;
     while Assigned(iterator.Prev) and (i<MaxCount) do begin
-      if not (iterator is TBranchCommand) then begin
+      if not (iterator is TInfoCommand) then begin
         item:=TMenuItem.Create(nil);
         item.Caption:=iterator.caption;
         item.Tag:=Integer(iterator.prev);
@@ -670,14 +672,16 @@ begin
     iterator:=iterator.Next;
     i:=0;
     while Assigned(iterator) and (i<MaxCount) do begin
-      item:=TMenuItem.Create(nil);
-      item.Caption:=iterator.caption;
-      item.Tag:=Integer(iterator);
-      item.OnClick:=ProcessPopupMenu;
-      item.ImageIndex:=iterator.ImageIndex;
+      if not (iterator is TInfoCommand) then begin
+        item:=TMenuItem.Create(nil);
+        item.Caption:=iterator.caption;
+        item.Tag:=Integer(iterator);
+        item.OnClick:=ProcessPopupMenu;
+        item.ImageIndex:=iterator.ImageIndex;
 
-      Items.Insert(i,item);
-      inc(i);
+        Items.Insert(i,item);
+        inc(i);
+      end;
       while iterator.TurnLeft do iterator:=iterator.Branch;
       iterator:=iterator.Next;
     end;

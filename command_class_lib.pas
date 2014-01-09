@@ -1031,12 +1031,13 @@ end;
 procedure TCommandTree.Add(command: TAbstractCommand);
 var iterator: TAbstractCommand;
 begin
+  while (current.Next<>nil) and (current.Next is TInfoCommand) do current:=current.Next;
   if (current.Next<>nil) then begin
     if current.Next.IsEqual(command) then begin
       //но имена-то могут быть разными
       //ладно, пока хрен с ним
       //может, введем функцию EqualByAnyOtherName
-      self.Redo;
+      Redo;
       Exit;
     end
     else begin
@@ -1077,7 +1078,7 @@ begin
   if current.Undo then begin
     current.ActiveBranch:=false;
     current:=current.Prev;
-    while (current is TBranchCommand) and (current.prev<>nil) do begin
+    while (current is TInfoCommand) and (current.prev<>nil) do begin
       current.ActiveBranch:=false;
       current:=current.Prev;
     end;
@@ -1093,8 +1094,10 @@ begin
     current:=current.Branch;
     current.ActiveBranch:=true;
   end;
-  current:=current.Next;
-  current.ActiveBranch:=true;
+  repeat
+    current:=current.Next;
+    current.ActiveBranch:=true;
+  until (not (current is TInfoCommand));
   if not current.Execute then Raise Exception.Create('Redo command failed');
 end;
 
@@ -1117,14 +1120,14 @@ begin
     if not current.Undo then Raise Exception.Create('Undo command failed');
     current.ActiveBranch:=false;
     current:=current.Prev;
-    while (current is TBranchCommand) and (current<>b) do begin
+    while (current is TInfoCommand) and (current<>b) do begin
       current.ActiveBranch:=false;
       current:=current.Prev;
     end;
   end;
   //все, сомкнулись. Теперь дотопаем от b до command
   while current<>command do begin
-    while current.TurnLeft do current:=current.Branch;
+    while current.TurnLeft and (current<>command) do current:=current.Branch;
     if current<>command then begin
       current:=current.Next;
       if not current.Execute then Exception.Create('Redo command failed');
@@ -1135,21 +1138,21 @@ end;
 function TCommandTree.UndoEnabled: Boolean;
 var t: TAbstractCommand;
 begin
-  t:=root;
-  while (t<>current) and (t.Branch<>nil) do
-    t:=t.Branch;
-  Result:=(t<>current);
+  t:=current;
+  while (t is TInfoCommand) and (t.Prev<>nil) do t:=t.Prev;
+  Result:=(t.Prev<>nil);
 end;
 
 function TCommandTree.RedoEnabled: Boolean;
+var t: TAbstractCommand;
 begin
-  Result:=(current.Next<>nil);
-  //По правилам построения наших деревьев, если Next=nil,
-  //то Branch - и тем более.
+  t:=current;
+  while (t.Next<>nil) and (t.Next is TInfoCommand) do t:=t.Next;
+  Result:=(t.Next<>nil);
 end;
 
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand]);
+RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand,TSavedInfoCommand]);
 
 end.
