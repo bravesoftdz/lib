@@ -63,6 +63,7 @@ public
   procedure Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean); override;
   procedure Cast(var Dest: TVarData; const Source: TVarData); override;
   procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
+  procedure UnaryOp(var Right: TVarData; const Operator: Integer); override;
   procedure BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp); override;
 end;
 
@@ -73,7 +74,8 @@ function VarVectorCreate(str: string): Variant; overload;
 function VarVectorCreate(vector: TVector): Variant; overload;
 
 function LineDistance(p1,p2: Variant): Real;
-
+function VectorMul(p1,p2: Variant): Variant;
+function VectorLength(p: Variant): Real;
 
 implementation
 
@@ -362,6 +364,14 @@ begin
   Result:=True;
 end;
 
+procedure TVectorVariantType.UnaryOp(var Right: TVarData; const Operator: Integer);
+begin
+  if (Right.VType=VarType) and (Operator=opNegate) then
+    TVectorVarData(Right).VVector.Mul(-1)
+  else
+    RaiseInvalidOp;
+end;
+
 procedure TVectorVariantType.BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp);
 var LTemp: TVarData;
 begin
@@ -375,7 +385,7 @@ begin
           RaiseInvalidOp;
         end;
 
-        varInteger, varSingle,varDouble,varCurrency,varShortInt,varByte,varWord,varLongWord:
+      varInteger, varSingle,varDouble,varCurrency,varShortInt,varByte,varWord,varLongWord:
         case Operator of
           opMultiply:
           begin
@@ -391,20 +401,22 @@ begin
           end;
         else RaiseInvalidOp;
         end;
-      else
-      if Left.VType = VarType then
-        case Operator of
-          opAdd:
-            TVectorVarData(Left).VVector.Add(TVectorVarData(Right).VVector);
-          opSubtract:
-            TVectorVarData(Left).VVector.Sub(TVectorVarData(Right).VVector);
-          opMultiply:
-            RaiseInvalidop;
         else
-          RaiseInvalidOp;
-        end
-      else
-        RaiseInvalidOp;
+          if Left.VType = VarType then
+            case Operator of
+              opAdd:
+                TVectorVarData(Left).VVector.Add(TVectorVarData(Right).VVector);
+              opSubtract:
+                TVectorVarData(Left).VVector.Sub(TVectorVarData(Right).VVector);
+              opMultiply:
+              //скал€р. умножение
+                Variant(Left):=TVector.scalar_product(TVectorVarData(Left).VVector,TVectorVarData(Right).VVector);
+//                RaiseInvalidop;
+            else
+              RaiseInvalidOp;
+            end
+          else
+            RaiseInvalidOp;
     end
   else
     if Operator=opMultiply then begin
@@ -428,6 +440,10 @@ begin
     TVectorVarData(V).VVector.rotateY(Variant(Arguments[0]))
   else if (Name='ROTATEBYZ') and (Length(Arguments)=1) then
     TVectorVarData(V).VVector.rotateZ(Variant(Arguments[0]))
+  else if (Name='VECTORMUL') and (Length(Arguments)=1) and (Arguments[0].VType=VarType) then
+    TVectorVarData(V).VVector.Vector_multiply(TVectorVarData(Arguments[0]).vvector)
+  else if (Name='NORMALIZE') and (Length(Arguments)=0) then
+    TVectorVarData(V).VVector.normalize
   else Result:=False;
 end;
 
@@ -470,6 +486,19 @@ begin
   else Raise Exception.Create('LineDistance: wrong variant type, should be vector');
 end;
 
+function VectorMul(p1,p2: Variant): Variant;
+var v: TVector;
+begin
+  v:=TVector.Create(nil);
+  v.Assign(TVectorVarData(p1).VVector);
+  v.Vector_multiply(TVectorVarData(p2).VVector);
+  VarVectorCreateInto(Result,v);
+end;
+
+function VectorLength(p: Variant): Real;
+begin
+  Result:=TVectorVarData(p).VVector.Length;
+end;
 
 initialization
   RegisterClass(TVector);

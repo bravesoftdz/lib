@@ -207,6 +207,7 @@ type
     procedure normalize();
     function addpoint(Xn:Real;Yn:Real): Boolean;
     function deletepoint(Xn:Real): Boolean;
+    function FindPoint(val: Real;var pX,pY: Real): Boolean;
     property enabled: Boolean read isen;
     constructor Create(owner: TComponent); overload; override;
     constructor Create; reintroduce; overload;
@@ -238,7 +239,7 @@ type
     property Description: Tstrings read _description write SetDescription;
     property order: Integer read iorder write update_order default 3;
     property zero_out_of_bounds: boolean read _oub write _oub default true; //поведение за границами обл. опред
-    property Cyclic: boolean read fCyclic write fCyclic;
+    property Cyclic: boolean read fCyclic write fCyclic default false;
     property count: Integer read _length stored false;
     property Tolerance: Real read fTolerance write fTolerance;
 //    property LineColor: TColor read fLineColor write fLineColor default clBlack;
@@ -497,9 +498,9 @@ begin
   while (i>=0) and (Xn<X[i]) do dec(i);
   //i будет указывать на максимальный элемент, меньший Xn
   //проверим, а вдруг совпадает
-  if (i>=0) and (Xn=X[i]) then begin
+  if (i>=0) and (abs(Xn-X[i])<Tolerance) then begin
     dec(_length);
-    if Yn=Y[i] then begin
+    if abs(Yn-Y[i])<Tolerance then begin
       result:=false; //ничего не изменилось
       exit;
     end
@@ -523,6 +524,27 @@ begin
   Y[i]:=Yn;
   changed:=true;
   result:=true;
+end;
+
+function table_func.FindPoint(val: Real;var pX,pY: Real): boolean; //существует ли уже такая точка?
+var i,l: Integer;
+begin
+  if not enabled then begin
+    result:=false;
+    exit;
+  end;
+  l:=count-1;
+  i:=l;
+  while (abs(val-X[i])>Tolerance) do begin
+    dec(i);
+    if i=-1 then begin
+      result:=false;
+      exit;
+    end;
+  end;
+  pX:=X[i];
+  pY:=Y[i];
+  Result:=true;
 end;
 
 function table_func.deletepoint(Xn: Real): boolean;

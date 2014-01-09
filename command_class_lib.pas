@@ -9,29 +9,54 @@ type
       fActiveBranch: Boolean;
       fTurnLeft: Boolean;
     protected
+      fImageIndex: Integer;
       instance: TPersistent;
       fPropInfo: PPropInfo;
       procedure _getPropInfo(propPath: string);
       procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public
-      constructor Create(owner: TComponent); override;
+      constructor Create(Aowner: TComponent); override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
       function caption: string; virtual;
       function NameToDateTime: TDateTime;
+      function NameToDate(aName: TComponentName): Integer;
+      property ImageIndex: Integer read fImageIndex;
     published
       property Prev: TAbstractCommand read fPrev write fPrev;
       property Next: TAbstractCommand read fNext write fNext;
       property Branch: TAbstractCommand read fBranch write fBranch;
       property ActiveBranch: Boolean read fActiveBranch write fActiveBranch default false;
-      property TurnLeft: Boolean read fTurnLeft write fTurnLeft stored fActiveBranch default false;
+      property TurnLeft: Boolean read fTurnLeft write fTurnLeft default false;
     end;
 
-  TBranchCommand=class(TAbstractCommand)
+  TInfoCommand=class(TAbstractCommand)
     public
+      constructor Create(AOwner: TComponent); override;
       function Execute: Boolean; override;
       function Undo: Boolean; override;
+      function SmartDateTimeToStr: string;
+    end;
+
+  TBranchCommand=class(TInfoCommand)
+    public
       function caption: string; override;
+    end;
+
+  TSavedInfoCommand=class(TInfoCommand)
+    public
+      constructor Create; reintroduce; overload;
+      function caption: string; override;
+    end;
+
+  TSavedAsInfoCommand=class(TInfoCommand)
+    private
+      fFileName: string;
+    public
+      constructor Create(aFileName: string); reintroduce; overload;
+      function caption: string; override;
+    published
+      property FileName: string read fFileName write fFileName;
     end;
 
   TChangeFloatProperty=class(TAbstractCommand)
@@ -47,6 +72,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string; value: Real);reintroduce; overload;
 
       function Execute: Boolean; override;
@@ -71,6 +97,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string; value: Integer; aCaption: string=''); reintroduce; overload;
 
       function Execute: Boolean; override;
@@ -90,6 +117,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string;value: Boolean); reintroduce; overload;
 
       function Execute: Boolean; override;
@@ -109,6 +137,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string; value: string); reintroduce; overload;
 
       function Execute: Boolean; override;
@@ -127,6 +156,7 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string; valName: string); reintroduce; overload;
 
       function Execute: Boolean; override;
@@ -148,7 +178,7 @@ type
     protected
       procedure DefineProperties(filer: TFiler); override;
     public
-      constructor Create(owner: TComponent); override;
+      constructor Create(Aowner: TComponent); override;
 
 
       procedure Add(command: TAbstractCommand);
@@ -169,7 +199,7 @@ type
     protected
 
     public
-      constructor Create(owner: TComponent); override;
+      constructor Create(AOwner: TComponent); override;
       procedure Add(command: TAbstractCommand);
       procedure Undo;
       procedure Redo;
@@ -191,19 +221,22 @@ type
       SaveWithUndo: boolean;
       FileName: string;
       onDocumentChange: TNotifyEvent;
-      constructor Create(owner: TComponent); override;
+      onLoad: TNotifyEvent;
+      constructor Create(Aowner: TComponent); override;
       constructor LoadFromFile(aFileName: string); override;
       procedure AfterConstruction; override;
       destructor Destroy; override;
 
       procedure Undo;
       procedure Redo;
+      procedure JumpToBranch(Branch: TAbstractCommand);
 
       function isEmpty: Boolean;
       function Changed: Boolean;
       procedure DispatchCommand(command: TAbstractCommand);
       procedure Save;
       procedure Change; virtual;
+      procedure DoLoad; virtual;
     published
 //      UndoList: TCommandList;
         UndoTree: TCommandTree;
@@ -232,20 +265,21 @@ begin
   Name:=FullName;
 end;
 
-constructor TAbstractCommand.Create(owner: TComponent);
+constructor TAbstractCommand.Create(AOwner: TComponent);
 var t: TTimeStamp;
 begin
-  inherited Create(owner);
+  inherited Create(AOwner);
   //у любой уважающей себя команды должно быть имя
   //закодируем в него время и дату создания компоненты
   t:=DateTimeToTimeStamp(Now);
   //дата и время до мс еще не гарантируют уникальность - много команд может возн.
   //одновременно
-  ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),owner);
+  ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),AOwner);
   Next:=nil;
   Prev:=nil;
   Branch:=nil;
   ActiveBranch:=false;
+  fImageIndex:=-1;
 end;
 
 function TAbstractCommand.NameToDateTime: TDateTime;
@@ -254,6 +288,11 @@ begin
   t.Date:=StrToInt('0x'+midstr(Name,2,8));
   t.Time:=StrToInt('0x'+MidStr(Name,10,8));
   Result:=TimeStampToDateTime(t);
+end;
+
+function TAbstractCommand.NameToDate(aname: TComponentName): Integer;
+begin
+  Result:=StrToInt('0x'+midstr(aName,2,8));
 end;
 
 procedure TAbstractCommand._getPropInfo(propPath: string);
@@ -289,9 +328,15 @@ begin
 end;
 
 (*
-            TBranchCommand
+            TInfoCommand
                                           *)
-function TBranchCommand.Execute: Boolean;
+constructor TInfoCommand.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=12;
+end;
+
+function TInfoCommand.Execute: Boolean;
 begin
   //эта команда-лишь заглушка, чтобы можно было делать сколько угодно ветвлений
   //и чтобы дерево сразу же имело корень
@@ -299,23 +344,72 @@ begin
   //иначе команда не выполнится и не будет добавлена в список
 end;
 
-function TBranchCommand.Undo: Boolean;
+function TInfoCommand.Undo: Boolean;
 begin
   Result:=true;
   //сегодня я добрый
 end;
 
+function TInfoCommand.SmartDateTimeToStr: string;
+var last: TAbstractCommand;
+begin
+  last:=prev;
+  while Assigned(last) and not (last is TInfoCommand) do last:=last.Prev;
+  if Assigned(last) and (NameToDate(last.Name)=NameToDate(Name)) then
+    Result:=TimeToStr(NameToDateTime)
+  else
+    Result:=DateTimeToStr(NameToDateTime);
+end;
+
+(*
+            TBranchCommand
+                                          *)
 function TBranchCommand.caption: string;
 begin
-  Result:='Ветвь создана '+DateTimeToStr(NameToDateTime);
+//  Result:='Ветвь создана '+DateTimeToStr(NameToDateTime);
+  Result:='Ветвь создана '+SmartDateTimeToStr;
+end;
+
+(*
+            TSavedInfoCommand
+                                          *)
+
+constructor TSavedInfoCommand.Create;
+begin
+  Create(nil);
+end;
+
+function TSavedInfoCommand.caption: string;
+begin
+  Result:='Сохранен '+SmartDateTimeToStr;
+end;
+
+(*
+          TSavedAsInfoCommand
+                                        *)
+constructor TSavedAsInfoCommand.Create(aFileName: string);
+begin
+  Create(nil);
+  fFileName:=aFileName;
+end;
+
+function TSavedAsInfoCommand.caption: string;
+begin
+  Result:='Сохранен как '+fFileName+' '+SmartDateTimeToStr;
 end;
 
 (*
             TChangeFloatCommand
                                           *)
+constructor TChangeFloatProperty.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=13;
+end;
+
 constructor TChangeFloatProperty.Create(aPropPath: string; value: Real);
 begin
-  inherited Create(nil);
+  Create(nil);
   fPropPath:=aPropPath;
   fVal:=value;
 end;
@@ -391,9 +485,15 @@ end;
 (*
               TChangeIntegerProperty
                                         *)
+constructor TChangeIntegerProperty.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=13;
+end;
+
 constructor TChangeIntegerProperty.Create(aPropPath: string; value: Integer; aCaption: string='');
 begin
-  inherited Create(nil);
+  Create(nil);
   fPropPath:=aPropPath;
   fVal:=value;
   fCaption:=aCaption;
@@ -483,9 +583,16 @@ end;
 (*
               TChangeBoolProperty
                                         *)
+
+constructor TChangeBoolProperty.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=13;
+end;
+
 constructor TChangeBoolProperty.Create(aPropPath: string; value: Boolean);
 begin
-  inherited Create(nil);
+  Create(nil);
   fpropPath:=aPropPath;
   fVal:=value;
 end;
@@ -547,9 +654,15 @@ end;
 (*
             TChangeEnumProperty
                                     *)
+constructor TChangeEnumProperty.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=13;
+end;
+
 constructor TChangeEnumProperty.Create(aPropPath: string; valName: string);
 begin
-  inherited Create(nil);
+  Create(nil);
   fPropPath:=aPropPath;
   fValName:=valName;
 end;
@@ -612,9 +725,15 @@ end;
 (*
           TChangeStringProperty
                                   *)
+constructor TChangeStringProperty.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  fImageIndex:=13;
+end;
+
 constructor TChangeStringProperty.Create(aPropPath: string; value: String);
 begin
-  inherited Create(nil);
+  Create(nil);
   fVal:=value;
   fPropPath:=aPropPath;
 end;
@@ -680,13 +799,13 @@ end;
             TCommandList
                                   *)
 
-constructor TCommandList.Create(owner: TComponent);
+constructor TCommandList.Create(AOwner: TComponent);
 var tmp: TComponent;
 begin
-  inherited Create(owner);
-  if owner=nil then FRoot:=self
+  inherited Create(AOwner);
+  if Aowner=nil then FRoot:=self
   else begin
-    tmp:=owner;
+    tmp:=Aowner;
     repeat
       FRoot:=tmp;
       tmp:=tmp.Owner;
@@ -778,13 +897,14 @@ end;
               TAbstractDocument
                                       *)
 
-constructor TAbstractDocument.Create(owner: TComponent);
+constructor TAbstractDocument.Create(AOwner: TComponent);
 begin
-  inherited Create(owner);
+  inherited Create(AOwner);
 //  UndoList:=nil;
   UndoTree:=nil;
   FileName:='';
   onDocumentChange:=nil;
+  onLoad:=nil;
   SaveWithUndo:=true;
   initial_pos:=nil;
   new_commands_added:=false;
@@ -808,6 +928,7 @@ begin
       Current:=Root;
       Root.ActiveBranch:=true;
     end;
+    initial_pos:=UndoTree.current;
   end;
 end;
 
@@ -881,17 +1002,28 @@ begin
   end;
 end;
 
+procedure TAbstractDocument.JumpToBranch(Branch: TAbstractCommand);
+begin
+  UndoTree.JumpToBranch(Branch);
+  Change;
+end;
+
 procedure TAbstractDocument.Change;
 begin
   if Assigned(onDocumentChange) then onDocumentChange(self);
 end;
 
+procedure TAbstractDocument.DoLoad;
+begin
+  if Assigned(onLoad) then onLoad(self);
+end;
+
 (*
       TCommandTree
                       *)
-constructor TCommandTree.Create(owner: TComponent);
+constructor TCommandTree.Create(AOwner: TComponent);
 begin
-  inherited Create(owner);
+  inherited Create(AOwner);
   fRoot:=nil;
   fCurrent:=nil;
 end;
@@ -903,6 +1035,7 @@ begin
     if current.Next.IsEqual(command) then begin
       //но имена-то могут быть разными
       //ладно, пока хрен с ним
+      //может, введем функцию EqualByAnyOtherName
       self.Redo;
       Exit;
     end
@@ -944,8 +1077,10 @@ begin
   if current.Undo then begin
     current.ActiveBranch:=false;
     current:=current.Prev;
-    while (current is TBranchCommand) and (current.prev<>nil) do
+    while (current is TBranchCommand) and (current.prev<>nil) do begin
+      current.ActiveBranch:=false;
       current:=current.Prev;
+    end;
   end
   else Raise Exception.Create('Undo command failed');
 end;
@@ -954,8 +1089,12 @@ procedure TCommandTree.Redo;
 begin
   //проверка RedoEnabled гарантирует, что вызов undo будет произведен
   //когда его можно сделать
-  while current.TurnLeft do current:=current.Branch;
+  while current.TurnLeft do begin
+    current:=current.Branch;
+    current.ActiveBranch:=true;
+  end;
   current:=current.Next;
+  current.ActiveBranch:=true;
   if not current.Execute then Raise Exception.Create('Redo command failed');
 end;
 
@@ -978,14 +1117,16 @@ begin
     if not current.Undo then Raise Exception.Create('Undo command failed');
     current.ActiveBranch:=false;
     current:=current.Prev;
-    while (current is TBranchCommand) and (current<>b) do
+    while (current is TBranchCommand) and (current<>b) do begin
+      current.ActiveBranch:=false;
       current:=current.Prev;
+    end;
   end;
   //все, сомкнулись. Теперь дотопаем от b до command
-  while b<>command do begin
-    if not current.Execute then Exception.Create('Redo command failed');
+  while current<>command do begin
     while current.TurnLeft do current:=current.Branch;
     current:=current.Next;
+    if not current.Execute then Exception.Create('Redo command failed');
   end;
 end;
 
