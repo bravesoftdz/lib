@@ -125,7 +125,7 @@ procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics;
+uses forms,windows,sysutils,buttons,graphics,math,controls;
 
 procedure Register;
 begin
@@ -255,8 +255,11 @@ begin
   ColLeft[0]:=10;
   DrawBranch(doc.UndoTree.Root);
 
-  frmHistory.ClientWidth:=ColLeft[ColumnsCount-1]+ColWidth[ColumnsCount-1];
-  frmHistory.ClientHeight:=fMaxCount*ButtonHeight;
+  frmHistory.ClientWidth:=Min(ColLeft[ColumnsCount-1]+ColWidth[ColumnsCount-1],(owner as TControl).ClientWidth);
+  frmHistory.ClientHeight:=Min(fMaxCount*ButtonHeight,(Owner as TControl).clientHeight);
+
+  frmHistory.Top:=(owner as TControl).Top;
+  frmHistory.Left:=(owner as TControl).Left+(owner as TControl).ClientWidth-frmHistory.Width;
 
   RefreshHistoryHighlights;
   frmHistory.Show;

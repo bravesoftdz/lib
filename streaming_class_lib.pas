@@ -259,23 +259,38 @@ begin
 end;
 
 procedure TStreamingClass.Assign(source: TPersistent);
-var s: string;
+//var s: string;
+var b: TMemoryStream;
 begin
   if source is TStreamingClass then begin
-    s:=TStreamingClass(source).SaveToString;
-    self.LoadFromString(s);
+    b:=TMemoryStream.Create;
+    b.WriteComponent(TComponent(source));
+    b.Seek(0,soBeginning);
+    b.ReadComponent(self);
+    b.Free;
+//    s:=TStreamingClass(source).SaveToString;
+//    self.LoadFromString(s);
   end
   else inherited Assign(source);
 end;
 
 function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
-var str1,str2: string;
+//var str1,str2: string;
+var bin1,bin2: TMemoryStream;
+    i,len: Integer;
+    data1,data2: Integer;
 begin
-//debug
-  str1:=SaveToString;
-  str2:=what.SaveToString;
-  Result:=(str1=str2);
-//  Result:=(SaveToString=what.SaveToString);
+
+  bin1:=TMemoryStream.Create;
+  bin2:=TMemoryStream.Create;
+  bin1.WriteComponent(self);
+  bin2.WriteComponent(what);
+  bin1.Seek(0,soFromBeginning);
+  bin2.Seek(0,soFromBeginning);
+  if bin1.Size<>bin2.Size then Result:=false
+  else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
+  bin1.Free;
+  bin2.Free;
 end;
 
 function TStreamingClass.EqualsByAnyOtherName(what: TStreamingClass): boolean;

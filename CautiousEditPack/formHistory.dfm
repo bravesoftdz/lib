@@ -16,6 +16,8 @@ object frmHistory: TfrmHistory
   Position = poDefault
   Scaled = False
   Visible = True
+  OnMouseWheelDown = FormMouseWheelDown
+  OnMouseWheelUp = FormMouseWheelUp
   OnPaint = FormPaint
   PixelsPerInch = 96
   TextHeight = 13

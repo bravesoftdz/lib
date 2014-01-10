@@ -8,6 +8,10 @@ uses
 
 type
   TfrmHistory = class(TForm)
+    procedure FormMouseWheelUp(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
+    procedure FormMouseWheelDown(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
   published
     procedure FormPaint(Sender: TObject);
   private
@@ -62,6 +66,24 @@ begin
       LineTo(Lines[i].Xe-5-x,Lines[i].Y+5-y);
     end;
   end;
+end;
+
+procedure TfrmHistory.FormMouseWheelUp(Sender: TObject; Shift: TShiftState;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+  if Shift=[] then with VertScrollBar do
+    Position:=Position-increment
+  else if Shift=[ssShift] then with HorzScrollBar do
+    Position:=Position-increment
+end;
+
+procedure TfrmHistory.FormMouseWheelDown(Sender: TObject;
+  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+  if Shift=[] then with VertScrollBar do
+    Position:=Position+increment
+  else if Shift=[ssShift] then with HorzScrollBar do
+    Position:=Position+increment
 end;
 
 end.

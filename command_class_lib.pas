@@ -196,9 +196,10 @@ type
       fRoot: TAbstractCommand;
       fCurrent: TAbstractCommand;
     protected
-
+      function FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
     public
       constructor Create(AOwner: TComponent); override;
+      function CheckForExistingCommand(command: TAbstractCommand): boolean;
       procedure Add(command: TAbstractCommand);
       procedure Undo;
       procedure Redo;
@@ -976,24 +977,21 @@ begin
 end;
 
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
-//var t: TTimeStamp;
 begin
   self.InsertComponent(command);
-(*
-  //у любой уважающей себя команды должно быть имя
-  //закодируем в него время и дату создания компоненты
-  t:=DateTimeToTimeStamp(Now);
-  Name:='c'+IntToHex(t.Date,8)+IntToHex(t.Time,8);
-  //end;
-  //  command.Name:='command'+IntToStr(undolist.fcount+1);
-  *)
-  if command.Execute then begin
+  //может быть, не нужно исполнять конкретно эту команду, она уже есть
+  //именно когда обе команды еще не исполнены, их можно сравнивать
+  if undotree.CheckForExistingCommand(command) then begin
+    change;
+    command.Free;
+  end
+  else if command.Execute then begin
     self.RemoveComponent(command);
     UndoTree.Add(command);
     Change;
     new_commands_added:=true;
-  end
-  else command.Free;
+    end
+    else command.Free;
 end;
 
 procedure TAbstractDocument.Save;
@@ -1046,6 +1044,29 @@ begin
   fCurrent:=nil;
 end;
 
+function TCommandTree.FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
+begin
+  if position=nil then Result:=false
+  else if position.EqualsByAnyOtherName(command) then begin
+    JumpToBranch(position);
+    Result:=true;
+  end
+  else if (position is TInfoCommand) then
+    Result:=FindExistingCommand(command,position.Next) or FindExistingCommand(command,position.Branch)
+  else Result:=false;
+end;
+
+function TCommandTree.CheckForExistingCommand(command: TAbstractCommand): boolean;
+begin
+//может, код действительно станет более читаемым, если здоровенный, здоровенный
+//add разделить на 2 части
+//поиск в глубину, сначала идем прямо по курсу
+if current is TInfoCommand then
+  Result:=FindExistingCommand(command,current)
+else
+  Result:=FindExistingCommand(command,current.Next) or FindExistingCommand(command,current.Branch);
+end;
+
 procedure TCommandTree.Add(command: TAbstractCommand);
 var iterator: TAbstractCommand;
 begin
@@ -1054,15 +1075,6 @@ begin
     current:=current.Next;
   end;
   if (current.Next<>nil) then begin
-    if current.Next.EqualsByAnyOtherName(command) then begin
-      //но имена-то могут быть разными
-      //ладно, пока хрен с ним
-      //может, введем функцию EqualByAnyOtherName
-
-      Redo;
-      Exit;
-    end
-    else begin
     //придется отпочковать целую ветвь
     //убедимся, что прокрутили все уже отпочкованные ветви
     //чаще всего этот цикл не будет выполняться ни разу
@@ -1080,7 +1092,6 @@ begin
     current:=current.Branch;
     current.ActiveBranch:=true;
     current.TurnLeft:=false;
-    end;
   end;
   //теперь заведомо концевой узел, просто добавляем новый элемент
   command.ensureCorrectName(command.Name,self);
