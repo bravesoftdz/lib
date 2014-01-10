@@ -25,10 +25,13 @@ TstreamingClass=class(TComponent)
 
     procedure Assign(source: TPersistent); override;
     function IsEqual(what: TStreamingClass): boolean; virtual;
+    function EqualsByAnyOtherName(what: TStreamingClass): boolean; virtual;
 
     function FindOwner: TComponent;
 
   end;
+
+TStreamingClassClass=class of TStreamingClass;
 
 implementation
 
@@ -266,8 +269,27 @@ begin
 end;
 
 function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
+var str1,str2: string;
 begin
-  Result:=(SaveToString=what.SaveToString);
+//debug
+  str1:=SaveToString;
+  str2:=what.SaveToString;
+  Result:=(str1=str2);
+//  Result:=(SaveToString=what.SaveToString);
+end;
+
+function TStreamingClass.EqualsByAnyOtherName(what: TStreamingClass): boolean;
+var our_class: TStreamingClassClass;
+    t: TStreamingClass;
+begin
+  if ClassType=what.ClassType then begin
+    our_class:=TStreamingClassClass(ClassType);
+    t:=our_class.Clone(what);
+    t.Name:=Name;
+    Result:=IsEqual(t);
+    t.Free;
+  end
+  else Result:=false;
 end;
 
 constructor TStreamingClass.Clone(source: TStreamingClass;owner: TComponent=nil);

@@ -10,9 +10,6 @@ type
       fTurnLeft: Boolean;
     protected
       fImageIndex: Integer;
-      instance: TPersistent;
-      fPropInfo: PPropInfo;
-      procedure _getPropInfo(propPath: string);
       procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public
       constructor Create(Aowner: TComponent); override;
@@ -22,6 +19,7 @@ type
       function NameToDateTime: TDateTime;
       function NameToDate(aName: TComponentName): Integer;
       property ImageIndex: Integer read fImageIndex;
+      function EqualsByAnyOtherName(what: TStreamingClass): boolean; override;
     published
       property Prev: TAbstractCommand read fPrev write fPrev;
       property Next: TAbstractCommand read fNext write fNext;
@@ -43,12 +41,6 @@ type
       function caption: string; override;
     end;
 
-  TSavedInfoCommand=class(TInfoCommand)
-    public
-      constructor Create; reintroduce; overload;
-      function caption: string; override;
-    end;
-
   TSavedAsInfoCommand=class(TInfoCommand)
     private
       fFileName: string;
@@ -59,7 +51,14 @@ type
       property FileName: string read fFileName write fFileName;
     end;
 
-  TChangeFloatProperty=class(TAbstractCommand)
+  TChangePropertiesCommand=class(TAbstractCommand)
+    protected
+      instance: TPersistent;
+      fPropInfo: PPropInfo;
+      procedure _getPropInfo(propPath: string);
+  end;
+
+  TChangeFloatProperty=class(TChangePropertiesCommand)
     private
       fPropPath: string;
       fBackUp,fVal: Real;
@@ -80,7 +79,7 @@ type
       function caption: string; override;
   end;
 //  TChIntCaptionFormat=(cfDec,cfHex);
-  TChangeIntegerProperty=class(TAbstractCommand)
+  TChangeIntegerProperty=class(TChangePropertiesCommand)
     private
       fPropPath: string;
       fBackUp,fVal: Integer;
@@ -106,7 +105,7 @@ type
     end;
 
 
-  TChangeBoolProperty=class(TAbstractCommand)
+  TChangeBoolProperty=class(TChangePropertiesCommand)
     private
       fPropPath: string;
       fVal: Boolean;
@@ -125,7 +124,7 @@ type
       function Caption: string; override;
     end;
 
-  TChangeStringProperty=class(TAbstractCommand)
+  TChangeStringProperty=class(TChangePropertiesCommand)
     private
       fPropPath: string;
       fVal: string;
@@ -145,7 +144,7 @@ type
       function Caption: string; override;
     end;
 
-  TChangeEnumProperty=class(TAbstractCommand)
+  TChangeEnumProperty=class(TChangePropertiesCommand)
     private
       fPropPath:string;
       fValName: string;
@@ -282,6 +281,27 @@ begin
   fImageIndex:=-1;
 end;
 
+
+function TAbstractCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
+var our_class: TStreamingClassClass;
+    t: TAbstractCommand;
+begin
+  if ClassType=what.ClassType then begin
+    our_class:=TStreamingClassClass(ClassType);
+    t:=(our_class.Clone(what)) as TAbstractCommand;
+    t.Name:=Name;
+    t.Next:=Next;
+    t.Prev:=Prev;
+    t.Branch:=Branch;
+    t.ActiveBranch:=ActiveBranch;
+    t.TurnLeft:=TurnLeft;
+    Result:=IsEqual(t);
+    t.Free;
+  end
+  else Result:=false;
+end;
+
+
 function TAbstractCommand.NameToDateTime: TDateTime;
 var t: TTimeStamp;
 begin
@@ -293,33 +313,6 @@ end;
 function TAbstractCommand.NameToDate(aname: TComponentName): Integer;
 begin
   Result:=StrToInt('0x'+midstr(aName,2,8));
-end;
-
-procedure TAbstractCommand._getPropInfo(propPath: string);
-var i,j,L: Integer;
-  PropValue: TObject;
-  fPropName: string;
-begin
-  i := 1;
-  L := Length(propPath);
-  Instance := FindOwner;
-  while True do
-    begin
-      j := i;
-      while (i <= L) and (PropPath[i] <> '.') do Inc(i);
-      FPropName := Copy(PropPath, j, i - j);
-      if i > l then Break;
-      fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
-      if fPropInfo = nil then
-          Raise Exception.Create('Property '+FPropName+' not found');
-      PropValue := nil;
-      if fPropInfo^.PropType^.Kind = tkClass then
-        PropValue := TObject(GetOrdProp(Instance, fPropInfo));
-      if not (PropValue is TPersistent) then Raise Exception.Create('Wrong property path');
-      Instance := TPersistent(PropValue);
-      Inc(I);
-    end;
-    fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
 end;
 
 function TAbstractCommand.caption: string;
@@ -371,20 +364,6 @@ begin
 end;
 
 (*
-            TSavedInfoCommand
-                                          *)
-
-constructor TSavedInfoCommand.Create;
-begin
-  Create(nil);
-end;
-
-function TSavedInfoCommand.caption: string;
-begin
-  Result:='Сохранен '+SmartDateTimeToStr;
-end;
-
-(*
           TSavedAsInfoCommand
                                         *)
 constructor TSavedAsInfoCommand.Create(aFileName: string);
@@ -394,9 +373,48 @@ begin
 end;
 
 function TSavedAsInfoCommand.caption: string;
+var last: TAbstractCommand;
 begin
-  Result:='Сохранен как '+fFileName+' '+SmartDateTimeToStr;
+  last:=prev;
+  while Assigned(last) and not (last is TSavedAsInfoCommand) do last:=last.Prev;
+  if Assigned(last) and (TSavedAsInfoCommand(last).FileName=FileName) then
+    Result:='Сохранен '+SmartDateTimeToStr
+  else
+    Result:='Сохранен как '+fFileName+' '+SmartDateTimeToStr;
 end;
+
+(*
+            TChangePropertiesCommand
+                                          *)
+
+procedure TChangePropertiesCommand._getPropInfo(propPath: string);
+var i,j,L: Integer;
+  PropValue: TObject;
+  fPropName: string;
+begin
+  i := 1;
+  L := Length(propPath);
+  Instance := FindOwner;
+  while True do
+    begin
+      j := i;
+      while (i <= L) and (PropPath[i] <> '.') do Inc(i);
+      FPropName := Copy(PropPath, j, i - j);
+      if i > l then Break;
+      fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+      if fPropInfo = nil then
+          Raise Exception.Create('Property '+FPropName+' not found');
+      PropValue := nil;
+      if fPropInfo^.PropType^.Kind = tkClass then
+        PropValue := TObject(GetOrdProp(Instance, fPropInfo));
+      if not (PropValue is TPersistent) then Raise Exception.Create('Wrong property path');
+      Instance := TPersistent(PropValue);
+      Inc(I);
+    end;
+    fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+end;
+
+
 
 (*
             TChangeFloatCommand
@@ -1031,12 +1049,16 @@ end;
 procedure TCommandTree.Add(command: TAbstractCommand);
 var iterator: TAbstractCommand;
 begin
-  while (current.Next<>nil) and (current.Next is TInfoCommand) do current:=current.Next;
+  while (current.Next<>nil) and (current.Next is TInfoCommand) do begin
+    current.ActiveBranch:=true;
+    current:=current.Next;
+  end;
   if (current.Next<>nil) then begin
-    if current.Next.IsEqual(command) then begin
+    if current.Next.EqualsByAnyOtherName(command) then begin
       //но имена-то могут быть разными
       //ладно, пока хрен с ним
       //может, введем функцию EqualByAnyOtherName
+
       Redo;
       Exit;
     end
@@ -1095,7 +1117,8 @@ begin
     current.ActiveBranch:=true;
   end;
   repeat
-    current:=current.Next;
+    if current.TurnLeft then current:=current.Branch
+    else current:=current.Next;
     current.ActiveBranch:=true;
   until (not (current is TInfoCommand));
   if not current.Execute then Raise Exception.Create('Redo command failed');
@@ -1153,6 +1176,6 @@ end;
 
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand,TSavedInfoCommand]);
+RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand]);
 
 end.

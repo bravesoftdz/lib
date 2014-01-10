@@ -491,7 +491,7 @@ begin
   doc:=Target as TAbstractDocument;
   if doc.FileName='' then inherited ExecuteTarget(Target)
   else begin
-    doc.DispatchCommand(TSavedInfoCommand.Create);
+    doc.DispatchCommand(TSavedAsInfoCommand.Create(doc.FileName));
     doc.Save;
   end;
 end;
