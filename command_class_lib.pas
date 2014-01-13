@@ -195,6 +195,7 @@ type
     private
       fRoot: TAbstractCommand;
       fCurrent: TAbstractCommand;
+      procedure RecursiveCompare(t1,t2: TabstractCOmmand;var same,plus,minus: Integer);
     protected
       function FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
     public
@@ -206,6 +207,7 @@ type
       procedure JumpToBranch(command: TAbstractCommand);
       function UndoEnabled: Boolean;
       function RedoEnabled: Boolean;
+      procedure CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
     published
       property Root: TAbstractCommand read fRoot write fRoot;
       property Current: TAbstractCommand read fCurrent write fCurrent;
@@ -1183,6 +1185,61 @@ begin
   t:=current;
   while (t.Next<>nil) and (t.Next is TInfoCommand) do t:=t.Next;
   Result:=(t.Next<>nil);
+end;
+
+procedure TCommandTree.RecursiveCompare(t1,t2: TAbstractCommand;var same,plus,minus: Integer);
+begin
+  if t1=nil then begin
+    if t2<>nil then begin
+      //у второго дерева оказалась ветвь, которой нет у нас
+      inc(plus);
+      RecursiveCompare(nil,t2.Next,same,plus,minus);
+      RecursiveCompare(nil,t2.Branch,same,plus,minus);
+    end
+  end
+  else begin
+    if t2=nil then begin
+      //у нас есть ветвь, которой нет у второго дерева
+      inc(minus);
+      RecursiveCompare(t1.Next,nil,same,plus,minus);
+      RecursiveCompare(t1.Branch,nil,same,plus,minus);
+    end
+    else begin
+      //ветвь есть у обеих, но одинаковы ли команды?
+      if t1.EqualsByAnyOtherName(t2) then begin
+        inc(same);
+        RecursiveCompare(t1.Next,t2.Next,same,plus,minus);
+        RecursiveCompare(t1.Branch,t2.Branch,same,plus,minus);
+      end
+      else begin
+        inc(plus);
+        inc(minus);
+        RecursiveCompare(t1.Next,nil,same,plus,minus);
+        RecursiveCompare(t1.Branch,nil,same,plus,minus);
+        RecursiveCompare(nil,t2.Next,same,plus,minus);
+        RecursiveCompare(nil,t2.Branch,same,plus,minus);
+      end;
+    end;
+  end;
+end;
+
+procedure TCommandTree.CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
+var root1,root2: TAbstractCommand;
+    backup1,backup2: TAbstractCommand;
+begin
+  backup1:=current;
+  backup2:=tree.Current;
+  //чтобы все команды вернулись в исходное (невыполненное) состояние
+  JumpToBranch(root);
+  tree.JumpToBranch(tree.Root);
+  //начальная установка, корень за совпадение не считаем
+  same:=0;
+  plus:=0;
+  minus:=0;
+  RecursiveCompare(root.Next,tree.Root.Next,same,plus,minus);
+  RecursiveCompare(root.Branch,tree.Root.Branch,same,plus,minus);
+  JumpToBranch(backup1);
+  tree.JumpToBranch(backup2);
 end;
 
 

@@ -275,12 +275,8 @@ begin
 end;
 
 function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
-//var str1,str2: string;
 var bin1,bin2: TMemoryStream;
-    i,len: Integer;
-    data1,data2: Integer;
 begin
-
   bin1:=TMemoryStream.Create;
   bin2:=TMemoryStream.Create;
   bin1.WriteComponent(self);

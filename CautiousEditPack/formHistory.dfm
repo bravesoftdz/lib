@@ -1,6 +1,6 @@
 object frmHistory: TfrmHistory
-  Left = 404
-  Top = 326
+  Left = 335
+  Top = 197
   Width = 272
   Height = 106
   HorzScrollBar.Smooth = True
@@ -15,7 +15,6 @@ object frmHistory: TfrmHistory
   OldCreateOrder = False
   Position = poDefault
   Scaled = False
-  Visible = True
   OnMouseWheelDown = FormMouseWheelDown
   OnMouseWheelUp = FormMouseWheelUp
   OnPaint = FormPaint

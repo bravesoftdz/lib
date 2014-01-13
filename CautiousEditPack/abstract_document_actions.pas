@@ -459,7 +459,9 @@ end;
 procedure TSaveProjectAsAction.CheckExistingFile(Sender: TObject; var CanClose: Boolean);
 var FileName: string;
     doc_class: TAbstractDocumentClass;
-    tmp: TAbstractDocument;
+    tmp,our_doc: TAbstractDocument;
+    same,plus,minus: Integer;
+    mess: string;
 begin
   //пользователь выбрал файл для сохранения, мы хотим проверить, не потрем ли мы его содержимое
   FileName:=(Sender as TSaveDialog).FileName;
@@ -470,8 +472,12 @@ begin
       tmp:=doc_class.LoadFromFile(FileName);
       //допустим, он успешно считался
       //нужна классовая функция, позволяющая убедиться, что это разные версии одного и того же
+      our_doc:=(ActionList as TAbstractDocumentActionList).doc^;
+      our_doc.UndoTree.CompareWith(tmp.UndoTree,same,plus,minus);
+      mess:='same='+IntToStr(same)+';plus='+IntToStr(plus)+';minus='+IntToStr(minus);
+      Application.MessageBox(PChar(mess),'Save As...',mb_OK);
     finally
-
+      tmp.Free;
     end;
   end;
 end;
