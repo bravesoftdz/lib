@@ -196,6 +196,8 @@ type
       fRoot: TAbstractCommand;
       fCurrent: TAbstractCommand;
       procedure RecursiveCompare(t1,t2: TabstractCOmmand;var same,plus,minus: Integer);
+      procedure RecursiveMerge(t1,t2: TAbstractCommand);
+      procedure Assimilate(t: TAbstractCommand);
     protected
       function FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
     public
@@ -208,6 +210,7 @@ type
       function UndoEnabled: Boolean;
       function RedoEnabled: Boolean;
       procedure CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
+      procedure MergeWith(tree: TCommandTree);
     published
       property Root: TAbstractCommand read fRoot write fRoot;
       property Current: TAbstractCommand read fCurrent write fCurrent;
@@ -1070,7 +1073,6 @@ else
 end;
 
 procedure TCommandTree.Add(command: TAbstractCommand);
-var iterator: TAbstractCommand;
 begin
   while (current.Next<>nil) and (current.Next is TInfoCommand) do begin
     current.ActiveBranch:=true;
@@ -1224,8 +1226,7 @@ begin
 end;
 
 procedure TCommandTree.CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
-var root1,root2: TAbstractCommand;
-    backup1,backup2: TAbstractCommand;
+var backup1,backup2: TAbstractCommand;
 begin
   backup1:=current;
   backup2:=tree.Current;
@@ -1240,6 +1241,78 @@ begin
   RecursiveCompare(root.Branch,tree.Root.Branch,same,plus,minus);
   JumpToBranch(backup1);
   tree.JumpToBranch(backup2);
+end;
+
+procedure TCommandTree.MergeWith(tree: TCommandTree);
+var backup1: TAbstractCommand;
+begin
+  //добавляем ветви, которых у нас не было.
+  //второе дерево в сущности можно "пустить на мясо",
+  //то есть выкусывам из него ветви и присоединяем к нам.
+  backup1:=current;
+  JumpToBranch(root);
+  tree.JumpToBranch(tree.root);
+  RecursiveMerge(root,tree.Root);
+  JumpToBranch(backup1);
+  //а дереву 2 незачем прыгать, оно скоро уничтожится
+end;
+
+procedure TCommandTree.RecursiveMerge(t1,t2: TAbstractCommand);
+var iterator: TAbstractCommand;
+begin
+  if t1.Next=nil then begin
+    if t2.Next<>nil then begin
+      //перецепляем
+      //повтора не будет, ведь t1 вообще концевой
+      t1.Next:=t2.Next;
+      t1.Next.Prev:=t1;
+      //меняем владельца
+      Assimilate(t2.Next);
+      //осталось посмотреть, может еще и ветвь есть?
+      if t2.Branch<>nil then begin
+        //t1 был концевой, повторов быть не может
+        t1.Branch:=t2.Branch;
+        t1.Branch.Prev:=t1;
+        assimilate(t2.Branch);
+      end;
+    end;
+  end
+  else if t2.Next<>nil then begin
+    if t1.Next.EqualsByAnyOtherName(t2.Next) then RecursiveMerge(t1.Next,t2.Next)
+    else begin
+      //раз не совпадают, нужно эту "неведомую" ветвь прицепить сбоку
+      //но не будем торопиться, сначала проверим branch
+      iterator:=t1;
+      while iterator.Branch<>nil do iterator:=iterator.Branch;
+      iterator.Branch:=TBranchCommand.Create(self);
+      iterator.Branch.Prev:=iterator;
+      iterator:=iterator.Branch;
+      iterator.Next:=t2.Next;
+      iterator.Next.Prev:=iterator;
+      //перецепили одну команду, теперь нужно перетянуть к себе все хвосты
+      assimilate(t2.Next);
+    end;
+    //и еще посмотрим, может и ветвь есть?
+    //если у t2 нет ветвей, то и незачем париться
+    if t2.Branch<>nil then begin
+      if (t1.Branch<>nil) and (t1.Branch.EqualsByAnyOtherName(t2.Branch)) then RecursiveMerge(t1.Branch,t2.Branch)
+      else begin
+        iterator:=t1;
+        while iterator.Branch<>nil do iterator:=iterator.Branch;
+        iterator.Branch:=t2.Branch;
+        iterator.Branch.Prev:=iterator;
+        Assimilate(t2.Branch);
+      end;
+    end;
+  end;
+end;
+
+procedure TCommandTree.Assimilate(t: TAbstractCommand);
+begin
+  t.Owner.RemoveComponent(t);
+  InsertComponent(t);
+  if Assigned(t.Next) then Assimilate(t.Next);
+  if Assigned(t.Branch) then Assimilate(t.Branch);
 end;
 
 

@@ -125,7 +125,7 @@ procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics,math,controls;
+uses forms,windows,sysutils,buttons,graphics,math,controls,formMergeOrRewrite;
 
 procedure Register;
 begin
@@ -462,6 +462,7 @@ var FileName: string;
     tmp,our_doc: TAbstractDocument;
     same,plus,minus: Integer;
     mess: string;
+    mr: TModalResult;
 begin
   //пользователь выбрал файл для сохранения, мы хотим проверить, не потрем ли мы его содержимое
   FileName:=(Sender as TSaveDialog).FileName;
@@ -474,10 +475,22 @@ begin
       //нужна классовая функция, позволяющая убедиться, что это разные версии одного и того же
       our_doc:=(ActionList as TAbstractDocumentActionList).doc^;
       our_doc.UndoTree.CompareWith(tmp.UndoTree,same,plus,minus);
-      mess:='same='+IntToStr(same)+';plus='+IntToStr(plus)+';minus='+IntToStr(minus);
-      Application.MessageBox(PChar(mess),'Save As...',mb_OK);
-    finally
+      CanClose:=true;
+      if plus>0 then begin
+        frmMergeOrRewrite:=TfrmMergeOrRewrite.Create(nil);
+        frmMergeOrRewrite.lblSame.Caption:=IntToStr(same);
+        frmMergeOrRewrite.lblMinus.Caption:=IntToStr(minus);
+        frmMergeOrRewrite.lblPlus.Caption:=IntToStr(plus);
+        mr:=frmMergeOrRewrite.ShowModal;
+        case mr of
+          mrCancel: CanClose:=false;
+          200: our_doc.UndoTree.MergeWith(tmp.UndoTree);
+        end;
+      end;
       tmp.Free;
+
+    except
+      CanClose:=(Application.MessageBox('Выбранный файл не является документом данной программы, при сохранении его старое содержимое будет утеряно. Вы хотите продолжить?','Сохранить как...',mb_YesNo)=IDYes);
     end;
   end;
 end;

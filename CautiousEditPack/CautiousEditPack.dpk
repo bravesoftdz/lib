@@ -35,6 +35,7 @@ contains
   abstract_document_actions in 'abstract_document_actions.pas',
   command_class_lib in '..\command_class_lib.pas',
   streaming_class_lib in '..\streaming_class_lib.pas',
-  formHistory in 'formHistory.pas' {frmHistory};
+  formHistory in 'formHistory.pas' {frmHistory},
+  formMergeOrRewrite in 'formMergeOrRewrite.pas' {frmMergeOrRewrite};
 
 end.
