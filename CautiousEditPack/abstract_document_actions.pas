@@ -461,7 +461,6 @@ var FileName: string;
     doc_class: TAbstractDocumentClass;
     tmp,our_doc: TAbstractDocument;
     same,plus,minus: Integer;
-    mess: string;
     mr: TModalResult;
 begin
   //пользователь выбрал файл для сохранения, мы хотим проверить, не потрем ли мы его содержимое

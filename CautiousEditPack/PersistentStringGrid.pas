@@ -92,6 +92,7 @@ var p: TSimpleParser;
     i,j: Integer;
 begin
   p:=TSimpleParser.Create;
+  p.delimiter:='';
   reader.ReadListBegin;
   while not reader.EndOfList do begin
     s:=reader.ReadString;

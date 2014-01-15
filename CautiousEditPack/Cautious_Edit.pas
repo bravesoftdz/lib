@@ -68,8 +68,6 @@ type
     procedure BMSetCheck(var Message: TMessage); message BM_SETCHECK;
   public
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
-
-//    procedure Click; override;
   published
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
   end;
@@ -155,11 +153,8 @@ end;
 
 procedure TFloatEdit.Notification(aComponent: TComponent; operation: TOperation);
 begin
-  if (aComponent.name='button1') then ControlToDisable:=nil;
-  if (name='button1') then ControlToDisable:=nil;
   if (operation=opRemove) and (aComponent=fControlToDisable) then
     fControlToDisable:=nil;
-  //    ControlToDisable:=nil;
   inherited;
 end;
 
@@ -374,8 +369,6 @@ end;
                                     *)
 procedure TDisablingRadioButton.Notification(aComponent: TComponent; operation: TOperation);
 begin
-  if (aComponent.name='button1') then ControlToDisable:=nil;
-  if (name='button1') then ControlToDisable:=nil;
   if (operation=opRemove) and (aComponent=fControlToDisable) then
     fControlToDisable:=nil;
   inherited;
@@ -419,7 +412,7 @@ procedure TDisablingGroupBox.CMEnabledChanged(var Message: TMessage);
 var i: Integer;
 begin
   for I:= 0 to ControlCount -1 do begin
-    if (Controls[i] is TControl) then (Controls[i] as TControl).Enabled:=enabled;
+    Controls[i].Enabled:=enabled;
   end;
   inherited;
 end;
