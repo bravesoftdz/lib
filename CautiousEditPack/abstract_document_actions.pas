@@ -184,13 +184,15 @@ begin
     //и немедленно создаем соотв. кнопочку
     btn:=TBitBtn.Create(frmHistory);
     btn.Parent:=frmHistory;
-    Images.GetBitmap(item.ImageIndex,btn.Glyph);
     btn.Caption:=item.caption;
     btn.Tag:=Integer(item);
     btn.OnClick:=HistoryClickEvent;
-    btn.Margin:=1;
-
-    w:=32+btmp.Canvas.TextWidth(item.caption)+15;
+    btn.Margin:=5;
+    w:=btmp.Canvas.TextWidth(item.caption)+15;
+    if Assigned(Images) then begin
+      Images.GetBitmap(item.ImageIndex,btn.Glyph);
+      inc(w,btn.Glyph.Width+5);
+    end;
     if w>wmax then wmax:=w;
     inc(CommandsCount); //текущую уже надо подсчитать
     SetLength(buttons,CommandsCount);

@@ -26,7 +26,8 @@ package CautiousEditPack;
 
 requires
   rtl,
-  vcl;
+  vcl,
+  indy;
 
 contains
   Cautious_Edit in 'Cautious_Edit.pas',
