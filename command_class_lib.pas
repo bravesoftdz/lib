@@ -1,7 +1,7 @@
 unit command_class_lib;
 
 interface
-uses streaming_class_lib,classes,TypInfo;
+uses streaming_class_lib,classes,TypInfo,IdHash;
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
@@ -49,6 +49,21 @@ type
       function caption: string; override;
     published
       property FileName: string read fFileName write fFileName;
+    end;
+
+  THashedCommand=class(TAbstractCommand)
+    private
+      fHash: T4x4LongWordRecord;
+      procedure WriteHash(stream: TStream);
+      procedure ReadHash(stream: TStream);
+      function HashNotEmpty: boolean;
+    protected
+      procedure DefineProperties(Filer: TFiler); override;
+    public
+      constructor Create(owner: TComponent); override;
+      function Execute: boolean; override;
+      function Undo: boolean; override;
+      property Hash: T4x4LongWordRecord read fHash;
     end;
 
   TChangePropertiesCommand=class(TAbstractCommand)
@@ -218,8 +233,8 @@ type
 
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
-      initial_pos: TAbstractCommand;
-      new_commands_added: Boolean;
+      initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
+      new_commands_added: Boolean;  //и добавлены ли новые команды
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     public
@@ -242,15 +257,15 @@ type
       procedure Save;
       procedure Change; virtual;
       procedure DoLoad; virtual;
+
+      function Hash: T4x4LongWordRecord;
     published
-//      UndoList: TCommandList;
-        UndoTree: TCommandTree;
-//      property UndoList: TCommandList read GetUndoList write FUndoList stored false;
+      UndoTree: TCommandTree;
     end;
 
 implementation
 
-uses SysUtils,StrUtils;
+uses SysUtils,StrUtils,IdHashMessageDigest;
 
 (*
         TAbstractCommand
@@ -389,6 +404,49 @@ begin
     Result:='Сохранен как '+fFileName+' '+SmartDateTimeToStr;
 end;
 
+(*
+            THashedCommand
+                                          *)
+constructor THashedCommand.Create(owner: TComponent);
+var i: Integer;
+begin
+  inherited Create(owner);
+  for i:=0 to 3 do fHash[i]:=0;
+end;
+
+procedure THashedCommand.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineBinaryProperty('Hash',ReadHash,WriteHash,HashNotEmpty);
+end;
+
+function THashedCommand.HashNotEmpty: boolean;
+begin
+  Result:=(fHash[0]<>0) and (fHash[1]<>0) and (fHash[2]<>0) and (fHash[3]<>0);
+end;
+
+procedure THashedCommand.WriteHash(stream: TStream);
+begin
+  stream.Write(fHash[0],SizeOf(fHash));
+end;
+
+procedure THashedCommand.ReadHash(stream: TStream);
+begin
+  stream.Read(fHash[0],SizeOf(fHash));
+end;
+
+function THashedCOmmand.Execute: boolean;
+begin
+  //к этому моменту все необходимые действия над документом уже выполнены
+  if not HashNotEmpty then
+    fHash:=(FindOwner as TAbstractDocument).Hash;
+//  else Result:=
+  Result:=true;
+end;
+
+function THashedCOmmand.Undo: boolean;
+begin
+  Result:=true;
+end;
 (*
             TChangePropertiesCommand
                                           *)
@@ -983,7 +1041,7 @@ end;
 
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
 begin
-  self.InsertComponent(command);
+  undotree.InsertComponent(command);
   //может быть, не нужно исполнять конкретно эту команду, она уже есть
   //именно когда обе команды еще не исполнены, их можно сравнивать
   if undotree.CheckForExistingCommand(command) then begin
@@ -991,7 +1049,7 @@ begin
     command.Free;
   end
   else if command.Execute then begin
-    self.RemoveComponent(command);
+    undotree.RemoveComponent(command);
     UndoTree.Add(command);
     Change;
     new_commands_added:=true;
@@ -1037,6 +1095,26 @@ end;
 procedure TAbstractDocument.DoLoad;
 begin
   if Assigned(onLoad) then onLoad(self);
+end;
+
+function TAbstractDocument.Hash: T4x4LongWordRecord;
+var buSaveWithUndo: boolean;
+    str: TMemoryStream;
+begin
+  buSaveWithUndo:=SaveWithUndo; //потом вернем
+  SaveWithUndo:=false;  //чтобы найти хэш
+  str:=TMemoryStream.Create;
+  str.WriteComponent(self);
+  str.Seek(0,soFromBeginning);
+  with TIdHashMessageDigest5.Create do begin
+    try
+    Result:=HashValue(str);
+    finally
+    Free;
+    end;
+  end;
+  str.Free;
+  SaveWithUndo:=buSaveWithUndo;
 end;
 
 (*

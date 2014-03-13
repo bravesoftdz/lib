@@ -56,6 +56,7 @@ TOpenProjectAction=class(TAbstractDocumentAction)
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure ExecuteTarget(Target: TObject); override;
+    procedure LoadProject(filename: string);
   published
     property OpenDialog: TOpenDialog read fOpenDialog;
   end;
@@ -400,28 +401,27 @@ begin
   inherited Destroy;
 end;
 
+procedure TOpenProjectAction.LoadProject(filename: string);
+var doc,new_doc: TAbstractDocument;
+    doc_class: TAbstractDocumentClass;
+begin
+  doc:=getDoc;
+  doc_class:=TAbstractDocumentClass(doc.ClassType);
+  new_doc:=doc_class.LoadFromFile(filename);
+  new_doc.onDocumentChange:=doc.onDocumentChange;
+  new_doc.onLoad:=doc.onLoad;
+  (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
+  doc.Free;
+end;
+
 procedure TOpenProjectAction.ExecuteTarget(Target: TObject);
 var doc,new_doc: TAbstractDocument;
     doc_class: TAbstractDocumentClass;
 begin
   doc:=Target as TAbstractDocument;
-  if (not doc.Changed) or (Application.MessageBox('Все несохраненные действия и история изменений будут потеряны. Продолжить?','Открыть проект',MB_YesNo)=IDYes) then begin
-    if fOpenDialog.Execute then begin
-      doc_class:=TAbstractDocumentClass(doc.ClassType);
-      new_doc:=doc_class.LoadFromFile(fOpenDialog.FileName);
-      //если файл неправильный, на этом месте выполнение прервется
-      //старый проект останется загруженным
-      //если же выполнение продолжается, значит загрузилось как надо
-      new_doc.onDocumentChange:=doc.onDocumentChange;
-      new_doc.onLoad:=doc.onLoad;
-      //поменяем ссылку
-      (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
-      new_doc.Doload;
-
-      //освободим старый проект
-      doc.Free;
-    end;
-  end;
+  if (not doc.Changed) or (Application.MessageBox('Все несохраненные действия и история изменений будут потеряны. Продолжить?','Открыть проект',MB_YesNo)=IDYes) then
+    if fOpenDialog.Execute then
+      LoadProject(fOpenDialog.FileName);
 end;
 
 (*

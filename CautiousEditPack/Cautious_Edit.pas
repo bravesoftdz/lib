@@ -6,47 +6,42 @@ uses
   SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs;
 
 type
-  TFloatEdit = class(TEdit)
+  TCautiousEdit=class(TEdit)
   private
-    { Private declarations }
+    backupHint: string;
     fControlToDisable: TControl;
-    function get_value: Real;
-    procedure set_value(value: Real);
     procedure SetControlToDisable(value:TControl);
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
-  protected
-    { Protected declarations }
   public
-    { Public declarations }
+    constructor Create(owner: TComponent); override;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
-    constructor Create(Owner: TComponent); override;
-    procedure Change; override;
+    procedure TurnRed(explain: string);
+    procedure ReturnToNormal;
   published
-    { Published declarations }
-    property value: Real Read get_value Write set_value;
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
   end;
 
-  TIntegerEdit=class(TEdit)
+  TFloatEdit = class(TCautiousEdit)
   private
-    { Private declarations }
-    fControlToDisable: TControl;
+    function get_value: Real;
+    procedure set_value(value: Real);
+  public
+    constructor Create(Owner: TComponent); override;
+    procedure Change; override;
+  published
+    property value: Real Read get_value Write set_value;
+  end;
+
+  TIntegerEdit=class(TCautiousEdit)
+  private
     function get_value: Integer;
     procedure set_value(value: Integer);
-    procedure SetControlToDisable(value:TControl);
-    procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
-  protected
-    { Protected declarations }
   public
-    { Public declarations }
-    procedure Notification(aComponent: TComponent; operation: TOperation); override;
     constructor Create(Owner: TComponent); override;
     procedure Change; override;
     function isValid: boolean;
   published
-    { Published declarations }
     property value: Integer Read get_value Write set_value stored false;
-    property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
   end;
 
   TDisablingCheckBox=class(TCheckBox)
@@ -135,10 +130,15 @@ begin
 end;
 
 (*
-            TFloatEdit
+            TCautiousEdit
                                 *)
+constructor TCautiousEdit.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  backupHint:=Hint;
+end;
 
-procedure TFloatEdit.SetControlToDisable(value: TControl);
+procedure TCautiousEdit.SetControlToDisable(value: TControl);
 begin
   if Assigned(fControlToDisable) then begin
     EnableControl(fControlToDisable,self);
@@ -151,25 +151,49 @@ begin
   end;
 end;
 
-procedure TFloatEdit.Notification(aComponent: TComponent; operation: TOperation);
+procedure TCautiousEdit.Notification(aComponent: TComponent; operation: TOperation);
 begin
   if (operation=opRemove) and (aComponent=fControlToDisable) then
     fControlToDisable:=nil;
   inherited;
 end;
 
+procedure TCautiousEdit.CMEnabledChanged(var Message: TMessage);
+begin
+  if (not enabled) and Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
+  //то есть, отключенное поле ввода не должно мешать нажатию на кнопку
+  if enabled then Change; //поле снова ввели в строй, проверим - не пора ль снова выругаться?
+  inherited;
+end;
+
+procedure TCautiousEdit.TurnRed(explain: string);
+begin
+  Color:=clRed;
+  if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
+  backupHint:=Hint;
+  Hint:=explain;
+end;
+
+procedure TCautiousEdit.ReturnToNormal;
+begin
+  Color:=clWhite;
+  if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
+  Hint:=backupHint;
+end;
+
+(*
+            TFloatEdit
+                                *)
+
 function TFloatEdit.get_value: Real;
 var res: Extended;
 begin
   if TryStrToFloat(text,res) then begin
     Result:=res;
-    Color:=clWhite;
-    if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-    end
+    ReturnToNormal;
+  end
   else begin
-    Result:=0;
-    Color:=clRed;
-    if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
+    TurnRed('Не является действительным числом');
     if not (csDesigning in self.ComponentState) then
         Raise Exception.Create('TFloatLabel: Not a number');
   end;
@@ -178,14 +202,8 @@ end;
 procedure TFloatEdit.Change;
 var res: Extended;
 begin
-  if TryStrToFloat(text,res) then begin
-    Color:=clWhite;
-    if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-    end
-  else begin
-    Color:=clRed;
-    if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
-  end;
+  if TryStrToFloat(text,res) then ReturnToNormal
+  else TurnRed('Не является действительным числом');
   inherited Change;
 end;
 
@@ -194,59 +212,27 @@ begin
   text:=FloatToStr(value);
 end;
 
-constructor TFloatEdit.Create;
+constructor TFloatEdit.Create(owner: TComponent);
 begin
-  inherited;
+  inherited Create(owner);
   value:=0;
-end;
-
-procedure TFloatEdit.CMEnabledChanged(var Message: TMessage);
-begin
-  if (not enabled) and Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-  //то есть, отключенное поле ввода не должно мешать нажатию на кнопку
-  if enabled then Change; //поле снова ввели в строй, проверим - не пора ль снова выругаться?
-  inherited;
 end;
 
 (*
           TIntegerEdit
                               *)
 
-procedure TIntegerEdit.Notification(aComponent: TComponent; operation: TOperation);
-begin
-  if (operation=opRemove) and (aComponent=fControlToDisable) then
-    fControlToDisable:=nil;
-  inherited;
-end;
-
-procedure TIntegerEdit.SetControlToDisable(value: TControl);
-begin
-  if Assigned(fControlToDisable) then begin
-    EnableControl(fControlToDisable,self);
-    fControlToDisable.RemoveFreeNotification(self);
-  end;
-  fControlToDisable:=value;
-  if Assigned(value) then begin
-    value.FreeNotification(self);
-    Change;
-  end;
-end;
-
 function TIntegerEdit.get_value: Integer;
 var res: Integer;
 begin
   if TryStrToInt(text,res) then begin
     Result:=res;
-    Color:=clWhite;
-    if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
+    ReturnToNormal;
     end
   else begin
-    Result:=0;
-    Color:=clRed;
-    if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self)
-    else
-      if not (csDesigning in self.ComponentState) then
-        Raise Exception.Create('TIntegerEdit: Not a number');
+    TurnRed('Не является целым числом');
+    if not (csDesigning in self.ComponentState) then
+      Raise Exception.Create('TIntegerEdit: Not a number');
   end;
 end;
 
@@ -259,14 +245,8 @@ end;
 procedure TIntegerEdit.Change;
 var res: Integer;
 begin
-  if TryStrToInt(text,res) then begin
-    Color:=clWhite;
-    if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-    end
-  else begin
-    Color:=clRed;
-    if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
-  end;
+  if TryStrToInt(text,res) then ReturnToNormal
+  else TurnRed('Не является целым числом');
   inherited Change;
 end;
 
@@ -275,18 +255,10 @@ begin
   text:=IntToStr(value);
 end;
 
-constructor TIntegerEdit.Create;
+constructor TIntegerEdit.Create(owner: TComponent);
 begin
-  inherited;
+  inherited Create(Owner);
   value:=0;
-end;
-
-procedure TIntegerEdit.CMEnabledChanged(var Message: TMessage);
-begin
-  if (not enabled) and Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-  //то есть, отключенное поле ввода не должно мешать нажатию на кнопку
-  if enabled then Change; //поле снова ввели в строй, проверим - не пора ль снова выругаться?
-  inherited;
 end;
 
 (*
@@ -421,7 +393,7 @@ end;
 
 procedure Register;
 begin
-  RegisterComponents('CautiousEdit', [TFloatEdit,TIntegerEdit,TDisablingCheckBox,TDisablingRadioButton,TDisablingGroupBox,TCautiousExtender]);
+  RegisterComponents('CautiousEdit', [TCautiousEdit,TFloatEdit,TIntegerEdit,TDisablingCheckBox,TDisablingRadioButton,TDisablingGroupBox,TCautiousExtender]);
 end;
 
 procedure free_em_all(AInfo, AItem, AData: Pointer; out AContinue: Boolean);
