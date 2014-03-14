@@ -9,16 +9,26 @@ type
   TCautiousEdit=class(TEdit)
   private
     backupHint: string;
+    fSeemsNormal: boolean;
     fControlToDisable: TControl;
+    fonValidateResult: TNotifyEvent;
+    procedure SetOnValidateResult(value: TNotifyEvent);
     procedure SetControlToDisable(value:TControl);
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
+    procedure SetZeroFlag(Writer: TWriter);
+    procedure LoadZeroFlag(Reader: TReader);
+  protected
+    procedure DefineProperties(Filer: TFiler); override;
   public
     constructor Create(owner: TComponent); override;
+    procedure Change; override;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
     procedure TurnRed(explain: string);
     procedure ReturnToNormal;
+    property SeemsNormal: boolean read fSeemsNormal;
   published
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
+    property OnValidateResult: TNotifyEvent read fonValidateResult write SetOnValidateResult;
   end;
 
   TFloatEdit = class(TCautiousEdit)
@@ -26,7 +36,7 @@ type
     function get_value: Real;
     procedure set_value(value: Real);
   public
-    constructor Create(Owner: TComponent); override;
+    constructor Create(owner: TComponent); override;
     procedure Change; override;
   published
     property value: Real Read get_value Write set_value;
@@ -37,9 +47,9 @@ type
     function get_value: Integer;
     procedure set_value(value: Integer);
   public
-    constructor Create(Owner: TComponent); override;
     procedure Change; override;
     function isValid: boolean;
+    constructor Create(owner: TComponent); override;
   published
     property value: Integer Read get_value Write set_value stored false;
   end;
@@ -136,6 +146,8 @@ constructor TCautiousEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
   backupHint:=Hint;
+  fSeemsNormal:=true;
+  Change;
 end;
 
 procedure TCautiousEdit.SetControlToDisable(value: TControl);
@@ -149,6 +161,17 @@ begin
     value.FreeNotification(self);
     Change;
   end;
+end;
+
+procedure TCautiousEdit.Change;
+begin
+  if Assigned(OnValidateResult) then OnValidateResult(self);
+end;
+
+procedure TCautiousEdit.SetOnValidateResult(value: TNotifyEvent);
+begin
+  fonValidateResult:=value;
+  Change;
 end;
 
 procedure TCautiousEdit.Notification(aComponent: TComponent; operation: TOperation);
@@ -172,6 +195,7 @@ begin
   if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
   backupHint:=Hint;
   Hint:=explain;
+  fSeemsNormal:=false;
 end;
 
 procedure TCautiousEdit.ReturnToNormal;
@@ -179,6 +203,23 @@ begin
   Color:=clWhite;
   if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
   Hint:=backupHint;
+  fSeemsNormal:=true;
+end;
+
+procedure TCautiousEdit.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineProperty('IsEmpty',LoadZeroFlag,SetZeroFlag,(text='') and (csDesigning in ComponentState));
+end;
+
+procedure TCautiousEdit.SetZeroFlag(Writer: TWriter);
+begin
+  Writer.WriteBoolean(true);
+end;
+
+procedure TCautiousEdit.LoadZeroFlag(Reader: TReader);
+begin
+  if Reader.ReadBoolean then
+    text:='';
 end;
 
 (*
@@ -193,6 +234,7 @@ begin
     ReturnToNormal;
   end
   else begin
+    Result:=0;
     TurnRed('Не является действительным числом');
     if not (csDesigning in self.ComponentState) then
         Raise Exception.Create('TFloatLabel: Not a number');
@@ -215,7 +257,7 @@ end;
 constructor TFloatEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  value:=0;
+  if (csDesigning in ComponentState) then value:=0;
 end;
 
 (*
@@ -230,6 +272,7 @@ begin
     ReturnToNormal;
     end
   else begin
+    Result:=0;
     TurnRed('Не является целым числом');
     if not (csDesigning in self.ComponentState) then
       Raise Exception.Create('TIntegerEdit: Not a number');
@@ -257,10 +300,9 @@ end;
 
 constructor TIntegerEdit.Create(owner: TComponent);
 begin
-  inherited Create(Owner);
-  value:=0;
+  inherited Create(owner);
+  if (csDesigning in ComponentState) then value:=0;
 end;
-
 (*
             TDisablingCheckBox
                                         *)
