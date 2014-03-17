@@ -408,15 +408,17 @@ begin
   doc:=getDoc;
   doc_class:=TAbstractDocumentClass(doc.ClassType);
   new_doc:=doc_class.LoadFromFile(filename);
+  //на этом этапе могла произойти ошибка, благодаря исп. new_doc если здесь прерв
+  //выполнение, он выругается, а старый проект останется на месте
+  (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
+  //теперь перем. doc ссылается уже на новую.
   new_doc.onDocumentChange:=doc.onDocumentChange;
   new_doc.onLoad:=doc.onLoad;
-  (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
   doc.Free;
 end;
 
 procedure TOpenProjectAction.ExecuteTarget(Target: TObject);
-var doc,new_doc: TAbstractDocument;
-    doc_class: TAbstractDocumentClass;
+var doc: TAbstractDocument;
 begin
   doc:=Target as TAbstractDocument;
   if (not doc.Changed) or (Application.MessageBox('Все несохраненные действия и история изменений будут потеряны. Продолжить?','Открыть проект',MB_YesNo)=IDYes) then

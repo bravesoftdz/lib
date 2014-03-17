@@ -191,19 +191,23 @@ end;
 
 procedure TCautiousEdit.TurnRed(explain: string);
 begin
-  Color:=clRed;
+  if SeemsNormal then begin
+    Color:=clRed;
+    backupHint:=Hint;
+    Hint:=explain;
+    fSeemsNormal:=false;
+  end;
   if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
-  backupHint:=Hint;
-  Hint:=explain;
-  fSeemsNormal:=false;
 end;
 
 procedure TCautiousEdit.ReturnToNormal;
 begin
-  Color:=clWhite;
+  if not seemsNormal then begin
+    Color:=clWhite;
+    Hint:=backupHint;
+    fSeemsNormal:=true;
+  end;
   if Assigned(ControlToDisable) then EnableControl(ControlToDisable,self);
-  Hint:=backupHint;
-  fSeemsNormal:=true;
 end;
 
 procedure TCautiousEdit.DefineProperties(Filer: TFiler);
