@@ -126,7 +126,7 @@ procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics,math,controls,formMergeOrRewrite;
+uses forms,windows,sysutils,buttons,graphics,math,controls,formMergeOrRewrite,streaming_class_lib;
 
 procedure Register;
 begin
@@ -436,7 +436,7 @@ begin
   fSaveDialog.Name:='SaveDialog';
   fSaveDialog.SetSubComponent(true);
   fSaveDialog.DefaultExt:='txt';
-  fSaveDialog.Filter:='Текстовый формат|*.txt|Двоичный формат|*.dat|Все файлы|*.*';
+  fSaveDialog.Filter:='Текстовый формат|*.txt|без кириллицы|*.dat|Двоичный формат|*.bin|Все файлы|*.*';
   fSaveDialog.OnCanClose:=CheckExistingFile;
   Caption:='Сохранить проект как...';
   Hint:='Сохранить проект как...|сохраняет проект под новым именем';
@@ -455,6 +455,11 @@ begin
   doc:=Target as TAbstractDocument;
   if fSaveDialog.Execute then begin
     doc.FileName:=fSaveDialog.filename;
+    case fSaveDialog.FilterIndex of
+      1: doc.saveFormat:=fCyr;
+      2: doc.saveFormat:=fAscii;
+      3: doc.saveFormat:=fbinary;
+    end;
     doc.DispatchCommand(TSavedAsInfoCommand.Create(doc.FileName));
     doc.Save;
   end;

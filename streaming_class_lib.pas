@@ -62,46 +62,44 @@ begin
       if c<>'#' then output.Write(apostr,1)
       else inside_string:=1;
     end;
-    if c<>'#' then output.Write(c,1)
+    if (c<>'#') then
+      output.Write(c,1)
     else begin
       i:=0;
       input.Read(c,1);
-      while c in ['0'..'9'] do begin
-        i:=i*10+Ord(c)-Ord('0');
-        input.Read(c,1);
-      end;
-      input.Seek(-1,soFromCurrent);
-      //теперь эту хренотень надо сконвертнуть в кириллицу
-
-      if i<255 then begin
-        if inside_string=1 then begin
-          inside_string:=0;
-          output.Write(apostr,1); //все-таки вышли наружу
-          //вернули апосторф, случайно стыренный ранее
-        end;
-        getback:='#'+IntToStr(i);
+      if not (c in ['0'..'9']) then begin
+        getback:=apostr+'#';
         output.Write(getback[1],Length(getback));
+        input.Seek(-1,soFromCurrent);
+        inside_string:=0;
       end
       else begin
-        c:=CHR(Byte(i+Ord('ј')-1040));
-        if inside_string=0 then begin
-          inside_string:=1;
-          output.Write(apostr,1);
+        while c in ['0'..'9'] do begin
+          i:=i*10+Ord(c)-Ord('0');
+          input.Read(c,1);
         end;
-        output.Write(c,1);
+        input.Seek(-1,soFromCurrent);
+        //теперь эту хренотень надо сконвертнуть в кириллицу
+
+        if i<255 then begin
+          if inside_string=1 then begin
+            inside_string:=0;
+            output.Write(apostr,1); //все-таки вышли наружу
+            //вернули апосторф, случайно стыренный ранее
+          end;
+          getback:='#'+IntToStr(i);
+          output.Write(getback[1],Length(getback));
+        end
+        else begin
+          c:=CHR(Byte(i+Ord('ј')-1040));
+          if inside_string=0 then begin
+            inside_string:=1;
+            output.Write(apostr,1);
+          end;
+          output.Write(c,1);
+        end;
       end;
 
-      (*
-
-      if i<255 then c:=CHR(i)
-      else c:=CHR(Byte(i+Ord('ј')-1040));
-      if inside_string=0 then begin
-        inside_string:=1;
-        output.Write(apostr,1);
-      end;
-      output.Write(c,1);
-      input.Seek(-1,soFromCurrent);
-*)
     end;
 
   end;
