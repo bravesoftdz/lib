@@ -59,6 +59,7 @@ type
     fControlToDisable: TControl;
     procedure SetControlToDisable(value: TControl);
   public
+    constructor Create(owner: TComponent); override;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
     procedure Click; override;
   published
@@ -78,6 +79,8 @@ type
   end;
 
   TDisablingGroupBox=class(TGroupBox)
+  protected
+    procedure Notification(AComponent: TComponent;operation: TOperation); override;
   private
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
   end;
@@ -147,7 +150,6 @@ begin
   inherited Create(owner);
   backupHint:=Hint;
   fSeemsNormal:=true;
-  Change;
 end;
 
 procedure TCautiousEdit.SetControlToDisable(value: TControl);
@@ -339,6 +341,11 @@ begin
   inherited Click;
 end;
 
+constructor TDisablingCheckBox.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+end;
+
 (*
         TCautiousExtender
                                     *)
@@ -425,7 +432,6 @@ end;
         TDisablingGroupBox
                                   *)
 
-
 procedure TDisablingGroupBox.CMEnabledChanged(var Message: TMessage);
 var i: Integer;
 begin
@@ -433,6 +439,19 @@ begin
     Controls[i].Enabled:=enabled;
   end;
   inherited;
+end;
+
+procedure TDisablingGroupBox.Notification(AComponent: TComponent; operation: TOperation);
+var i: Integer;
+begin
+
+ if operation=opInsert then begin
+    for I:= 0 to ControlCount -1 do begin
+      if Assigned(Controls[i]) then
+        Controls[i].Enabled:=enabled;
+    end;
+  end;
+  inherited Notification(AComponent,operation);
 end;
 
 (* General procedures *)
