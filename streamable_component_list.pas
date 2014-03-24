@@ -11,17 +11,21 @@ TComponentClass=class of TComponent;
 TStreamableComponentList=class(TStreamingClass)
   private
     fResolved: boolean;
-    fList: TList;
-    procedure LoadList(reader: TReader);
-    procedure WriteList(writer: TWriter);
+    fList: TStrings;
     procedure ResolveNames;
+    procedure SetList(writer: TWriter);
+    procedure GetList(reader: TReader);
+    function GetItem(index: Integer): TCOmponent;
+    function GetCount: Integer;
   protected
-    procedure DefineProperties(Filer: TFiler); override;
     procedure Loaded; override;
+    procedure DefineProperties(Filer: TFiler); override;
   public
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
     procedure Add(component: TComponent);
+    property Count: Integer read GetCount;
+    property Item[index: Integer]: TComponent read GetItem; default;
 end;
 
 implementation
@@ -29,7 +33,7 @@ implementation
 constructor TStreamableComponentList.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  fList:=TList.Create;
+  fList:=TStringList.Create;
   fResolved:=true;
 end;
 
@@ -39,54 +43,60 @@ begin
   inherited Destroy;
 end;
 
-procedure TStreamableComponentList.DefineProperties(Filer: TFiler);
-begin
-  Filer.DefineProperty('data',LoadList,WriteList,fList.Count>0);
-end;
-
-procedure TStreamableComponentList.WriteList(writer: TWriter);
-var i: Integer;
-begin
-  if not fResolved then ResolveNames;
-  writer.WriteListBegin;
-    for i:=0 to fList.Count-1 do begin
-      writer.WriteIdent(TComponent(fList.Items[i]).name);
-    end;
-  writer.WriteListEnd;
-end;
-
-procedure TStreamableComponentList.LoadList(reader: TReader);
-var s: string;
-begin
-  reader.ReadListBegin;
-    while not reader.EndOfList do begin
-      s:=reader.ReadIdent;
-      fList.Add(Pointer(s));
-      Pointer(s):=nil;
-    end;
-  reader.ReadListEnd;
-  fResolved:=false;
-end;
-
 procedure TStreamableComponentList.Add(component: TComponent);
 begin
-  fList.Add(component);
+  fList.AddObject(component.Name,component);
 end;
 
 procedure TStreamableComponentList.ResolveNames;
 var i: Integer;
-  s: string;
+    c: TComponent;
 begin
-//нужно срочно превратить ссылки на строки в ссылки на объекты
   for i:=0 to fList.Count-1 do begin
-    s:=string(fList.Items[i]);
-    if s='' then fList.Items[i]:=nil;
+    fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
   end;
+  fResolved:=true;
 end;
 
 procedure TStreamableComponentList.Loaded;
 begin
   if not fResolved then ResolveNames;
+end;
+
+procedure TStreamableComponentList.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineProperty('data',GetList,SetList,fList.Count>0);
+end;
+
+procedure TStreamableComponentList.SetList(writer: TWriter);
+var i: Integer;
+begin
+  writer.WriteListBegin;
+  for i:=0 to fList.Count-1 do begin
+    writer.WriteIdent(fList.Strings[i]);
+  end;
+  writer.WriteListEnd;
+end;
+
+procedure TStreamableComponentList.GetList(reader: TReader);
+begin
+  reader.ReadListBegin;
+    while not reader.EndOfList do begin
+      fList.Add(reader.ReadIdent);
+    end;
+  reader.ReadListEnd;
+  fResolved:=false;
+end;
+
+function TStreamableComponentList.GetItem(index: Integer): TCOmponent;
+begin
+  if not fResolved then ResolveNames;
+  Result:=fList.Objects[index] as TComponent;
+end;
+
+function TStreamableComponentList.GetCount: Integer;
+begin
+  Result:=fList.Count;
 end;
 
 end.
