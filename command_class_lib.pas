@@ -13,6 +13,7 @@ type
       procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public
       constructor Create(Aowner: TComponent); override;
+      procedure Clear; override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
       function caption: string; virtual;
@@ -201,7 +202,7 @@ type
       function UndoEnabled: Boolean;
       function RedoEnabled: Boolean;
       destructor Destroy; override;
-      procedure Clear;
+      procedure Clear; override;
       property count: Integer read fcount;
       property current: Integer read fcurrent;
     end;
@@ -226,6 +227,7 @@ type
       function RedoEnabled: Boolean;
       procedure CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
       procedure MergeWith(tree: TCommandTree);
+      procedure Clear; override;
     published
       property Root: TAbstractCommand read fRoot write fRoot;
       property Current: TAbstractCommand read fCurrent write fCurrent;
@@ -296,6 +298,11 @@ begin
   //дата и время до мс еще не гарантируют уникальность - много команд может возн.
   //одновременно
   ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),AOwner);
+  Clear;
+end;
+
+procedure TAbstractCommand.Clear;
+begin
   Next:=nil;
   Prev:=nil;
   Branch:=nil;
@@ -1130,6 +1137,12 @@ end;
 constructor TCommandTree.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  fRoot:=nil;
+  fCurrent:=nil;
+end;
+
+procedure TCommandTree.Clear;
+begin
   fRoot:=nil;
   fCurrent:=nil;
 end;

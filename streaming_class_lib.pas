@@ -13,10 +13,10 @@ TstreamingClass=class(TComponent)
     function    GetChildOwner: TComponent; override;
   public
     saveFormat: StreamingClassSaveFormat;
-//    constructor Create(owner: TComponent; _name: TComponentName); overload;
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
     constructor LoadFromString(text: string);
     constructor Clone(source: TStreamingClass;owner: TComponent=nil);
+    procedure Clear; virtual; abstract;
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
     procedure LoadBinaryFromFile(filename: string);
@@ -259,11 +259,13 @@ end;
 procedure TStreamingClass.Assign(source: TPersistent);
 //var s: string;
 var b: TMemoryStream;
+    o: TComponent;
 begin
   if source is TStreamingClass then begin
     b:=TMemoryStream.Create;
     b.WriteComponent(TComponent(source));
     b.Seek(0,soBeginning);
+    Clear;
     b.ReadComponent(self);
     b.Free;
 //    s:=TStreamingClass(source).SaveToString;
@@ -316,5 +318,17 @@ begin
     tmp:=tmp.Owner;
   until tmp=nil;
 end;
+
+(*
+procedure TStreamingClass.Clear;
+begin
+  //в производных классах в этой процедуре нужно описывать процесс возврата в
+  //первоначальное состояние
+  //InitInstance(self);
+  //заполняет все нулями, булевы значение в false, указатели в nil.
+  //обязательно в начале Clear в производном классе надо вызвать
+  //inherited
+end;
+*)
 
 end.

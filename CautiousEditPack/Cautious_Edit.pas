@@ -167,7 +167,7 @@ end;
 
 procedure TCautiousEdit.Change;
 begin
-  if Assigned(OnValidateResult) then OnValidateResult(self);
+  if Assigned(OnValidateResult) and enabled then OnValidateResult(self);
 end;
 
 procedure TCautiousEdit.SetOnValidateResult(value: TNotifyEvent);
@@ -196,9 +196,9 @@ begin
   if SeemsNormal then begin
     Color:=clRed;
     backupHint:=Hint;
-    Hint:=explain;
     fSeemsNormal:=false;
   end;
+  Hint:=explain;
   if Assigned(ControlToDisable) then DisableControl(ControlToDisable,self);
 end;
 
@@ -237,11 +237,9 @@ var res: Extended;
 begin
   if TryStrToFloat(text,res) then begin
     Result:=res;
-    ReturnToNormal;
   end
   else begin
     Result:=0;
-    TurnRed('Не является действительным числом');
     if not (csDesigning in self.ComponentState) then
         Raise Exception.Create('TFloatLabel: Not a number');
   end;
@@ -275,11 +273,9 @@ var res: Integer;
 begin
   if TryStrToInt(text,res) then begin
     Result:=res;
-    ReturnToNormal;
     end
   else begin
     Result:=0;
-    TurnRed('Не является целым числом');
     if not (csDesigning in self.ComponentState) then
       Raise Exception.Create('TIntegerEdit: Not a number');
   end;

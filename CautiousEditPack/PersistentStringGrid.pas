@@ -24,6 +24,7 @@ TPersistentStringGrid=class(TStringGrid)
     procedure CopyClipbrd;
     procedure PasteFromClipbrd;
     procedure ExportToExcel;
+    procedure AutoSize;
     property AsText: string read GetText write SetText;
   published
     property Delimiter: char read FDelimiter write FDelimiter;
@@ -230,6 +231,8 @@ var ExcelApp: Variant; //само приложение excel
     ExcelSht: Variant; //новый лист
     i,j: Integer;
     cellname: string;
+    val: Extended;
+    v: variant;
 begin
   try
     ExcelApp:=CreateOleObject('Excel.Application');
@@ -239,7 +242,13 @@ begin
     for j:=0 to RowCount-1 do
       for i:=0 to ColCount-1 do begin
         cellname:=Chr(Integer('A')+i)+IntToStr(j+1);
-        ExcelSht.Range[cellname,cellname]:=Cells[i,j];
+//        ExcelSht.Range[cellname,cellname]:=Cells[i,j];
+//очень странно он обращается с числами с плав. точкой - убивает в них запятую
+          if TryStrToFloat(Cells[i,j],val) then
+            ExcelSht.Cells.Item[j+1,i+1]:=val
+          else
+            ExcelSht.Cells.Item[j+1,i+1]:=Cells[i,j];
+
       end;
   finally
     if not VarIsEmpty(ExcelApp) then ExcelApp.visible:=true;
@@ -247,5 +256,21 @@ begin
   end;
 
 end;
+
+procedure TPersistentStringGrid.AutoSize;
+var i,j,s,x: Integer;
+    c: TStrings;
+begin
+  for i:=0 to ColCount-1 do begin
+    c:=Cols[i];
+    s:=0;
+    for j:=0 to RowCount-1 do begin
+      x:=Canvas.TextWidth(c[j])+5;
+      if x>s then s:=x;
+    end;
+    ColWidths[i]:=s;
+  end;
+end;
+
 
 end.
