@@ -17,6 +17,7 @@ TVector=class(TStreamingClass)
     constructor Create(str: string); reintroduce; overload;
     constructor CopyFrom(vector: TVector);
 
+    procedure Clear; override;
     procedure Assign(source: TPersistent); overload; override;
     procedure Assign(_x,_y,_z: Real); reintroduce; overload;
 
@@ -27,6 +28,8 @@ TVector=class(TStreamingClass)
 
     procedure Mul(by: Real);
     procedure Vector_multiply(by: TVector);
+    procedure Ortogonalize(axis: TVector);
+    function ProjectionLiesOnVectorItself(axis: TVector): boolean;
 
     procedure rotateX(angle: Real);
     procedure rotateZ(angle: Real);
@@ -34,15 +37,20 @@ TVector=class(TStreamingClass)
 
     procedure rotate_by_quat(q: TAbstractQuaternion);
 
+    function Length_squared: Real;
+
     class function scalar_product(M0,M1: TVector): Real;
     class function cos_between(M0,M1: TVector): Real;
     class function line_distance(M0,M1: TVector): Real;
+    class function distance_between(M0,M1: TVector): Real;
+    class function distance_squared(M0,M1: TVector): Real;
+    property Length: Real read getLength;
   published
     property X: Real read fX write fX;
     property Y: Real read fY write fY;
     property Z: Real read fZ write fZ;
     property Value: string read vector2str write str2vector stored false;
-    property Length: Real read getLength;
+
 end;
 
 TVectorVarData = packed record
@@ -107,7 +115,12 @@ begin
   Assign(vector);
 end;
 
-
+procedure TVector.Clear;
+begin
+  x:=0;
+  y:=0;
+  z:=0;
+end;
 
 procedure TVector.Assign(source: TPersistent);
 var t: TVector;
@@ -183,6 +196,11 @@ begin
   result:=sqrt(x*x+y*y+z*z);
 end;
 
+function TVector.Length_squared: Real;
+begin
+  Result:=x*x+y*y+z*z;
+end;
+
 procedure TVector.Mul(by: Real);
 begin
   x:=x*by;
@@ -200,6 +218,26 @@ begin
   z:=xt*by.y-yt*by.x;
 end;
 
+procedure TVector.Ortogonalize(axis: TVector);
+var a: Real;
+    v: TVector;
+begin
+  //вычитаем из вектора его проекцию на axis
+  a:=TVector.scalar_product(self,axis)/axis.Length_squared;
+  v:=TVector.CopyFrom(axis);
+  v.Mul(a);
+  Sub(v);
+  v.Free;
+end;
+
+function TVector.ProjectionLiesOnVectorItself(axis: TVector): boolean;
+var k: Real;
+begin
+  //проверяем, что "наш" вектор, давая проекцию на v, ляжет на него, т.е в единицах
+  //v будет составлять от 0 до 1 длины
+  k:=TVector.scalar_product(self,axis)/axis.Length_squared;
+  Result:=(k>=0) and (k<=1);
+end;
 
 procedure TVector.rotateX(angle: Real);
 var t,si,co: Real;
@@ -243,7 +281,19 @@ begin
   result:=scalar_product(M0,M1)/M0.Length/M1.Length;
 end;
 
+class function TVector.distance_between(M0,M1: TVector): Real;
+begin
+  Result:=Sqrt(sqr(M0.X-M1.X)+Sqr(M0.Y-M1.Y)+Sqr(M0.Z-M1.Z));
+end;
+
+class function TVector.distance_squared(M0,M1: TVector): Real;
+begin
+  Result:=sqr(M0.X-M1.X)+sqr(M0.Y-M1.Y)+sqr(M0.Z-M1.Z);
+end;
+
 class function TVector.line_distance(M0,M1: TVector): Real;
+//M0, M1 - координаты точек
+//найти расстояние от начала координат до отрезка, который их соединяет
 var t: TVector;
     k: Real;
 begin
@@ -506,4 +556,3 @@ initialization
 finalization
   FreeAndNil(VectorVariantType);
 end.
- 

@@ -244,10 +244,12 @@ begin
         cellname:=Chr(Integer('A')+i)+IntToStr(j+1);
 //        ExcelSht.Range[cellname,cellname]:=Cells[i,j];
 //очень странно он обращается с числами с плав. точкой - убивает в них запятую
-          if TryStrToFloat(Cells[i,j],val) then
-            ExcelSht.Cells.Item[j+1,i+1]:=val
-          else
-            ExcelSht.Cells.Item[j+1,i+1]:=Cells[i,j];
+          if Cells[i,j]<>'' then begin
+            if TryStrToFloat(Cells[i,j],val) then
+              ExcelSht.Cells.Item[j+1,i+1]:=val
+            else
+              ExcelSht.Cells.Item[j+1,i+1]:=Cells[i,j];
+          end;
 
       end;
   finally

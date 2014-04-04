@@ -16,6 +16,7 @@ type
       function get_Y: Real; virtual; abstract;
       function get_Z: Real; virtual; abstract;
     public
+      procedure Clear; override;
       procedure left_mul(by: TAbstractQuaternion);
       procedure right_mul(by: TAbstractQuaternion);
       procedure conjugate;
@@ -72,6 +73,14 @@ implementation
 function TAbstractQuaternion.toStr: string;
 begin
   result:=FloatToStr(a)+#9+FloatToStr(x)+'i'+#9+FloatToStr(y)+'j'+#9+FloatToStr(z)+'k';
+end;
+
+procedure TAbstractQuaternion.Clear;
+begin
+  a:=0;
+  x:=0;
+  y:=0;
+  z:=0;
 end;
 
 procedure TAbstractQuaternion.conjugate;
