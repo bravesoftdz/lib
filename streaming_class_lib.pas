@@ -259,7 +259,7 @@ end;
 procedure TStreamingClass.Assign(source: TPersistent);
 //var s: string;
 var b: TMemoryStream;
-    o: TComponent;
+//    o: TComponent;
 begin
   if source is TStreamingClass then begin
     b:=TMemoryStream.Create;

@@ -18,6 +18,7 @@ TVector=class(TStreamingClass)
     constructor CopyFrom(vector: TVector);
 
     procedure Clear; override;
+    procedure VectorAssign(source: TVector); 
     procedure Assign(source: TPersistent); overload; override;
     procedure Assign(_x,_y,_z: Real); reintroduce; overload;
 
@@ -25,6 +26,7 @@ TVector=class(TStreamingClass)
     procedure sub(by: TVector);
 
     procedure normalize;
+    procedure negate;
 
     procedure Mul(by: Real);
     procedure Vector_multiply(by: TVector);
@@ -134,6 +136,13 @@ begin
   else Inherited Assign(source);
 end;
 
+procedure TVector.VectorAssign(source: TVector);
+begin
+  x:=source.X;
+  y:=source.Y;
+  z:=source.Z;
+end;
+
 procedure TVector.Assign(_x,_y,_z: Real);
 begin
   x:=_x;
@@ -163,9 +172,6 @@ begin
   p.Free;
 end;
 
-
-
-
 procedure TVector.add(source: TVector);
 begin
   x:=x+source.x;
@@ -184,11 +190,18 @@ procedure TVector.normalize;
 var norm: Real;
 begin
   norm:=x*x+y*y+z*z;
-  assert(norm>0,'vector normalize: zero-length vector');
+  assert(norm>0,name+': vector normalize: zero-length vector');
   norm:=sqrt(norm);
   x:=x/norm;
   y:=y/norm;
   z:=z/norm; 
+end;
+
+procedure TVector.negate;
+begin
+  x:=-x;
+  y:=-y;
+  z:=-z;
 end;
 
 function TVector.getLength: Real;
@@ -217,7 +230,7 @@ begin
   y:=z*by.x-xt*by.z;
   z:=xt*by.y-yt*by.x;
 end;
-
+(*
 procedure TVector.Ortogonalize(axis: TVector);
 var a: Real;
     v: TVector;
@@ -229,6 +242,17 @@ begin
   Sub(v);
   v.Free;
 end;
+*)  //хреновая версия - возится с памятью на ровном месте, надо сделать только в лок. перем.
+
+procedure TVector.Ortogonalize(axis: TVector);
+var a: Real;
+begin //этот вариант должен быть существенно быстрее
+  a:=TVector.scalar_product(self,axis)/axis.Length_squared;
+  x:=x-a*axis.x;
+  y:=y-a*axis.Y;
+  z:=z-a*axis.Z;
+end;
+
 
 function TVector.ProjectionLiesOnVectorItself(axis: TVector): boolean;
 var k: Real;

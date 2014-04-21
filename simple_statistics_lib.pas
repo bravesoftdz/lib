@@ -103,8 +103,11 @@ var i: Integer;
     s: Real;
 begin
   s:=0;
-  for i:=0 to count-1 do s:=s+prob[i];
-  for i:=0 to count-1 do prob[i]:=prob[i]/s;
+  for i:=0 to count-1 do
+    s:=s+prob[i];
+  Assert(s>0,'TDiscretePick.Normalize: zero total probability');
+  for i:=0 to count-1 do
+    prob[i]:=prob[i]/s;
 end;
 (*
         TSimplestPick
