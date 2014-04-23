@@ -460,32 +460,9 @@ end;
                                           *)
 
 procedure TChangePropertiesCommand._getPropInfo(propPath: string);
-var i,j,L: Integer;
-  PropValue: TObject;
-  fPropName: string;
 begin
-  i := 1;
-  L := Length(propPath);
-  Instance := FindOwner;
-  while True do
-    begin
-      j := i;
-      while (i <= L) and (PropPath[i] <> '.') do Inc(i);
-      FPropName := Copy(PropPath, j, i - j);
-      if i > l then Break;
-      fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
-      if fPropInfo = nil then
-          Raise Exception.Create('Property '+FPropName+' not found');
-      PropValue := nil;
-      if fPropInfo^.PropType^.Kind = tkClass then
-        PropValue := TObject(GetOrdProp(Instance, fPropInfo));
-      if not (PropValue is TPersistent) then Raise Exception.Create('Wrong property path');
-      Instance := TPersistent(PropValue);
-      Inc(I);
-    end;
-    fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+  myGetPropInfo(propPath,instance,fPropInfo);
 end;
-
 
 
 (*

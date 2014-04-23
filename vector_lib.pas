@@ -29,6 +29,7 @@ TVector=class(TStreamingClass)
     procedure negate;
 
     procedure Mul(by: Real);
+    procedure Divide(by: Real);
     procedure Vector_multiply(by: TVector);
     procedure Ortogonalize(axis: TVector);
     function ProjectionLiesOnVectorItself(axis: TVector): boolean;
@@ -219,6 +220,13 @@ begin
   x:=x*by;
   y:=y*by;
   z:=z*by;
+end;
+
+procedure TVector.Divide(by: Real);
+begin
+  x:=x/by;
+  y:=y/by;
+  z:=z/by;
 end;
 
 procedure TVector.Vector_multiply(by: TVector);

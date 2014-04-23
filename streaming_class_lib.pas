@@ -1,7 +1,7 @@
 unit streaming_class_lib;
 
 interface
-uses Classes,sysutils;
+uses Classes,sysutils,typInfo;
 
 type
 
@@ -11,6 +11,7 @@ TstreamingClass=class(TComponent)
   protected
     procedure   GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function    GetChildOwner: TComponent; override;
+    procedure myGetPropInfo(propPath: string; out instance: TPersistent; out fPropInfo: PPropInfo);
   public
     saveFormat: StreamingClassSaveFormat;
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
@@ -27,13 +28,19 @@ TstreamingClass=class(TComponent)
     function IsEqual(what: TStreamingClass): boolean; virtual;
     function EqualsByAnyOtherName(what: TStreamingClass): boolean; virtual;
 
-    function FindOwner: TComponent;
+    function FindOwner: TComponent; //доходит до самого высокого уровня
+
+    function GetFloatProperty(aPath: string): Real;
 
   end;
 
 TStreamingClassClass=class of TStreamingClass;
 
 implementation
+
+(*
+      General procedures
+                            *)
 
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;
@@ -106,12 +113,8 @@ begin
 end;
 
 (*
-constructor TstreamingClass.Create(owner: TComponent;_name: TComponentName);
-begin
-  inherited Create(owner);
-  name:=_name;
-end;
-*)
+        TStreamingClass
+                                *)
 
 function TstreamingClass.GetChildOwner: TComponent;
 begin
@@ -257,9 +260,7 @@ begin
 end;
 
 procedure TStreamingClass.Assign(source: TPersistent);
-//var s: string;
 var b: TMemoryStream;
-//    o: TComponent;
 begin
   if source is TStreamingClass then begin
     b:=TMemoryStream.Create;
@@ -268,8 +269,6 @@ begin
     Clear;
     b.ReadComponent(self);
     b.Free;
-//    s:=TStreamingClass(source).SaveToString;
-//    self.LoadFromString(s);
   end
   else inherited Assign(source);
 end;
@@ -330,5 +329,51 @@ begin
   //inherited
 end;
 *)
+
+procedure TStreamingClass.myGetPropInfo(propPath: string; out Instance: TPersistent; out fPropInfo: PPropInfo);
+var i,j,L: Integer;
+  PropValue: TObject;
+  fPropName: string;
+
+begin
+  i := 1;
+  L := Length(propPath);
+  Instance := FindOwner;
+  while True do
+    begin
+      j := i;
+      while (i <= L) and (PropPath[i] <> '.') do Inc(i);
+      FPropName := Copy(PropPath, j, i - j);
+      if i > l then Break;
+      fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+      if fPropInfo = nil then begin
+        if (Instance is TComponent) then begin
+          Instance:=TComponent(Instance).FindComponent(fPropName) as TPersistent;
+          if Instance=nil then Exception.Create('Property '+FPropName+' not found');
+        end
+        else Raise Exception.Create('Property '+FPropName+' not found');
+      end
+      else begin
+        PropValue := nil;
+        if fPropInfo^.PropType^.Kind = tkClass then
+          PropValue := TObject(GetOrdProp(Instance, fPropInfo));
+        if not (PropValue is TPersistent) then Raise Exception.Create('Wrong property path');
+        Instance := TPersistent(PropValue);
+      end;
+      Inc(I);
+    end;
+    fPropInfo := GetPropInfo(Instance.ClassInfo, FPropName);
+end;
+
+
+function TStreamingClass.GetFloatProperty(aPath: string): Real;
+var instance: TPersistent;
+    fPropInfo: PPropInfo;
+begin
+  myGetPropInfo(aPath,instance,fPropInfo);
+  if fPropInfo.PropType^.Kind<>tkFloat then Raise Exception.Create('error: property is not float number');
+  Result:=GetFloatProp(instance,fPropInfo);
+end;
+
 
 end.
