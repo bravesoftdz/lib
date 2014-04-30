@@ -261,7 +261,6 @@ begin //этот вариант должен быть существенно быстрее
   z:=z-a*axis.Z;
 end;
 
-
 function TVector.ProjectionLiesOnVectorItself(axis: TVector): boolean;
 var k: Real;
 begin

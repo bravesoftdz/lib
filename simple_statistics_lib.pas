@@ -138,7 +138,7 @@ begin
   _sum:=_sum+values._sum;
   _sum_squares:=_sum_squares+values._sum_squares;
   if values._min<_min then _min:=values._min;
-  if values._max<_max then _max:=values._max;
+  if values._max>_max then _max:=values._max;
 end;
 
 function T1Dstats.get_ave: Real;

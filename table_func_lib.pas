@@ -1,157 +1,42 @@
 unit table_func_lib;
-(*
-version 0.9
-изменения в 0.9
-- description теперь TStringList - это быстрее работает и красивее сохраняет в файле
-- корректно загружаются файлы, где desription на много строк
-
-изменения в 0.83
-- наконец-то, прибавление константы!
-
-изменения в 0.82
-- сделано очень быстрое сохранение в составе других объектов, основанное на DefineProperties
-- методы LoadFromFile и SaveToFile переименованы в LoadFromTextFile и SaveToTextFile - чтобы не путать со streaming форматом
-- исправлены ошибки, возникшие при переходе на асимптотически быстрый метод выделения памяти
-
-изменения в 0.81
-- допустимы пустые строки в секции [data]
-- улучшено сохранение в файл и в строку, устранена избыточность в процедурах загрузки
-- ускорено выполнение процедуры AddPoint - поиск места, куда надо вставить точку - двоичный.
-- переделан формат сохранения в составе других объектов, для большей читаемости
-- убрана за ненадобностью переменная step - надоела!
-
-изменения в 0.8
-- теперь это производная от класса TStreamingClass
-- можно хранить в составе других объектов
-- новое свойство zero_out_of_bounds. Если true, вне области определения возращает ноль. Если false - то значение от ближайшей точки.
-
-version 0.72
-изменения в 0.72
-- позволяет на любом компьютере, независимо от региональных настроек, работать как с
-точкой, так и с запятой в роли разделителя целой и дробной части
-
-изменения в 0.71
-- в явном виде возвращает ноль, если значение x вне области определения функции
-
-изменения в 0.70
-- процедура Draw смотрит минимальное и максимальное значения на графике, если они заданы
-- в ней же вместо отрисовки по фактическому кол-ву пикселей по ширине, берется характерное значение для наших экранов - 1280 пикс.
-- новый формат данных в документе, чтобы можно было указать порядок интерполяции, подписи к осям, имя графика,
-описание, размерности и пр. Но надо оставить совместимость с прошлым форматом.
-Секция [general]
-title - название графика
-Xname - подпись оси X
-Yname - подпись оси Y
-Xunit - размерность по X
-Yunit - размерность по Y
-order - порядок интерполяции
-Секция [description]
-В текстовом виде - комментарий к графику
-Секция [data]
-Пары x-y: собственно данные.
-
-Комментарии - или ;, или //, или #
-Можно пропускать строки
-
-- исправлен глюк в update_spline, что только при порядке интерполяции 3 он сбрасывал флаг changed,
-это среди прочего приводило к неправильной работе normalize. 
-
-
-изменения в 0.63
-исправлены серьезные ошибки:
-- функция integrate проверяет переменную changed, если true, вызывает update_spline
-- функция assign по умолчанию ставит changed=true, на случай, если исходная табл. функция еще не до конца построена
-- в normalize, если максимум - ноль или меньше, нормализации не происходит
-- наконец-то дописана процедура morepoints, но не в 16, а в 2 раза увел. количество точек
-
-изменения в 0.62
-
-введена булева переменная changed (private), она меняется на true, если поменялась
-функция, но еще не была вызвана updatespline. Вызов updatespline в add_point убран.
-Она вызывается из splinevalue, если функция поменялась. Таким образом, при добавлении
-большого числа точек не будет происходить пересчета на каждой из них - только когда понадобится
-знач. функции. Свойства minx,maxx,miny,maxy при обращении теперь вызывают функцию. Если были
-изменения - вызывается updatespline
-
-изменения в 0.61
-добавлена процедура Clear - она стирает функцию, но оставляет привязку к графику
-
-изменения в 0.6
-убраны лишние переменные из addpoint
-
-если пытаемся найти значение пустой функции, теперь выдается NAN
-
-теперь класс table_func образован от TPersistent,
-определена процедура assign, чтобы одному экземпляру класса
-присвоить значение другого
-
-поправлена функция AddPoint, в ней не был предусмотрен вариант, что
-точка с такой же координатой X уже существует. Теперь в таком случае
-старая точка заменяется новой.
-
-добавлена функция перемножения двух table_func: multiply(by)
-синтаксис:
-dest.multiply(source)
-что эквивалентно мнемонической записи
-dest=dest*source
-
-добавлена функция умножения на константу (перегруженная версия multiply
-dest.multiply(100); - умножить на 100
-
-добавлена функция взятия определенного интеграла
-по всей области определения функции
-value:=func.integrate;
-
-
-
-
-
-
-изменения в 0.53:
-добавлена перегруженная версия конструктора, чтобы загружать
-функцию из файла одной строкой
-
-добавлен параметр chart_series - ссылка на элемент TLineSeries,
-процедура draw - чтобы автоматически нарисовать график.
-
-изменения в 0.52:
-добавлена функция addpoint(X,Y) - чтобы вставить в функцию новую точку
-с автоматическим пересчетом сплайнов
-и свойство enabled - оно становится true
-только если есть хотя бы одна точка
-
-изменения в 0.51:
-- устранен глюк с access violation: в модуле update_spline
-использовалась переменная-счетчик после цикла for, ее значение
-было неустойчиво
-
-- конструктор, со значением порядка интерполяции 3
-по умолчанию (раньше назначался порядок 0, что редко бывает
-нужно)
-
-добавлено в 0.5:
-интерполяция 0-го порядка (ступеньки)
-1-го (соед. прямыми)
-и 3-го (кубическими сплайнами)
-порядок можно менять по ходу дела
-добавлен параметр: мин. шаг, для оценки необходимого шага интегрирования и пр.
-математических операций
-добавлена функция нормализации по максимуму
-
-*)
 
 interface
 uses SysUtils,math,TeEngine, Series, ExtCtrls, TeeProcs, Chart,classes,streaming_class_lib,streamio,simple_parser_lib,Graphics;
 
 type
-  table_func=class(TstreamingClass)
+
+  TAbstractMathFunc=class(TStreamingClass)
     private
-    _title: string;
-    _Xname: string;
-    _Yname: string;
-    _Xunit: string;
-    _Yunit: string;
-    _description: Tstrings;
+      ftitle,fXname,fYname,fXunit,fYunit: string;
+      fDescription: TStrings;
+
+      procedure SetDescription(value: TStrings);
+
+      function get_xmin: Real; virtual; abstract;
+      function get_xmax: Real; virtual; abstract;
+      function get_ymin: Real; virtual; abstract;
+      function get_ymax: Real; virtual; abstract;
+      function GetValue(xi: Real): Real; virtual; abstract;
+    public
+      constructor Create(owner: TComponent); override;
+      destructor Destroy; override;
+      
+      property xmin: Real read get_xmin;
+      property xmax: Real read get_xmax;
+      property ymin: Real read get_ymin;
+      property ymax: Real read get_ymax;
+      property value[xi: Real]: Real read GetValue; default;
+    published
+      property title: string read ftitle write ftitle;
+      property Xname: string read fXname write fXName;
+      property Yname: string read fYname write fYname;
+      property Xunit: string read fXunit write fXunit;
+      property Yunit: string read fYunit write fYunit;
+      property Description: Tstrings read fdescription write SetDescription;
+    end;
+
+  table_func=class(TAbstractMathFunc)
+    private
     iOrder: Integer;
     fTolerance: Real;
     fCyclic: Boolean;
@@ -165,25 +50,22 @@ type
     _oub: Boolean;
     changed: boolean;
     fchart_series: TLineSeries;
-//    fLineColor: TColor; //цвет линий на графике при выполнении Draw
 
     procedure plus_one; //приготовить место для еще одного числа
-    function splinevalue(xi:Real): Real;
+    function Getvalue(xi:Real): Real; override;
     procedure update_spline();
     procedure update_order(new_value: Integer);
     function isen: Boolean;
-    function get_xmin: Real;
-    function get_xmax: Real;
-    function get_ymin: Real;
-    function get_ymax: Real;
+    function get_xmin: Real; override;
+    function get_xmax: Real; override;
+    function get_ymin: Real; override;
+    function get_ymax: Real; override;
 
     procedure WriteData(Writer: TWriter);
     procedure ReadData(Reader: TReader);
 
     procedure write_to_stream(var F: Textfile);
     procedure read_from_stream(var F: TextFile);
-
-    procedure SetDescription(Strings: TStrings);
 
       protected
 
@@ -192,15 +74,9 @@ type
       public
     X,Y: array of Real;
 
-    property xmin: Real read get_xmin;
-    property xmax: Real read get_xmax;
-    property ymin: Real read get_ymin;
-    property ymax: Real read get_ymax;
-    property value[xi: Real]: Real read splinevalue; default;
-
     function LoadFromTextFile(filename: string): Boolean;
     procedure LoadConstant(new_Y:Real;new_xmin:Real;new_xmax:Real);
-    procedure Clear;
+    procedure Clear; override;
     procedure ClearPoints;
     function SaveToTextFile(filename: string): Boolean;
     function AsTabbedText: string;
@@ -212,7 +88,6 @@ type
     constructor Create(owner: TComponent); overload; override;
     constructor Create; reintroduce; overload;
     constructor Create(filename: string); reintroduce; overload;
-    destructor Destroy; override;
     procedure draw;
     procedure Add(c: Real); overload;
     procedure Add(term: table_func); overload;
@@ -229,14 +104,10 @@ type
     function derivative(xi: Real): Real; overload;
     function FindInterval(xi: Real): Integer; //между какими табл. значениями лежит нужное нам
     procedure integral;
+    function IsEqual(t: table_func): Boolean; reintroduce;
+
     property chart_series: TLineSeries read fchart_series write fchart_series;
       published
-    property title: string read _title write _title;
-    property Xname: string read _Xname write _XName;
-    property Yname: string read _Yname write _Yname;
-    property Xunit: string read _Xunit write _Xunit;
-    property Yunit: string read _Yunit write _Yunit;
-    property Description: Tstrings read _description write SetDescription;
     property order: Integer read iorder write update_order default 3;
     property zero_out_of_bounds: boolean read _oub write _oub default true; //поведение за границами обл. опред
     property Cyclic: boolean read fCyclic write fCyclic default false;
@@ -246,6 +117,31 @@ type
     end;
 implementation
 const eol: string=#13+#10;
+
+(*
+      TAbstractMathFunc
+                            *)
+constructor TAbstractMathFunc.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  fdescription:=TStringList.Create;
+  SetSubComponent(true);
+end;
+
+destructor TAbstractMathFunc.Destroy;
+begin
+  fdescription.Free;
+  inherited Destroy;
+end;
+
+procedure TAbstractMathFunc.SetDescription(value: TStrings);
+begin
+  fdescription.Assign(value);
+end;
+
+(*
+      table_func
+                        *)
 
 procedure table_func.DefineProperties(Filer: TFiler);
 begin
@@ -300,26 +196,17 @@ end;
 constructor table_func.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  _description:=TStringList.Create;
   iorder:=3;
   tolerance:=1e-27;
   _oub:=true;
-//  LineColor:=clBlack;
   Clear;
   chart_series:=nil;
-  SetSubComponent(true);
 end;
 
 constructor table_func.Create(filename: string);
 begin
   Create(owner);
   LoadFromTextFile(filename);
-end;
-
-destructor table_func.Destroy;
-begin
-  _description.Free;
-  inherited Destroy;
 end;
 
 function table_func.isen: Boolean;
@@ -362,12 +249,12 @@ begin
 end;
 
 
-function table_func.splinevalue(xi: Real): Real;
+function table_func.GetValue(xi: Real): Real;
 var k: Integer;
 r: Real;
 begin
   k:=FindInterval(xi);
-  if k=-2 then splinevalue:=NAN
+  if k=-2 then Result:=NAN
   else if (k=-1) then
     if _oub then Result:=0 else Result:=Y[0]
     else if k>=count then
@@ -404,7 +291,7 @@ begin
     chart_series.Clear;
     for i:=0 to w do begin
       t:=t_xmin+st*i;
-      chart_series.AddXY(t,splinevalue(t));
+      chart_series.AddXY(t,GetValue(t));
     end;
 
   end;
@@ -756,7 +643,7 @@ begin
   //нам надо лишь перемножить отдельные точки
   ls:=by.count-1;
   SetLength(Yt,ls+1);
-  for i:=0 to ls do Yt[i]:=by.Y[i]*splinevalue(by.X[i]);
+  for i:=0 to ls do Yt[i]:=by.Y[i]*GetValue(by.X[i]);
 
   ld:=count-1;
   for i:=0 to ld do Y[i]:=Y[i]*by[X[i]];
@@ -773,7 +660,7 @@ begin
   if not (term.enabled and enabled) then Exit;
   ls:=term.count-1;
   SetLength(Yt,ls+1);
-  for i:=0 to ls do Yt[i]:=term.Y[i]+splinevalue(term.X[i]);
+  for i:=0 to ls do Yt[i]:=term.Y[i]+GetValue(term.X[i]);
 
   ld:=count-1;
   for i:=0 to ld do Y[i]:=Y[i]+term[X[i]];
@@ -789,7 +676,7 @@ begin
   if not (term.enabled and enabled) then Exit;
   ls:=term.count-1;
   SetLength(Yt,ls+1);
-  for i:=0 to ls do Yt[i]:=-term.Y[i]+splinevalue(term.X[i]);
+  for i:=0 to ls do Yt[i]:=-term.Y[i]+GetValue(term.X[i]);
 
   ld:=count-1;
   for i:=0 to ld do Y[i]:=Y[i]-term[X[i]];
@@ -898,7 +785,7 @@ if j<=0 then exit;
 i:=2*j; //конец массива
 SetLength(Yt,j);
 for k:=0 to j-1 do begin
-  Yt[k]:=splinevalue((X[k]+X[k+1])/2);
+  Yt[k]:=GetValue((X[k]+X[k+1])/2);
 end;
 
 _length:=i+1;
@@ -1035,11 +922,6 @@ begin
   for i:=0 to count-1 do X[i]:=X[i]+amount;
 end;
 
-procedure table_func.SetDescription(strings: TStrings);
-begin
-  _description.Assign(strings);
-end;
-
 procedure table_func.multiply_argument(by: Real);
 var i: Integer;
 begin
@@ -1059,6 +941,19 @@ begin
   end;
   Result:=m.Text;
   m.Free;
+end;
+
+function table_func.IsEqual(t: table_func): boolean;
+var tol: Real;
+    i: Integer;
+begin
+  Result:=false;
+  if (t.count=count) and (order=t.order) and (cyclic=t.Cyclic) and (zero_out_of_bounds=t.zero_out_of_bounds) then begin
+    tol:=tolerance+t.Tolerance;
+    for i:=0 to count-1 do
+      if (abs(X[i]-t.X[i])>tol) or (abs(Y[i]-t.Y[i])>tol) then Exit;
+    Result:=true;
+  end;
 end;
 
 
