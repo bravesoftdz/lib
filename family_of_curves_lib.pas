@@ -137,7 +137,7 @@ end;
 
 function TFamilyOfCurves.getValue(x,param: Real): Real;
 var i,j,k: Integer;
-    r: Real;
+//    r: Real;
 label Found;
 begin
   i:=0;

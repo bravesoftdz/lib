@@ -238,14 +238,15 @@ type
       initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
       new_commands_added: Boolean;  //и добавлены ли новые команды
       fOnDocumentChange: TNotifyEvent;
+      fOnLoad: TNotifyEvent;
       fCriticalSection: TCriticalSection;
       procedure SetOnDocumentChange(value: TNotifyEvent);
+      procedure SetOnLoad(value: TNotifyEvent);
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     public
       SaveWithUndo: boolean;
       FileName: string;
-      onLoad: TNotifyEvent;
       constructor Create(Aowner: TComponent); override;
       constructor LoadFromFile(aFileName: string); override;
       procedure AfterConstruction; override;
@@ -263,6 +264,7 @@ type
       procedure Change; virtual;
       procedure DoLoad; virtual;
       property onDocumentChange: TNotifyEvent read fOnDocumentChange write SetOnDocumentChange;
+      property onLoad: TNotifyEvent read fOnLoad write SetOnLoad;
       function Hash: T4x4LongWordRecord;
     published
       UndoTree: TCommandTree;
@@ -1127,6 +1129,12 @@ procedure TAbstractDocument.SetOnDocumentChange(value: TNotifyEvent);
 begin
   fOnDocumentChange:=value;
   if Assigned(fOnDocumentChange) then fOnDocumentChange(self);
+end;
+
+procedure TAbstractDocument.SetOnLoad(value: TNotifyEvent);
+begin
+  fOnLoad:=value;
+  if Assigned(fOnLoad) then fOnLoad(self);
 end;
 
 (*
