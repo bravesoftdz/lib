@@ -365,7 +365,7 @@ begin
     (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
     new_doc.Doload;
 
-    doc.Free;
+    doc.Release;
     //пусть документ будет сам по себе, свой собственный, оно проще
   end;
 end;
@@ -414,7 +414,8 @@ begin
   //теперь перем. doc ссылаетс€ уже на новую.
   new_doc.onDocumentChange:=doc.onDocumentChange;
   new_doc.onLoad:=doc.onLoad;
-  doc.Free;
+  doc.Release;
+//  doc.Free;
 end;
 
 procedure TOpenProjectAction.ExecuteTarget(Target: TObject);
@@ -495,7 +496,7 @@ begin
           200: our_doc.UndoTree.MergeWith(tmp.UndoTree);
         end;
       end;
-      tmp.Free;
+      tmp.Release;
 
     except
       CanClose:=(Application.MessageBox('¬ыбранный файл не €вл€етс€ документом данной программы, при сохранении его старое содержимое будет утер€но. ¬ы хотите продолжить?','—охранить как...',mb_YesNo)=IDYes);

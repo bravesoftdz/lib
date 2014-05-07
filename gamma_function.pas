@@ -16,6 +16,8 @@ function monochrome_from_Real (x: Real): TColor;
 function gamma(x: Real): Integer;
 function inverse_gamma(x: Integer): Real;
 
+function ColorFromReals(R,G,B: Real): TColor;
+
 implementation
 //для преобр. числа от 0 до 1 (1 - макс интенсивность) в целое от 0 до 255 - яркость пиксела
 function gamma(x: Real): Integer;
@@ -48,5 +50,13 @@ begin
   i:=RGBColor(c).G;
   result:=inverse_gamma(i);
 end;
+
+function ColorFromReals(R,G,B: Real): TColor;
+begin
+  RGBColor(Result).R:=gamma(R);
+  RGBColor(Result).G:=gamma(G);
+  RGBColor(Result).B:=gamma(B);
+end;
+
 
 end.

@@ -167,9 +167,6 @@ end;
 constructor colorimetry_funcs.Create;
 begin
   inherited Create;
-  xt:=table_func.Create('data/colorimetry/x_vs_lambda.txt');
-  yt:=table_func.Create('data/colorimetry/y_vs_lambda.txt');
-  zt:=table_func.Create('data/colorimetry/z_vs_lambda.txt');
   rt:=table_func.Create;
   bt:=table_func.Create;
   gt:=table_func.Create;
@@ -179,9 +176,6 @@ end;
 
 destructor colorimetry_funcs.Destroy;
 begin
-  xt.Free;
-  yt.Free;
-  zt.Free;
   rt.Free;
   gt.Free;
   bt.Free;
@@ -368,11 +362,15 @@ var i,l: Integer;
     r0,g0,b0: Real;
     mi,ma: Real;
     arg: Real;
+    incr: Integer;
 begin
   l:=XRight-XLeft;
+  assert(l<>0,'colorimetry.draw: xright=xleft');
+  if l<0 then incr:=-1 else incr:=1;
   mi:=-min(rt.ymin,min(gt.ymin,bt.ymin))*desat;
   ma:=max(rt.ymax,max(gt.ymax,bt.ymax))*sat+mi;
-  for i:=0 to l do begin
+  i:=0;
+  while i<>l do begin
     arg:=rt.xmin+i*(rt.xmax-rt.xmin)/l;
     r0:=rt[arg]+mi;
     if r0<0 then r0:=0;
@@ -390,6 +388,7 @@ begin
     canvas.Pen.Color:=RGB(round(r0),round(g0),round(b0));
     canvas.MoveTo(i+XLeft,YTop);
     canvas.LineTo(i+xleft,YBottom);
+    inc(i,incr);
   end;
 end;
 

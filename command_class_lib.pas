@@ -1,7 +1,7 @@
 unit command_class_lib;
 
 interface
-uses streaming_class_lib,classes,TypInfo,IdHash;
+uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs;
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
@@ -238,6 +238,7 @@ type
       initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
       new_commands_added: Boolean;  //и добавлены ли новые команды
       fOnDocumentChange: TNotifyEvent;
+      fCriticalSection: TCriticalSection;
       procedure SetOnDocumentChange(value: TNotifyEvent);
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
@@ -249,6 +250,7 @@ type
       constructor LoadFromFile(aFileName: string); override;
       procedure AfterConstruction; override;
       destructor Destroy; override;
+      procedure Release;
 
       procedure Undo;
       procedure Redo;
@@ -266,6 +268,14 @@ type
       UndoTree: TCommandTree;
     end;
 
+  TSavingThread=class(TThread)
+    private
+      fdoc: TAbstractDocument;
+    protected
+      procedure Execute; override;
+    public
+      constructor Create(docToSave: TAbstractDocument);
+  end;
 implementation
 
 uses SysUtils,StrUtils,IdHashMessageDigest;
@@ -967,14 +977,8 @@ end;
 constructor TAbstractDocument.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-//  UndoList:=nil;
-  UndoTree:=nil;
-  FileName:='';
-  onDocumentChange:=nil;
-  onLoad:=nil;
   SaveWithUndo:=true;
-  initial_pos:=nil;
-  new_commands_added:=false;
+  fCriticalSection:=TCriticalSection.Create;
 end;
 
 constructor TAbstractDocument.LoadFromFile(aFileName: string);
@@ -999,9 +1003,16 @@ begin
   end;
 end;
 
+procedure TAbstractDocument.Release;
+begin
+  fCriticalSection.Acquire;
+  Free;
+end;
+
 destructor TAbstractDocument.Destroy;
 begin
   UndoTree.Free;
+  fCriticalSection.Free;
   inherited Destroy;
 end;
 
@@ -1026,6 +1037,7 @@ end;
 
 procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
 begin
+  fCriticalSection.Acquire;
   undotree.InsertComponent(command);
   //может быть, не нужно исполнять конкретно эту команду, она уже есть
   //именно когда обе команды еще не исполнены, их можно сравнивать
@@ -1040,12 +1052,15 @@ begin
     new_commands_added:=true;
     end
     else command.Free;
+
+  fCriticalSection.Leave;
 end;
 
 procedure TAbstractDocument.Save;
 begin
   Assert(FileName<>'','WTF: empty filename');
-  self.SaveToFile(FileName);
+  TSavingThread.Create(self);
+//  self.SaveToFile(FileName);
   initial_pos:=UndoTree.current;
   new_commands_added:=false;
 end;
@@ -1053,7 +1068,9 @@ end;
 procedure TAbstractDocument.Undo;
 begin
   if UndoTree.UndoEnabled then begin
-    UndoTree.Undo;
+    fCriticalSection.Acquire;
+      UndoTree.Undo;
+    fCriticalSection.Leave;
     Change;
   end;
 end;
@@ -1061,14 +1078,18 @@ end;
 procedure TAbstractDocument.Redo;
 begin
   if UndoTree.RedoEnabled then begin
-    UndoTree.Redo;
+    fCriticalSection.Acquire;
+      UndoTree.Redo;
+    fCriticalSection.Leave;
     Change;
   end;
 end;
 
 procedure TAbstractDocument.JumpToBranch(Branch: TAbstractCommand);
 begin
-  UndoTree.JumpToBranch(Branch);
+  fCriticalSection.Acquire;
+    UndoTree.JumpToBranch(Branch);
+  fCriticalSection.Leave;
   Change;
 end;
 
@@ -1388,6 +1409,24 @@ begin
   InsertComponent(t);
   if Assigned(t.Next) then Assimilate(t.Next);
   if Assigned(t.Branch) then Assimilate(t.Branch);
+end;
+
+(*
+      TSavingThread
+                        *)
+constructor TSavingThread.Create(docToSave: TAbstractDocument);
+begin
+  inherited Create(true);
+  fdoc:=docToSave;
+  FreeOnTerminate:=true;
+  Resume;
+end;
+
+procedure TSavingThread.Execute;
+begin
+  fdoc.fCriticalSection.Acquire;
+    fdoc.SaveToFile(fdoc.FileName);
+  fdoc.fCriticalSection.Leave;
 end;
 
 
