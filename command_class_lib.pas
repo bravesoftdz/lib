@@ -1,7 +1,9 @@
 unit command_class_lib;
 
 interface
-uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs;
+
+uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls;
+
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
@@ -232,7 +234,7 @@ type
       property Root: TAbstractCommand read fRoot write fRoot;
       property Current: TAbstractCommand read fCurrent write fCurrent;
     end;
-
+  TAbstractToolAction=class;
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
       initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
@@ -246,6 +248,7 @@ type
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     public
       SaveWithUndo: boolean;
+      StatusPanel: TStatusPanel;
       FileName: string;
       constructor Create(Aowner: TComponent); override;
       constructor LoadFromFile(aFileName: string); override;
@@ -268,6 +271,7 @@ type
       function Hash: T4x4LongWordRecord;
     published
       UndoTree: TCommandTree;
+      Tool: TAbstractToolAction;
     end;
 
   TSavingThread=class(TThread)
@@ -278,9 +282,34 @@ type
     public
       constructor Create(docToSave: TAbstractDocument);
   end;
+
+  TAbstractDocumentAction=class(TCustomAction)
+  protected
+    function GetDoc: TAbstractDocument;
+  public
+    function HandlesTarget(Target: TObject): Boolean; override;
+    function Update: Boolean; override;
+  published
+    property Caption;
+  end;
+
+  TAbstractToolAction=class(TAbstractDocumentAction)
+  public
+    procedure SetStatusPanel(text: string);
+    destructor Destroy; override;
+    procedure ExecuteTarget(Target: TObject); override;
+    procedure Select; virtual; abstract;
+    procedure Unselect; virtual; abstract;
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer); virtual; abstract;
+    procedure MouseMove(Shift: TShiftState; X,Y: Integer); virtual; abstract;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual; abstract;
+  end;
+
+  TAbstractToolActionClass=class of TAbstractToolAction;
+
 implementation
 
-uses SysUtils,StrUtils,IdHashMessageDigest;
+uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions;
 
 (*
         TAbstractCommand
@@ -1437,6 +1466,72 @@ begin
   fdoc.fCriticalSection.Leave;
 end;
 
+
+(*
+        TAbstractDocumentAction
+                                      *)
+function TAbstractDocumentAction.GetDoc: TAbstractDocument;
+begin
+  if (ActionList is TAbstractDocumentActionList) and Assigned(TAbstractDocumentActionList(ActionList).doc) then
+    Result:=TAbstractDocumentActionList(ActionList).doc^
+  else
+    Result:=nil;
+  //получается, что результат nil в след. случаях:
+  //- действие принадлежит неправильному ActionList'у (не имеющему свойства doc)
+  //- doc=nil, т.е. actionList ни на что не ссылается
+  //- doc^=nil, т.е actionList ссылается на переменную, которая ссылается на nil
+end;
+
+function TAbstractDocumentAction.HandlesTarget(Target: TObject): Boolean;
+begin
+//выполнима ли команда или пора ее сразу отключить, от греха подальше
+  Result:=Assigned(Target) and (Target is TAbstractDocument);
+//классы-потомки могут начинать свою проверку с inherited HandlesTarget(Target) and ...
+//по принципу short cut, если даже это ложно, дальше он не полезет.
+end;
+
+function TAbstractDocumentAction.Update: boolean;
+var doc: TabstractDocument;
+begin
+//это место будет вызываться когда не лень, чтобы выяснить, не надо ль
+//отключить элем. управления или еще что-нибудь в этом духе
+  doc:=getDoc;
+  Enabled:=Assigned(doc);
+  Result:=true; //то есть мы выяснили все что хотели и дальше бегать не надо
+//если отсутствует документ вообще, тогда разумеется и действие отключаем
+end;
+
+(*
+      TAbstractToolAction
+                                *)
+procedure TAbstractToolAction.ExecuteTarget(Target: TObject);
+var doc: TAbstractDocument;
+  ToolClass: TAbstractToolActionClass;
+begin
+  doc:=Target as TAbstractDocument;
+  doc.tool.free;
+  ToolClass:=TAbstractToolActionClass(self.classType);
+  doc.Tool:=ToolClass.Create(doc);
+  doc.Tool.Name:='Tool';
+  doc.Tool.Assign(self);
+  doc.Tool.Select;
+end;
+
+destructor TAbstractToolAction.Destroy;
+begin
+  Unselect;
+  inherited Destroy;
+end;
+
+procedure TAbstractToolAction.SetStatusPanel(text: string);
+var data: TAbstractDocument;
+begin
+  if (owner<>nil) then begin
+    data:=owner as TAbstractDocument;
+    if data.StatusPanel<>nil then
+      data.StatusPanel.Text:=text;
+  end;
+end;
 
 initialization
 RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand]);

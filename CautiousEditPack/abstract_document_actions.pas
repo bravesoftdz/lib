@@ -2,7 +2,7 @@ unit abstract_document_actions;
 
 interface
 
-uses actnlist,command_class_lib,classes,dialogs,menus,formHistory;
+uses actnlist,command_class_lib,classes,dialogs,menus,formHistory,controls;
 
 type
 
@@ -30,16 +30,6 @@ TAbstractDocumentActionList=class(TActionList)
   published
     property ButtonHeight: Integer read fButtonHeight write fButtonHeight;
     property CellPadding: Integer read fCellPadding write FCellPadding;
-end;
-
-TAbstractDocumentAction=class(TCustomAction)
-  protected
-    function GetDoc: TAbstractDocument;
-  public
-    function HandlesTarget(Target: TObject): Boolean; override;
-    function Update: Boolean; override;
-  published
-    property Caption;
 end;
 
 TNewProjectAction=class(TAbstractDocumentAction)
@@ -98,6 +88,7 @@ TDocShowHistoryAction=class(TAbstractDocumentAction)
     procedure ExecuteTarget(Target: TObject); override;
   end;
 
+
 TUndoPopup=class(TPopUpMenu)
   private
     fMaxCount: Integer;
@@ -126,7 +117,7 @@ procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics,math,controls,formMergeOrRewrite,streaming_class_lib;
+uses forms,windows,sysutils,buttons,graphics,math,formMergeOrRewrite,streaming_class_lib;
 
 procedure Register;
 begin
@@ -302,40 +293,6 @@ begin
         btn.Font.Color:=clBlue;
     end;
   end;
-end;
-
-(*
-        TAbstractDocumentAction
-                                      *)
-function TAbstractDocumentAction.GetDoc: TAbstractDocument;
-begin
-  if (ActionList is TAbstractDocumentActionList) and Assigned(TAbstractDocumentActionList(ActionList).doc) then
-    Result:=TAbstractDocumentActionList(ActionList).doc^
-  else
-    Result:=nil;
-  //получается, что результат nil в след. случаях:
-  //- действие принадлежит неправильному ActionList'у (не имеющему свойства doc)
-  //- doc=nil, т.е. actionList ни на что не ссылается
-  //- doc^=nil, т.е actionList ссылается на переменную, которая ссылается на nil
-end;
-
-function TAbstractDocumentAction.HandlesTarget(Target: TObject): Boolean;
-begin
-//выполнима ли команда или пора ее сразу отключить, от греха подальше
-  Result:=Assigned(Target) and (Target is TAbstractDocument);
-//классы-потомки могут начинать свою проверку с inherited HandlesTarget(Target) and ...
-//по принципу short cut, если даже это ложно, дальше он не полезет.
-end;
-
-function TAbstractDocumentAction.Update: boolean;
-var doc: TabstractDocument;
-begin
-//это место будет вызываться когда не лень, чтобы выяснить, не надо ль
-//отключить элем. управления или еще что-нибудь в этом духе
-  doc:=getDoc;
-  Enabled:=Assigned(doc);
-  Result:=true; //то есть мы выяснили все что хотели и дальше бегать не надо
-//если отсутствует документ вообще, тогда разумеется и действие отключаем
 end;
 
 (*

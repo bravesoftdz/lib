@@ -232,7 +232,6 @@ var ExcelApp: Variant; //само приложение excel
     i,j: Integer;
     cellname: string;
     val: Extended;
-    v: variant;
 begin
   try
     ExcelApp:=CreateOleObject('Excel.Application');
