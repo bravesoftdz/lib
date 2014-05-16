@@ -8,9 +8,9 @@ type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
       fNext,fPrev,fBranch: TAbstractCommand;
-      fActiveBranch: Boolean;
       fTurnLeft: Boolean;
     protected
+      fActiveBranch: Boolean;
       fImageIndex: Integer;
       procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public

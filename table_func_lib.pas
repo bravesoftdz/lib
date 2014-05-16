@@ -103,6 +103,8 @@ type
     procedure derivative; overload;
     function derivative(xi: Real): Real; overload;
     function FindInterval(xi: Real): Integer; //между какими табл. значениями лежит нужное нам
+    function FindNearestPoint(ax,ay: Real;out dist: Real): Integer;  //точка, ближ. к данным коорд.
+    //dist - квадрат расстояния до этой точки
     procedure integral;
     function IsEqual(t: table_func): Boolean; reintroduce;
 
@@ -953,6 +955,36 @@ begin
     for i:=0 to count-1 do
       if (abs(X[i]-t.X[i])>tol) or (abs(Y[i]-t.Y[i])>tol) then Exit;
     Result:=true;
+  end;
+end;
+
+function table_func.FindNearestPoint(ax,ay: Real; out dist: Real): Integer;
+var i,j: Integer;
+begin
+  j:=FindInterval(ax);  //нашли ближ. слева
+  if j<0 then begin
+    Result:=-1;
+    Exit;
+  end;
+  Result:=j;  //потом мы оставим j неизменным чтобы не потерять, откуда начали, но Result будем менять
+  dist:=Sqr(ax-X[j])+Sqr(ay-Y[j]);
+  //теперь наши подозреваемые - чуть влево и чуть вправо, пока заведомо не выйдем за пределы окр.
+  i:=j-1;
+  while (i>=0) and (Sqr(ax-X[i])<dist) do begin
+    if Sqr(ax-X[i])+Sqr(ay-Y[i])<dist then begin
+      Result:=i;
+      dist:=Sqr(ax-X[i])+Sqr(ay-Y[i]);
+    end;
+    dec(i);
+  end;
+  //теперь пора направо
+  i:=j+1;
+  while (i<count) and (Sqr(ax-X[i])<dist) do begin
+    if Sqr(ax-X[i])+Sqr(ay-Y[i])<dist then begin
+      Result:=i;
+      dist:=Sqr(ax-X[i])+Sqr(ay-Y[i]);
+    end;
+    inc(i);
   end;
 end;
 

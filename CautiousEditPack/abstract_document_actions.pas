@@ -440,21 +440,24 @@ begin
       //допустим, он успешно считался
       //нужна классовая функция, позволяющая убедиться, что это разные версии одного и того же
       our_doc:=(ActionList as TAbstractDocumentActionList).doc^;
-      our_doc.UndoTree.CompareWith(tmp.UndoTree,same,plus,minus);
-      CanClose:=true;
-      if plus>0 then begin
-        frmMergeOrRewrite:=TfrmMergeOrRewrite.Create(nil);
-        frmMergeOrRewrite.lblSame.Caption:=IntToStr(same);
-        frmMergeOrRewrite.lblMinus.Caption:=IntToStr(minus);
-        frmMergeOrRewrite.lblPlus.Caption:=IntToStr(plus);
-        mr:=frmMergeOrRewrite.ShowModal;
-        case mr of
-          mrCancel: CanClose:=false;
-          200: our_doc.UndoTree.MergeWith(tmp.UndoTree);
+      try
+        our_doc.UndoTree.CompareWith(tmp.UndoTree,same,plus,minus);
+        CanClose:=true;
+        if plus>0 then begin
+          frmMergeOrRewrite:=TfrmMergeOrRewrite.Create(nil);
+          frmMergeOrRewrite.lblSame.Caption:=IntToStr(same);
+          frmMergeOrRewrite.lblMinus.Caption:=IntToStr(minus);
+          frmMergeOrRewrite.lblPlus.Caption:=IntToStr(plus);
+          mr:=frmMergeOrRewrite.ShowModal;
+          case mr of
+            mrCancel: CanClose:=false;
+            200: our_doc.UndoTree.MergeWith(tmp.UndoTree);
+          end;
         end;
+        tmp.Release;
+      except
+        CanClose:=(Application.MessageBox('В выбранном файле нарушена структура дерева Undo, объединить их не удастся. Перезаписать содержимое?','Сохранить как...',mb_YesNo)=IDYes);
       end;
-      tmp.Release;
-
     except
       CanClose:=(Application.MessageBox('Выбранный файл не является документом данной программы, при сохранении его старое содержимое будет утеряно. Вы хотите продолжить?','Сохранить как...',mb_YesNo)=IDYes);
     end;
