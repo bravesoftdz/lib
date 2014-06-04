@@ -61,6 +61,8 @@ type
     function get_ymin: Real; override;
     function get_ymax: Real; override;
 
+
+
     procedure WriteData(Writer: TWriter);
     procedure ReadData(Reader: TReader);
 
@@ -108,6 +110,10 @@ type
     procedure integral;
     function IsEqual(t: table_func): Boolean; reintroduce;
 
+    function GetB(index: Integer): Real;
+    function GetC(index: Integer): Real;
+    function GetD(index: Integer): Real;
+
     property chart_series: TLineSeries read fchart_series write fchart_series;
       published
     property order: Integer read iorder write update_order default 3;
@@ -116,6 +122,7 @@ type
     property count: Integer read _length stored false;
     property Tolerance: Real read fTolerance write fTolerance;
 //    property LineColor: TColor read fLineColor write fLineColor default clBlack;
+
     end;
 implementation
 const eol: string=#13+#10;
@@ -846,6 +853,7 @@ begin
     c[i]:=3*d[i];
     d[i]:=0;
   end;
+  changed:=true;
 end;
 
 function table_func.derivative(xi: Real): Real;
@@ -988,6 +996,23 @@ begin
   end;
 end;
 
+function table_func.GetB(index: Integer): Real;
+begin
+  if changed then update_spline;
+  Result:=b[index];
+end;
+
+function table_func.GetC(index: Integer): Real;
+begin
+  if changed then update_spline;
+  Result:=c[index];
+end;
+
+function table_func.GetD(index: Integer): Real;
+begin
+  if changed then update_spline;
+  Result:=d[index];
+end;
 
 initialization
 RegisterClass(Table_func);
