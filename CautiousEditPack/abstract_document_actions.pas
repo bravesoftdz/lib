@@ -27,6 +27,7 @@ TAbstractDocumentActionList=class(TActionList)
     procedure ShowHistory;
     procedure HistoryClickEvent(Sender: TObject);
     procedure RefreshHistoryHighlights;
+    procedure SetupTool;
   published
     property ButtonHeight: Integer read fButtonHeight write fButtonHeight;
     property CellPadding: Integer read fCellPadding write FCellPadding;
@@ -292,6 +293,20 @@ begin
       if (item=Doc^.UndoTree.Current) then
         btn.Font.Color:=clBlue;
     end;
+  end;
+end;
+
+procedure TAbstractDocumentActionList.SetupTool;
+var i: Integer;
+begin
+  if Assigned(doc^.Tool) then begin
+    for i:=0 to ActionCount-1 do
+      if Actions[i].ClassType=doc^.Tool.ClassType then begin
+        doc^.Tool.Select;
+        Actions[i].Assign(doc^.Tool);
+        Actions[i].Execute;
+        break;
+      end;
   end;
 end;
 

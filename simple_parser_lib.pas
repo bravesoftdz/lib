@@ -28,7 +28,7 @@ TSimpleParser=class
     function getInt64: Int64;
     function getString: string;   //считать остаток строки
     function getHex: Integer;
-
+    function getBinary: LongWord;
   end;
 
 implementation
@@ -176,6 +176,22 @@ begin
     ch:=Integer(_str[_pos])-Int0;
     if ch>9 then ch:=ch-7;
     x:=(x shl 4) or ch;
+    inc(_pos);
+  end;
+  Result:=x;
+end;
+
+function TSimpleParser.getBinary: Cardinal;
+var Int0: Integer;
+    ch: Cardinal;
+    x: Cardinal;
+begin
+  int0:=Integer('0');
+  x:=0;
+  skip_spaces;
+  while(_pos<=Length(_str)) and (_str[_pos]<='1') and (_str[_pos]>='0') do begin
+    ch:=Integer(_str[_pos])-Int0;
+    x:=(x shl 1) or ch;
     inc(_pos);
   end;
   Result:=x;

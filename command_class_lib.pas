@@ -12,13 +12,13 @@ type
     protected
       fActiveBranch: Boolean;
       fImageIndex: Integer;
-      procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     public
       constructor Create(Aowner: TComponent); override;
       procedure Clear; override;
       function Execute: Boolean; virtual; abstract;
       function Undo: boolean; virtual; abstract;
       function caption: string; virtual;
+      procedure ResolveMemory; virtual;
       function NameToDateTime: TDateTime;
       function NameToDate(aName: TComponentName): Integer;
       property ImageIndex: Integer read fImageIndex;
@@ -313,22 +313,7 @@ uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions;
 
 (*
         TAbstractCommand
-                                  *)
-procedure TAbstractCommand.ensureCorrectName(proposedName: string; aowner: TComponent);
-var FullName: string;
-    i: Integer;
-begin
-  FullName:=proposedName;
-  if assigned(aowner) then begin
-    i:=0;
-    while aowner.FindComponent(FullName)<>nil do begin
-      FullName:=proposedName+IntToStr(i);
-      inc(i);
-    end;
-  end;
-  Name:=FullName;
-end;
-
+                                 *)
 constructor TAbstractCommand.Create(AOwner: TComponent);
 var t: TTimeStamp;
 begin
@@ -388,6 +373,14 @@ end;
 function TAbstractCommand.caption: string;
 begin
   result:=self.ClassName;
+end;
+
+procedure TAbstractCommand.ResolveMemory;
+begin
+  //здесь можно отправиться в прошлое/альтернат. вселенную,
+  //чтобы узнать необходимую информацию
+  //назад в будущее можно не возвращаться, эту процедуру вызовет только CommandTree,
+  //он сам потом возвратится в настоящее. 
 end;
 
 (*
@@ -1021,6 +1014,8 @@ begin
 end;
 
 procedure TAbstractDocument.afterConstruction;
+var i: Integer;
+    buCurrent: TAbstractCommand;
 begin
   if UndoTree=nil then begin
     UndoTree:=TCommandTree.Create(self);
@@ -1031,6 +1026,13 @@ begin
       Root.ActiveBranch:=true;
     end;
     initial_pos:=UndoTree.current;
+  end
+  else begin
+    buCurrent:=UndoTree.Current;
+    for i:=0 to UndoTree.ComponentCount-1 do
+      if UndoTree.Components[i] is TAbstractCommand then
+        TAbstractCommand(UndoTree.Components[i]).ResolveMemory;
+    UndoTree.JumpToBranch(buCurrent);
   end;
 end;
 

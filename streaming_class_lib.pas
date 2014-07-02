@@ -31,7 +31,7 @@ TstreamingClass=class(TComponent)
     function FindOwner: TComponent; //доходит до самого высокого уровня
 
     function GetFloatProperty(aPath: string): Real;
-
+    procedure ensureCorrectName(proposedName: string; aowner: TComponent);
   end;
 
 TStreamingClassClass=class of TStreamingClass;
@@ -137,6 +137,21 @@ begin
   for i := 0 to ComponentCount-1 do
     if not (csSubComponent in Components[i].ComponentStyle) then
       Proc( Components[i] );
+end;
+
+procedure TStreamingClass.ensureCorrectName(proposedName: string; aowner: TComponent);
+var FullName: string;
+    i: Integer;
+begin
+  FullName:=proposedName;
+  if assigned(aowner) then begin
+    i:=0;
+    while aowner.FindComponent(FullName)<>nil do begin
+      FullName:=proposedName+IntToStr(i);
+      inc(i);
+    end;
+  end;
+  Name:=FullName;
 end;
 
 procedure TstreamingClass.SaveToFile(filename: string);

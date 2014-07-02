@@ -40,20 +40,20 @@ TVector=class(TStreamingClass)
 
     procedure rotate_by_quat(q: TAbstractQuaternion);
 
-    function Length_squared: Real;
+    function getLength_squared: Real;
 
     class function scalar_product(M0,M1: TVector): Real;
     class function cos_between(M0,M1: TVector): Real;
     class function line_distance(M0,M1: TVector): Real;
     class function distance_between(M0,M1: TVector): Real;
     class function distance_squared(M0,M1: TVector): Real;
-    property Length: Real read getLength;
   published
     property X: Real read fX write fX;
     property Y: Real read fY write fY;
     property Z: Real read fZ write fZ;
     property Value: string read vector2str write str2vector stored false;
-
+    property Length: Real read getLength;
+    property Length_squared: Real read getLength_squared;
 end;
 
 TVectorVarData = packed record
@@ -210,7 +210,7 @@ begin
   result:=sqrt(x*x+y*y+z*z);
 end;
 
-function TVector.Length_squared: Real;
+function TVector.getLength_squared: Real;
 begin
   Result:=x*x+y*y+z*z;
 end;
