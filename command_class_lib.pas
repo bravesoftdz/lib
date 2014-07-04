@@ -2,7 +2,7 @@ unit command_class_lib;
 
 interface
 
-uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls;
+uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls,messages;
 
 type
   TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
@@ -301,8 +301,9 @@ type
     procedure Select; virtual; abstract;
     procedure Unselect; virtual; abstract;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer); virtual; abstract;
-    procedure MouseMove(Shift: TShiftState; X,Y: Integer); virtual; abstract;
-    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual; abstract;
+    procedure MouseMove(Shift: TShiftState; X,Y: Integer); virtual;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
+    procedure KeyDown(var Msg: TWMKey; var Handled: Boolean); virtual;
   end;
 
   TAbstractToolActionClass=class of TAbstractToolAction;
@@ -380,7 +381,7 @@ begin
   //здесь можно отправиться в прошлое/альтернат. вселенную,
   //чтобы узнать необходимую информацию
   //назад в будущее можно не возвращаться, эту процедуру вызовет только CommandTree,
-  //он сам потом возвратится в настоящее. 
+  //он сам потом возвратится в настоящее.
 end;
 
 (*
@@ -1533,6 +1534,22 @@ begin
     if data.StatusPanel<>nil then
       data.StatusPanel.Text:=text;
   end;
+end;
+
+procedure TAbstractToolAction.KeyDown(var Msg: TWMKey; var Handled: Boolean);
+begin
+  //далеко не всегда нужно реагировать на клавиши, поэтому сделаем "пустую" реализацию, чтобы
+  //не ругалась чуть что
+end;
+
+procedure TAbstractToolAction.MouseMove(Shift: TShiftState; X,Y: Integer);
+begin
+
+end;
+
+procedure TAbstractToolAction.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
+begin
+
 end;
 
 initialization
