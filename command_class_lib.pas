@@ -341,18 +341,51 @@ end;
 function TAbstractCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
 var our_class: TStreamingClassClass;
     t: TAbstractCommand;
+    buName: string;
+    buNext,buPrev,buBranch: TAbstractCommand;
+    buActiveBranch,buTurnLeft: boolean;
+
 begin
   if ClassType=what.ClassType then begin
-    our_class:=TStreamingClassClass(ClassType);
-    t:=(our_class.Clone(what)) as TAbstractCommand;
-    t.Name:=Name;
-    t.Next:=Next;
-    t.Prev:=Prev;
-    t.Branch:=Branch;
-    t.ActiveBranch:=ActiveBranch;
-    t.TurnLeft:=TurnLeft;
-    Result:=IsEqual(t);
-    t.Free;
+    t:=what as TAbstractCommand;
+    if Assigned(t.Owner) and (Name<>t.Name) and Assigned(t.Owner.FindComponent(Name)) then begin
+      //не получится переименовать объект, не "выдергивая" его с насиженного места
+      //придется клонировать
+      //ссылки на объекты могут потеряться, тогда нужно писать свой вариант
+      //EqualsByAnyOtherName
+      our_class:=TStreamingClassClass(ClassType);
+      t:=(our_class.Clone(what)) as TAbstractCommand;
+      t.Name:=Name;
+      t.Next:=Next;
+      t.Prev:=Prev;
+      t.Branch:=Branch;
+      t.ActiveBranch:=ActiveBranch;
+      t.TurnLeft:=TurnLeft;
+      Result:=IsEqual(t);
+      t.Free;
+    end
+    else begin
+      //можем безболезненно провести сравнение "на месте"
+      buName:=t.Name;
+      buNext:=t.next;
+      buPrev:=t.prev;
+      buBranch:=t.Branch;
+      buActiveBranch:=t.ActiveBranch;
+      buTurnLeft:=t.TurnLeft;
+      t.Name:=Name;
+      t.Next:=Next;
+      t.Prev:=Prev;
+      t.Branch:=Branch;
+      t.ActiveBranch:=ActiveBranch;
+      t.TurnLeft:=TurnLeft;
+      Result:=IsEqual(t);
+      t.Name:=buName;
+      t.Next:=buNext;
+      t.Prev:=buPrev;
+      t.Branch:=buBranch;
+      t.ActiveBranch:=buActiveBranch;
+      t.TurnLeft:=buTurnLeft;
+    end;
   end
   else Result:=false;
 end;

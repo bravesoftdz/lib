@@ -35,6 +35,15 @@ type
       property Description: Tstrings read fdescription write SetDescription;
     end;
 
+  FourierSeriesRec = record
+    dc: Real; //постоянная составляющая
+    c,s: array of Real; //0 соотв. первой гармонике
+  end;
+
+  TFourierSeriesWindowType=(wtFullPeriodsRect,wtRect);
+  //wtRect - для нахождения ряда Фурье используем все доступные данные, при этом последний период может оказаться с нулями
+  //wtFullPeriodsRect - обрезаем справа до целого числа периодов, только по ним ищем разложение
+
   table_func=class(TAbstractMathFunc)
     private
     iOrder: Integer;
@@ -77,6 +86,7 @@ type
     X,Y: array of Real;
 
     function LoadFromTextFile(filename: string): Boolean;
+    procedure LoadFromTextTable(filename: string; x_column,y_column: Integer);
     procedure LoadConstant(new_Y:Real;new_xmin:Real;new_xmax:Real);
     procedure Clear; override;
     procedure ClearPoints;
@@ -100,19 +110,23 @@ type
     procedure multiply(by: Real); overload;
     procedure multiply_argument(by: Real);
     procedure assign(Source:TPersistent); override;
-    function integrate: Real;
+    function CalculateArea: Real;
     procedure morepoints;
     procedure derivative; overload;
     function derivative(xi: Real): Real; overload;
     function FindInterval(xi: Real): Integer; //между какими табл. значениями лежит нужное нам
     function FindNearestPoint(ax,ay: Real;out dist: Real): Integer;  //точка, ближ. к данным коорд.
+    function Average: Real;
+    function RMSValue: Real;
     //dist - квадрат расстояния до этой точки
-    procedure integral;
+    procedure integrate;
     function IsEqual(t: table_func): Boolean; reintroduce;
 
     function GetB(index: Integer): Real;
     function GetC(index: Integer): Real;
     function GetD(index: Integer): Real;
+
+    procedure FourierSeries(var storage: FourierSeriesRec;Period: Real=0; WindowType: TFourierSeriesWindowType=wtFullPeriodsRect);
 
     property chart_series: TLineSeries read fchart_series write fchart_series;
       published
@@ -563,6 +577,37 @@ begin
   end;
 end;
 
+procedure table_func.LoadFromTextTable(filename: string; x_column,y_column: Integer);
+var p: TSimpleParser;
+    F: TextFile;
+    s: string;
+    i: Integer;
+    cX,cY: Real;
+begin
+  Clear;
+  p:=TSimpleParser.Create;
+  p.delimiter:=' '; //возможно, придется новый парам. ввести в парсере-игнорировать пустые знач
+  p.spaces:='';
+  AssignFile(F,filename);
+  Reset(F);
+  while not eof(F) do begin
+    ReadLn(F,s);
+    p.AssignString(s);
+    i:=1; //первый столбец именно первый, а не нулевой, будем так считать
+    while i<=max(x_column,y_column) do begin
+      if i=x_column then
+        cX:=p.getFloat
+      else if i=y_column then
+        cY:=p.getFloat
+      else p.getFloat;
+      inc(i);
+    end;
+    AddPoint(cX,cY);
+  end;
+  p.Free;
+  CloseFile(F);
+end;
+
 procedure table_func.write_to_stream(var F: Textfile);
 var old_format: boolean;
     i: Integer;
@@ -637,6 +682,21 @@ begin
       end;
     changed:=true;
   end;
+end;
+
+function table_func.Average: Real;
+begin
+  Result:=CalculateArea/(xmax-xmin);
+end;
+
+function table_func.RMSValue: Real;
+var tmp: table_func;
+begin
+  tmp:=table_func.Create;
+  tmp.assign(self);
+  tmp.multiply(Self);
+  Result:=sqrt(tmp.Average);
+  tmp.Free;
 end;
 
 procedure table_func.multiply(by: table_func);
@@ -740,18 +800,17 @@ begin
     inherited Assign(Source);
 end;
 
-function table_func.integrate: Real;
+function table_func.CalculateArea: Real;
 var i,l: Integer;
-    tmp,dif: Real;
+    dif: Real;
 begin
     if changed then update_spline;
-    tmp:=0;
+    Result:=0;
     l:=count-2;
     for i:=0 to l do begin
       dif:=X[i+1]-X[i];
-      tmp:=tmp+dif*(Y[i]+dif*(b[i]/2+dif*(c[i]/3+dif*d[i]/4)));
+      Result:=Result+dif*(Y[i]+dif*(b[i]/2+dif*(c[i]/3+dif*d[i]/4)));
     end;
-    integrate:=tmp;
 end;
 
 procedure table_func.Clear;
@@ -868,7 +927,7 @@ begin
   end;
 end;
 
-procedure table_func.integral;
+procedure table_func.integrate;
 var i,j :Integer;
     acc,prev_acc,r: Real;
 begin
@@ -1013,6 +1072,56 @@ begin
   if changed then update_spline;
   Result:=d[index];
 end;
+
+procedure table_func.FourierSeries(var storage: FourierSeriesRec; Period: real=0;  WindowType: TFourierSeriesWindowType=wtFullPeriodsRect);
+var i,clen,slen: Integer;
+    start_x,end_x,cur_x,increment,cur_val: Real;
+    alpha,alpha_incr: Real;
+    scale: Real;
+begin
+  //находит ряд Фурье до тех гармоник, под которые выделено место в хранилище
+  //если ничего другого не указано, за один период считает всю область определения функции
+  if Period=0 then Period:=xmax-xmin;
+  case WindowType of
+    wtFullPeriodsRect: begin
+      start_x:=xmin;
+      scale:=Floor((xmax-xmin)/Period)*Period;
+      end_x:=start_x+scale;
+      end;
+    wtRect: begin
+      start_x:=xmin;
+      end_x:=xmax;
+      scale:=Ceil((xmax-xmin)/Period)*Period;
+    end;
+  end;
+  cur_x:=start_x;
+  increment:=Period/100;
+  with storage do begin
+    clen:=Length(c)-1;
+    slen:=Length(s)-1;
+    //метод трапеций - первый и последний член половинные, остальные целые
+    dc:=value[cur_x]/2;
+    for i:=0 to clen do c[i]:=dc;  //*cos(0)
+    for i:=0 to slen do s[i]:=0;   //*sin(0)
+    alpha:=0;
+    alpha_incr:=2*pi/100;
+    while cur_x<end_X do begin
+      cur_x:=cur_x+increment;
+      alpha:=alpha+alpha_incr;
+      cur_val:=value[cur_x];
+      dc:=dc+cur_val;
+      for i:=0 to clen do c[i]:=c[i]+cur_val*cos(alpha*(i+1));
+      for i:=0 to slen do s[i]:=s[i]+cur_val*sin(alpha*(i+1));
+    end;
+    //посчитаны все, а последний вместо половинного знач. полное получилось
+    //плюс, надо смасштабировать
+    dc:=(dc-cur_val/2)*increment/(end_x-start_x); //просто среднее значение
+    scale:=increment*2/scale;
+    for i:=0 to clen do c[i]:=(c[i]-cur_val*cos(alpha*(i+1))/2)*scale;
+    for i:=0 to slen do s[i]:=(s[i]-cur_val*sin(alpha*(i+1))/2)*scale;
+  end;
+end;
+
 
 initialization
 RegisterClass(Table_func);

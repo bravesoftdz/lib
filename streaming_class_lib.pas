@@ -305,7 +305,16 @@ begin
   bin2.WriteComponent(what);
   bin1.Seek(0,soFromBeginning);
   bin2.Seek(0,soFromBeginning);
-  if bin1.Size<>bin2.Size then Result:=false
+  if bin1.Size<>bin2.Size then begin
+    Result:=false;
+    //для отладки искл.
+(*
+    self.saveFormat:=fCyr;
+    self.SaveToFile('wtf1.txt');
+    what.saveFormat:=fCyr;
+    what.SaveToFile('wtf2.txt');
+    *)
+  end
   else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
   bin1.Free;
   bin2.Free;
