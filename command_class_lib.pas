@@ -262,7 +262,7 @@ type
 
       function isEmpty: Boolean;
       function Changed: Boolean;
-      procedure DispatchCommand(command: TAbstractCommand);
+      function DispatchCommand(command: TAbstractCommand): boolean;
       procedure Save;
       procedure Change; virtual;
       procedure DoLoad; virtual;
@@ -1102,7 +1102,7 @@ begin
   Result:=(UndoTree.current<>initial_pos) or new_commands_added;
 end;
 
-procedure TAbstractDocument.DispatchCommand(command: TAbstractCommand);
+function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
 begin
   fCriticalSection.Acquire;
   undotree.InsertComponent(command);
@@ -1111,14 +1111,19 @@ begin
   if undotree.CheckForExistingCommand(command) then begin
     change;
     command.Free;
+    Result:=false;
   end
   else if command.Execute then begin
     undotree.RemoveComponent(command);
     UndoTree.Add(command);
     Change;
     new_commands_added:=true;
+    Result:=true;
     end
-    else command.Free;
+    else begin
+      command.Free;
+      Result:=false;
+    end;
 
   fCriticalSection.Leave;
 end;
