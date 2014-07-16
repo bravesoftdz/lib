@@ -384,8 +384,8 @@ begin
   //выполнение, он выругаетс€, а старый проект останетс€ на месте
   (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
   //теперь перем. doc ссылаетс€ уже на новую.
-  new_doc.onDocumentChange:=doc.onDocumentChange;
   new_doc.onLoad:=doc.onLoad;
+  new_doc.onDocumentChange:=doc.onDocumentChange;
   doc.Release;
 //  doc.Free;
 end;
@@ -568,6 +568,7 @@ begin
   inherited Create(AOwner);
   caption:='∆урнал';
   Hint:='∆урнал|ѕоказывает полное дерево изменений';
+  ShortCut:=TextToShortCut('Ctrl+H');
 end;
 
 procedure TDocShowHistoryAction.ExecuteTarget(Target: TObject);

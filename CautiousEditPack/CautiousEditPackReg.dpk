@@ -32,7 +32,8 @@ requires
   designide,
   vclactnband,
   vclx,
-  CautiousEditPack;
+  CautiousEditPack,
+  PNGImagePack;
 
 contains
   PersistentStringGridReg in 'PersistentStringGridReg.pas',

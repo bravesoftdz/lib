@@ -1,4 +1,3 @@
-del /f *.cfg
 del /f *.dof
 del /f *.dcu
 del /f *.~pas

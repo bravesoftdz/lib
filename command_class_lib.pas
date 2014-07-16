@@ -63,11 +63,22 @@ type
     protected
       procedure DefineProperties(Filer: TFiler); override;
     public
+      function HashIsEqual(value: T4x4LongWordRecord): Boolean;
       constructor Create(owner: TComponent); override;
-      function Execute: boolean; override;
-      function Undo: boolean; override;
       property Hash: T4x4LongWordRecord read fHash;
     end;
+
+  THashingThread=class(TThread)
+    private
+      fcommand: THashedCommand;
+      fIsUndo: boolean;
+    protected
+      procedure Execute; override;
+    public
+      constructor Create(command: THashedCommand;isUndo: Boolean);
+  end;
+
+
 
   TChangePropertiesCommand=class(TAbstractCommand)
     protected
@@ -291,6 +302,7 @@ type
     function Update: Boolean; override;
   published
     property Caption;
+    property ImageIndex;
   end;
 
   TAbstractToolAction=class(TAbstractDocumentAction)
@@ -310,7 +322,7 @@ type
 
 implementation
 
-uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions;
+uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms;
 
 (*
         TAbstractCommand
@@ -350,7 +362,7 @@ begin
     t:=what as TAbstractCommand;
     if Assigned(t.Owner) and (Name<>t.Name) and Assigned(t.Owner.FindComponent(Name)) then begin
       //не получится переименовать объект, не "выдергивая" его с насиженного места
-      //придется клонировать
+      //придется сначала записать
       //ссылки на объекты могут потеряться, тогда нужно писать свой вариант
       //EqualsByAnyOtherName
       our_class:=TStreamingClassClass(ClassType);
@@ -510,19 +522,41 @@ begin
   stream.Read(fHash[0],SizeOf(fHash));
 end;
 
-function THashedCOmmand.Execute: boolean;
+function THashedCommand.HashIsEqual(value: T4x4LongWordRecord): boolean;
+var i: Integer;
 begin
-  //к этому моменту все необходимые действия над документом уже выполнены
-  if not HashNotEmpty then
-    fHash:=(FindOwner as TAbstractDocument).Hash;
-//  else Result:=
   Result:=true;
+  for i:=0 to 3 do
+    if value[i]<>fHash[i] then Result:=false;
 end;
 
-function THashedCOmmand.Undo: boolean;
+(*
+            THashingThread
+                                          *)
+constructor THashingThread.Create(command: THashedCommand;isUndo: Boolean);
 begin
-  Result:=true;
+  inherited Create(true);
+  priority:=tpIdle;
+  fcommand:=command;
+  fIsUndo:=isUndo;
+  FreeOnTerminate:=true;
+  Resume;
 end;
+
+procedure THashingThread.Execute;
+var tmpHash: T4x4LongWordRecord;
+  s: string;
+begin
+  tmpHash:=(fcommand.FindOwner as TAbstractDocument).Hash;
+  if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
+    if fIsUndo then s:='отмене' else s:='повторе';
+    s:='Несовпадение хэша при '+s+' команды';
+    application.MessageBox(PAnsiChar(s),'HashedCommand');
+  end
+  else
+    fcommand.fHash:=tmpHash;
+end;
+
 (*
             TChangePropertiesCommand
                                           *)
@@ -1109,6 +1143,7 @@ begin
   //может быть, не нужно исполнять конкретно эту команду, она уже есть
   //именно когда обе команды еще не исполнены, их можно сравнивать
   if undotree.CheckForExistingCommand(command) then begin
+    //состояние уже поменялось, мы выполнили существующую команду
     change;
     command.Free;
     Result:=false;
@@ -1118,6 +1153,7 @@ begin
     UndoTree.Add(command);
     Change;
     new_commands_added:=true;
+    if command is THashedCommand then THashingThread.Create(THashedCommand(command),false);
     Result:=true;
     end
     else begin
@@ -1179,6 +1215,7 @@ function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
     str: TMemoryStream;
 begin
+  fCriticalSection.Acquire;
   buSaveWithUndo:=SaveWithUndo; //потом вернем
   SaveWithUndo:=false;  //чтобы найти хэш
   str:=TMemoryStream.Create;
@@ -1193,18 +1230,19 @@ begin
   end;
   str.Free;
   SaveWithUndo:=buSaveWithUndo;
+  fCriticalSection.Leave;
 end;
 
 procedure TAbstractDocument.SetOnDocumentChange(value: TNotifyEvent);
 begin
   fOnDocumentChange:=value;
-  if Assigned(fOnDocumentChange) then fOnDocumentChange(self);
+  Change;
 end;
 
 procedure TAbstractDocument.SetOnLoad(value: TNotifyEvent);
 begin
   fOnLoad:=value;
-  if Assigned(fOnLoad) then fOnLoad(self);
+  DoLoad;
 end;
 
 (*
@@ -1293,6 +1331,7 @@ begin
       current.ActiveBranch:=false;
       current:=current.Prev;
     end;
+    if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),true);
   end
   else Raise Exception.Create('Undo command failed');
 end;
@@ -1311,6 +1350,7 @@ begin
     current.ActiveBranch:=true;
   until (not (current is TInfoCommand));
   if not current.Execute then Raise Exception.Create('Redo command failed');
+  if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),false);
 end;
 
 procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
