@@ -1122,7 +1122,7 @@ var
   i : Integer;
 begin
   for i := 0 to ComponentCount-1 do
-    if not (csSubComponent in Components[i].ComponentStyle) and ((Components[i]<>UndoTree) or SaveWithUndo) then
+    if not (csSubComponent in Components[i].ComponentStyle) and (((Components[i]<>UndoTree) and (Components[i]<>Tool))  or SaveWithUndo) then
       Proc( Components[i] );
 end;
 
@@ -1229,6 +1229,7 @@ begin
     end;
   end;
   str.Free;
+  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
   SaveWithUndo:=buSaveWithUndo;
   fCriticalSection.Leave;
 end;

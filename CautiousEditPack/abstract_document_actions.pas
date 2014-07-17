@@ -332,11 +332,9 @@ begin
     doc_class:=TAbstractDocumentClass(doc.ClassType);
 
     new_doc:=doc_class.Create(nil);
-    new_doc.onDocumentChange:=doc.onDocumentChange;
-    new_doc.onLoad:=doc.onLoad;
     (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
-    new_doc.Doload;
-
+    new_doc.onLoad:=doc.onLoad;
+    new_doc.onDocumentChange:=doc.onDocumentChange;
     doc.Release;
     //пусть документ будет сам по себе, свой собственный, оно проще
   end;
