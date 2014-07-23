@@ -138,8 +138,17 @@ type
 //    property LineColor: TColor read fLineColor write fLineColor default clBlack;
 
     end;
+
+  procedure SwapReals(var X,Y: Real);
+
 implementation
 const eol: string=#13+#10;
+
+procedure SwapReals(var X,Y: Real);
+var tmp: Real;
+begin
+  tmp:=X; X:=Y; Y:=tmp;
+end;
 
 (*
       TAbstractMathFunc
@@ -586,7 +595,7 @@ var p: TSimpleParser;
 begin
   Clear;
   p:=TSimpleParser.Create;
-  p.delimiter:=' '; //возможно, придется новый парам. ввести в парсере-игнорировать пустые знач
+  p.delimiter:=' '+#9; //возможно, придется новый парам. ввести в парсере-игнорировать пустые знач
   p.spaces:='';
   AssignFile(F,filename);
   Reset(F);
@@ -994,8 +1003,14 @@ end;
 procedure table_func.multiply_argument(by: Real);
 var i: Integer;
 begin
-  for i:=0 to Length(X)-1 do begin
+  for i:=0 to count-1 do begin
     X[i]:=X[i]*by;
+  end;
+  if by<0 then begin
+    for i:=0 to (count div 2)-1 do begin
+      SwapReals(X[i],X[count-1-i]);
+      SwapReals(Y[i],Y[count-1-i]);
+    end;
   end;
   changed:=true;
 end;
@@ -1092,30 +1107,32 @@ begin
       start_x:=xmin;
       end_x:=xmax;
       scale:=Ceil((xmax-xmin)/Period)*Period;
+//      end_x:=start_x+scale;
     end;
   end;
   cur_x:=start_x;
   increment:=Period/100;
+
   with storage do begin
+    dc:=Average;
     clen:=Length(c)-1;
     slen:=Length(s)-1;
     //метод трапеций - первый и последний член половинные, остальные целые
-    dc:=value[cur_x]/2;
-    for i:=0 to clen do c[i]:=dc;  //*cos(0)
+//    dc:=value[cur_x]/2;
+    for i:=0 to clen do c[i]:=(value[cur_x]-dc)/2;  //*cos(0)
     for i:=0 to slen do s[i]:=0;   //*sin(0)
     alpha:=0;
     alpha_incr:=2*pi/100;
     while cur_x<end_X do begin
       cur_x:=cur_x+increment;
       alpha:=alpha+alpha_incr;
-      cur_val:=value[cur_x];
-      dc:=dc+cur_val;
+      cur_val:=value[cur_x]-dc;
       for i:=0 to clen do c[i]:=c[i]+cur_val*cos(alpha*(i+1));
       for i:=0 to slen do s[i]:=s[i]+cur_val*sin(alpha*(i+1));
     end;
     //посчитаны все, а последний вместо половинного знач. полное получилось
     //плюс, надо смасштабировать
-    dc:=(dc-cur_val/2)*increment/(end_x-start_x); //просто среднее значение
+//    dc:=(dc-cur_val/2)*increment/(end_x-start_x); //просто среднее значение
     scale:=increment*2/scale;
     for i:=0 to clen do c[i]:=(c[i]-cur_val*cos(alpha*(i+1))/2)*scale;
     for i:=0 to slen do s[i]:=(s[i]-cur_val*sin(alpha*(i+1))/2)*scale;

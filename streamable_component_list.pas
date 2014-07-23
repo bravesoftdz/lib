@@ -12,10 +12,11 @@ TStreamableComponentList=class(TStreamingClass)
   private
     fResolved: boolean;
     fList: TStrings;
+    fOwnsObjects: boolean;
     procedure ResolveNames;
     procedure SetList(writer: TWriter);
     procedure GetList(reader: TReader);
-    function GetItem(index: Integer): TCOmponent;
+    function GetItem(index: Integer): TStreamingClass;
     function GetCount: Integer;
   protected
     procedure Loaded; override;
@@ -25,12 +26,15 @@ TStreamableComponentList=class(TStreamingClass)
     destructor Destroy; override;
     procedure Add(component: TComponent);
     procedure Delete(component: TComponent);
+    procedure Remove(index: Integer);
     procedure Clear;
     procedure Assign(source: TPersistent); override;
     function IndexOf(component: TComponent): Integer;
     function Exist(component: Tcomponent): Boolean;
+    function NamesAsString: string;
     property Count: Integer read GetCount;
-    property Item[index: Integer]: TComponent read GetItem; default;
+    property Item[index: Integer]: TStreamingClass read GetItem; default;
+    property OwnsObjects: boolean read fOwnsObjects write fOwnsObjects default false;
 end;
 
 implementation
@@ -51,6 +55,10 @@ end;
 procedure TStreamableComponentList.Add(component: TComponent);
 begin
     fList.AddObject(component.Name,component);
+    if OwnsObjects then begin
+      if Assigned(component.Owner) then component.Owner.RemoveComponent(component);
+      InsertComponent(component);
+    end;
 end;
 
 procedure TStreamableComponentList.ResolveNames;
@@ -133,10 +141,10 @@ begin
   fResolved:=false;
 end;
 
-function TStreamableComponentList.GetItem(index: Integer): TCOmponent;
+function TStreamableComponentList.GetItem(index: Integer): TStreamingClass;
 begin
   if not fResolved then ResolveNames;
-  Result:=fList.Objects[index] as TComponent;
+  Result:=fList.Objects[index] as TStreamingClass;
 end;
 
 function TStreamableComponentList.GetCount: Integer;
@@ -159,6 +167,7 @@ procedure TStreamableComponentList.Clear;
 begin
   fList.Clear;
   fResolved:=true;
+  if OwnsObjects then DestroyComponents;
 end;
 
 procedure TStreamableComponentList.Delete(component: TCOmponent);
@@ -171,15 +180,45 @@ begin
   end;
 end;
 
+procedure TStreamableComponentList.Remove(Index: Integer);
+begin
+  fList.Delete(index);
+end;
+
 procedure TStreamableComponentList.Assign(source: TPersistent);
 var f: TStreamableComponentList;
+    cl: TStreamingClassClass;
+    i: Integer;
+    comp: TComponent;
 begin
   if source is TStreamableComponentList then begin
+  //если "наш" лист держит компоненты внутри себя, то сделает копию компонентов,
+  //иначе просто сошлется на те же самые компоненты
     f:=source as TStreamableComponentList;
     fList.Assign(f.fList);
     fResolved:=f.fResolved;
+    if OwnsObjects then begin
+      DestroyComponents;
+      for i:=0 to f.Count-1 do begin
+        cl:=TStreamingClassClass(f.Item[i].ClassType);
+        comp:=cl.Clone(f.item[i],self);
+        fList.Objects[i]:=comp;
+      end;
+    end;
   end
   else inherited Assign(source);
+end;
+
+function TStreamableComponentList.NamesAsString: string;
+var i: Integer;
+begin
+  If Count=0 then Result:='{}'
+  else begin
+    Result:='{'+Item[0].Name;
+    for i:=1 to Count-1 do
+      Result:=Result+';'+Item[i].Name;
+    Result:=Result+'}';
+  end;
 end;
 
 initialization

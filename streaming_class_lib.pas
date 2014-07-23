@@ -36,11 +36,19 @@ TstreamingClass=class(TComponent)
 
 TStreamingClassClass=class of TStreamingClass;
 
+procedure SwapIntegers(var i1,i2: Integer);
+
 implementation
 
 (*
       General procedures
                             *)
+
+procedure SwapIntegers(var i1,i2: Integer);
+var t: Integer;
+begin
+  t:=i1; i1:=i2; i2:=t;
+end;
 
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;

@@ -310,7 +310,7 @@ type
     procedure SetStatusPanel(text: string);
     destructor Destroy; override;
     procedure ExecuteTarget(Target: TObject); override;
-    procedure Select; virtual; abstract;
+    function Select: boolean; virtual; abstract;
     procedure Unselect; virtual; abstract;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer); virtual; abstract;
     procedure MouseMove(Shift: TShiftState; X,Y: Integer); virtual;
@@ -1229,7 +1229,7 @@ begin
     end;
   end;
   str.Free;
-  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
+//  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
   SaveWithUndo:=buSaveWithUndo;
   fCriticalSection.Leave;
 end;
@@ -1601,7 +1601,6 @@ end;
 
 destructor TAbstractToolAction.Destroy;
 begin
-  Unselect;
   inherited Destroy;
 end;
 
