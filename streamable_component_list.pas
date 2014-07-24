@@ -21,6 +21,7 @@ TStreamableComponentList=class(TStreamingClass)
   protected
     procedure Loaded; override;
     procedure DefineProperties(Filer: TFiler); override;
+    procedure Notification(aComponent: TComponent; operation: TOperation); override;
   public
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
@@ -39,6 +40,8 @@ end;
 
 implementation
 
+uses SysUtils;
+
 constructor TStreamableComponentList.Create(owner: TComponent);
 begin
   inherited Create(owner);
@@ -48,7 +51,8 @@ end;
 
 destructor TStreamableComponentList.Destroy;
 begin
-  fList.Free;
+  Clear;  //снять notification если объекты не принадлежат
+  FreeAndNil(fList);
   inherited Destroy;
 end;
 
@@ -58,7 +62,9 @@ begin
     if OwnsObjects then begin
       if Assigned(component.Owner) then component.Owner.RemoveComponent(component);
       InsertComponent(component);
-    end;
+    end
+    else
+      component.FreeNotification(self);
 end;
 
 procedure TStreamableComponentList.ResolveNames;
@@ -67,6 +73,7 @@ var i: Integer;
 begin
   for i:=0 to fList.Count-1 do begin
     fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
+    if not OwnsObjects then (fList.Objects[i] as TComponent).FreeNotification(self);
   end;
   fResolved:=true;
 end;
@@ -154,8 +161,11 @@ end;
 
 function TStreamableComponentList.IndexOf(component: TComponent): Integer;
 begin
-  if not fResolved then ResolveNames;
-  Result:=fList.IndexOfObject(component);
+  if fList=nil then Result:=-1
+  else begin
+    if not fResolved then ResolveNames;
+    Result:=fList.IndexOfObject(component);
+  end;
 end;
 
 function TStreamableComponentList.Exist(component: TComponent): Boolean;
@@ -164,10 +174,16 @@ begin
 end;
 
 procedure TStreamableComponentList.Clear;
+var i: Integer;
 begin
+  if OwnsObjects then
+    for i:=0 to Count-1 do
+      Item[i].Free
+  else
+    for i:=0 to Count-1 do
+      Item[i].RemoveFreeNotification(self);
   fList.Clear;
   fResolved:=true;
-  if OwnsObjects then DestroyComponents;
 end;
 
 procedure TStreamableComponentList.Delete(component: TCOmponent);
@@ -175,6 +191,7 @@ var i: Integer;
 begin
   i:=IndexOf(component);
   if i>=0 then begin
+    if not OwnsObjects then component.RemoveFreeNotification(self);
     fList.delete(i);
     component.Free;
   end;
@@ -182,6 +199,7 @@ end;
 
 procedure TStreamableComponentList.Remove(Index: Integer);
 begin
+  if not OwnsObjects then Item[Index].RemoveFreeNotification(self);
   fList.Delete(index);
 end;
 
@@ -204,7 +222,10 @@ begin
         comp:=cl.Clone(f.item[i],self);
         fList.Objects[i]:=comp;
       end;
-    end;
+    end
+    else
+      for i:=0 to Count-1 do
+        Item[i].FreeNotification(self);
   end
   else inherited Assign(source);
 end;
@@ -219,6 +240,15 @@ begin
       Result:=Result+';'+Item[i].Name;
     Result:=Result+'}';
   end;
+end;
+
+procedure TStreamableComponentList.Notification(aComponent: TComponent; operation: TOperation);
+begin
+  inherited Notification(aComponent,operation);
+(*
+  if (operation=opRemove) and Exist(aComponent) then
+    fList.Delete(IndexOf(aComponent));
+    *)
 end;
 
 initialization

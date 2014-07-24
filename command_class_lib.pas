@@ -356,48 +356,75 @@ var our_class: TStreamingClassClass;
     buName: string;
     buNext,buPrev,buBranch: TAbstractCommand;
     buActiveBranch,buTurnLeft: boolean;
-
+    buHash: T4x4LongWordRecord;
+    bin1,bin2: TMemoryStream;
+    tmpName: string;
+    ComponentWithSameName: TComponent;
 begin
   if ClassType=what.ClassType then begin
     t:=what as TAbstractCommand;
+    //нынче команды очень сложные пошли, завязанные на документ
+    //выдернуть их из документа - не поймут, что происходит
+    //придется действовать аккуратно...
+    //сначала записываем наш родной компонент
+    bin1:=TMemoryStream.Create;
+    bin1.WriteComponent(self);
+    bin1.Seek(0,soFromBeginning);
+    self.saveFormat:=fCyr;
+    self.SaveToFile('wtf1.txt');
+    //теперь можно поменять имя второй команде, если там не существует компонента с таким же
+    //именем
     if Assigned(t.Owner) and (Name<>t.Name) and Assigned(t.Owner.FindComponent(Name)) then begin
-      //не получится переименовать объект, не "выдергивая" его с насиженного места
-      //придется сначала записать
-      //ссылки на объекты могут потеряться, тогда нужно писать свой вариант
-      //EqualsByAnyOtherName
-      our_class:=TStreamingClassClass(ClassType);
-      t:=(our_class.Clone(what)) as TAbstractCommand;
-      t.Name:=Name;
-      t.Next:=Next;
-      t.Prev:=Prev;
-      t.Branch:=Branch;
-      t.ActiveBranch:=ActiveBranch;
-      t.TurnLeft:=TurnLeft;
-      Result:=IsEqual(t);
-      t.Free;
+      //небольшая чехарда
+      ComponentWithSameName:=t.Owner.FindComponent(Name);
+      tmpName:=Name;
+      ComponentWithSameName.Name:='';
     end
-    else begin
-      //можем безболезненно провести сравнение "на месте"
-      buName:=t.Name;
-      buNext:=t.next;
-      buPrev:=t.prev;
-      buBranch:=t.Branch;
-      buActiveBranch:=t.ActiveBranch;
-      buTurnLeft:=t.TurnLeft;
-      t.Name:=Name;
-      t.Next:=Next;
-      t.Prev:=Prev;
-      t.Branch:=Branch;
-      t.ActiveBranch:=ActiveBranch;
-      t.TurnLeft:=TurnLeft;
-      Result:=IsEqual(t);
-      t.Name:=buName;
-      t.Next:=buNext;
-      t.Prev:=buPrev;
-      t.Branch:=buBranch;
-      t.ActiveBranch:=buActiveBranch;
-      t.TurnLeft:=buTurnLeft;
+    else ComponentWithSameName:=nil;
+    //можем безболезненно провести сравнение "на месте"
+    buName:=t.Name;
+    buNext:=t.next;
+    buPrev:=t.prev;
+    buBranch:=t.Branch;
+    buActiveBranch:=t.ActiveBranch;
+    buTurnLeft:=t.TurnLeft;
+    t.Name:=tmpName;  //очень вероятно, что мы переименовали себя чтобы избежать конфликта
+    t.Next:=Next;
+    t.Prev:=Prev;
+    t.Branch:=Branch;
+    t.ActiveBranch:=ActiveBranch;
+    t.TurnLeft:=TurnLeft;
+    if t is THashedCommand then begin
+      buHash:=THashedCommand(t).fHash;
+      THashedCommand(t).fHash:=(self as THashedCommand).fHash;
     end;
+
+    bin2:=TMemoryStream.Create;
+    bin2.WriteComponent(t);
+    bin2.Seek(0,soFromBeginning);
+    if bin1.Size<>bin2.Size then begin
+      Result:=false;
+
+
+    what.saveFormat:=fCyr;
+    what.SaveToFile('wtf2.txt');
+
+    end
+    else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
+    bin1.Free;
+    bin2.Free;
+
+    t.Name:=buName;
+    t.Next:=buNext;
+    t.Prev:=buPrev;
+    t.Branch:=buBranch;
+    t.ActiveBranch:=buActiveBranch;
+    t.TurnLeft:=buTurnLeft;
+
+    if Assigned(ComponentWithSameName) then
+      ComponentWithSameName.Name:=tmpName;
+    if t is THashedCommand then
+      THashedCommand(t).fHash:=buHash;
   end
   else Result:=false;
 end;
@@ -1591,6 +1618,7 @@ var doc: TAbstractDocument;
   ToolClass: TAbstractToolActionClass;
 begin
   doc:=Target as TAbstractDocument;
+  if Assigned(doc.Tool) then doc.Tool.Unselect;
   doc.tool.free;
   ToolClass:=TAbstractToolActionClass(self.classType);
   doc.Tool:=ToolClass.Create(doc);
