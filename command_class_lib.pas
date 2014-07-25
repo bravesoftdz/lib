@@ -370,8 +370,8 @@ begin
     bin1:=TMemoryStream.Create;
     bin1.WriteComponent(self);
     bin1.Seek(0,soFromBeginning);
-    self.saveFormat:=fCyr;
-    self.SaveToFile('wtf1.txt');
+//    self.saveFormat:=fCyr;
+//    self.SaveToFile('wtf1.txt');
     //теперь можно поменять имя второй команде, если там не существует компонента с таким же
     //именем
     if Assigned(t.Owner) and (Name<>t.Name) and Assigned(t.Owner.FindComponent(Name)) then begin
@@ -404,11 +404,8 @@ begin
     bin2.Seek(0,soFromBeginning);
     if bin1.Size<>bin2.Size then begin
       Result:=false;
-
-
-    what.saveFormat:=fCyr;
-    what.SaveToFile('wtf2.txt');
-
+//    what.saveFormat:=fCyr;
+//    what.SaveToFile('wtf2.txt');
     end
     else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
     bin1.Free;
@@ -1618,12 +1615,24 @@ var doc: TAbstractDocument;
   ToolClass: TAbstractToolActionClass;
 begin
   doc:=Target as TAbstractDocument;
-  if Assigned(doc.Tool) then doc.Tool.Unselect;
-  doc.tool.free;
+  //слишком много переливаний из порожнего в пустое
+  //надо все-таки разграничить классы - один отвечает за красивые кнопочки
+  //и их вкл/выкл вовремя
+  //а другой - за работу инструмента и сохранение данных в документе
+  //а пока оставим один класс, но упростим процедуры
   ToolClass:=TAbstractToolActionClass(self.classType);
-  doc.Tool:=ToolClass.Create(doc);
-  doc.Tool.Name:='Tool';
-  doc.Tool.Assign(self);
+  if Assigned(doc.Tool) then begin
+    if not (doc.Tool is ToolClass) then begin
+      doc.Tool.Unselect;
+      doc.Tool.Free;
+      doc.Tool:=ToolClass.Create(doc);
+      doc.Tool.Name:='Tool';
+    end;
+  end
+  else begin
+    doc.Tool:=ToolClass.Create(doc);
+    doc.Tool.Name:='Tool';
+  end;
   doc.Tool.Select;
 end;
 

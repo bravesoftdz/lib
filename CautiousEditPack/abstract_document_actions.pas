@@ -302,8 +302,6 @@ begin
   if Assigned(doc^.Tool) then begin
     for i:=0 to ActionCount-1 do
       if Actions[i].ClassType=doc^.Tool.ClassType then begin
-        doc^.Tool.Select;
-        Actions[i].Assign(doc^.Tool);
         Actions[i].Execute;
         break;
       end;

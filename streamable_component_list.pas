@@ -13,6 +13,7 @@ TStreamableComponentList=class(TStreamingClass)
     fResolved: boolean;
     fList: TStrings;
     fOwnsObjects: boolean;
+    fUseNotifications: boolean;
     procedure ResolveNames;
     procedure SetList(writer: TWriter);
     procedure GetList(reader: TReader);
@@ -30,12 +31,15 @@ TStreamableComponentList=class(TStreamingClass)
     procedure Remove(index: Integer);
     procedure Clear;
     procedure Assign(source: TPersistent); override;
+    procedure TakeFromList(source: TStreamableComponentList);  //с парам. OwnsObjects
     function IndexOf(component: TComponent): Integer;
     function Exist(component: Tcomponent): Boolean;
     function NamesAsString: string;
     property Count: Integer read GetCount;
     property Item[index: Integer]: TStreamingClass read GetItem; default;
+  published
     property OwnsObjects: boolean read fOwnsObjects write fOwnsObjects default false;
+    property UseNotifications: boolean read fUseNotifications write fUseNotifications default false;
 end;
 
 implementation
@@ -63,7 +67,7 @@ begin
       if Assigned(component.Owner) then component.Owner.RemoveComponent(component);
       InsertComponent(component);
     end
-    else
+    else if UseNotifications then
       component.FreeNotification(self);
 end;
 
@@ -73,7 +77,7 @@ var i: Integer;
 begin
   for i:=0 to fList.Count-1 do begin
     fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
-    if not OwnsObjects then (fList.Objects[i] as TComponent).FreeNotification(self);
+    if (not OwnsObjects) and UseNotifications then (fList.Objects[i] as TComponent).FreeNotification(self);
   end;
   fResolved:=true;
 end;
@@ -127,24 +131,26 @@ var i: Integer;
 
 begin
   if not fResolved then ResolveNames;
-  writer.WriteListBegin;
+  LookupRoot:=FindOwner;
+  if fList.Count>1 then writer.WriteListBegin;
   for i:=0 to fList.Count-1 do begin
     Component:=flist.objects[i] as TComponent;
-    LookupRoot:=FindOwner;
     s:=GetComponentValue(Component,LookupRoot);
     writer.WriteIdent(s);
-
   end;
-  writer.WriteListEnd;
+  if fList.Count>1 then writer.WriteListEnd;
 end;
 
 procedure TStreamableComponentList.GetList(reader: TReader);
 begin
-  reader.ReadListBegin;
-    while not reader.EndOfList do begin
-      fList.Add(reader.ReadIdent);
-    end;
-  reader.ReadListEnd;
+  if reader.NextValue=vaList then begin
+    reader.ReadListBegin;
+      while not reader.EndOfList do begin
+        fList.Add(reader.ReadIdent);
+      end;
+    reader.ReadListEnd;
+  end
+  else fList.Add(reader.ReadIdent);
   fResolved:=false;
 end;
 
@@ -179,7 +185,7 @@ begin
   if OwnsObjects then
     for i:=0 to Count-1 do
       Item[i].Free
-  else
+  else if UseNotifications then
     for i:=0 to Count-1 do
       Item[i].RemoveFreeNotification(self);
   fList.Clear;
@@ -191,7 +197,7 @@ var i: Integer;
 begin
   i:=IndexOf(component);
   if i>=0 then begin
-    if not OwnsObjects then component.RemoveFreeNotification(self);
+    if (not OwnsObjects) and UseNotifications then component.RemoveFreeNotification(self);
     fList.delete(i);
     component.Free;
   end;
@@ -199,8 +205,27 @@ end;
 
 procedure TStreamableComponentList.Remove(Index: Integer);
 begin
-  if not OwnsObjects then Item[Index].RemoveFreeNotification(self);
+  if (not OwnsObjects) and UseNotifications then Item[Index].RemoveFreeNotification(self);
   fList.Delete(index);
+end;
+
+procedure TStreamableComponentList.TakeFromList(source: TStreamableComponentList);
+var cl: TStreamingClassClass;
+    i: Integer;
+    comp: TComponent;
+begin
+  flist.Assign(source.fList);
+  if OwnsObjects then begin
+    DestroyComponents;
+    for i:=0 to source.Count-1 do begin
+      cl:=TStreamingClassClass(source.Item[i].ClassType);
+      comp:=cl.Clone(source.item[i],self);
+      fList.Objects[i]:=comp;
+    end;
+  end
+  else if UseNotifications then
+    for i:=0 to Count-1 do
+      Item[i].FreeNotification(self);
 end;
 
 procedure TStreamableComponentList.Assign(source: TPersistent);
@@ -215,6 +240,7 @@ begin
     f:=source as TStreamableComponentList;
     fList.Assign(f.fList);
     fResolved:=f.fResolved;
+    fOwnsObjects:=f.fOwnsObjects; //иначе не будет работать Clone как надо
     if OwnsObjects then begin
       DestroyComponents;
       for i:=0 to f.Count-1 do begin
@@ -223,7 +249,7 @@ begin
         fList.Objects[i]:=comp;
       end;
     end
-    else
+    else if UseNotifications then
       for i:=0 to Count-1 do
         Item[i].FreeNotification(self);
   end
@@ -245,10 +271,8 @@ end;
 procedure TStreamableComponentList.Notification(aComponent: TComponent; operation: TOperation);
 begin
   inherited Notification(aComponent,operation);
-(*
-  if (operation=opRemove) and Exist(aComponent) then
+  if UseNotifications and (operation=opRemove) and Exist(aComponent) then
     fList.Delete(IndexOf(aComponent));
-    *)
 end;
 
 initialization
