@@ -351,8 +351,7 @@ end;
 
 
 function TAbstractCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
-var our_class: TStreamingClassClass;
-    t: TAbstractCommand;
+var t: TAbstractCommand;
     buName: string;
     buNext,buPrev,buBranch: TAbstractCommand;
     buActiveBranch,buTurnLeft: boolean;

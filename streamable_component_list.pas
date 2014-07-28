@@ -17,6 +17,7 @@ TStreamableComponentList=class(TStreamingClass)
     procedure ResolveNames;
     procedure SetList(writer: TWriter);
     procedure GetList(reader: TReader);
+    procedure SetOwnsObjects(value: Boolean);
     function GetItem(index: Integer): TStreamingClass;
     function GetCount: Integer;
   protected
@@ -29,16 +30,17 @@ TStreamableComponentList=class(TStreamingClass)
     procedure Add(component: TComponent);
     procedure Delete(component: TComponent);
     procedure Remove(index: Integer);
-    procedure Clear;
+    procedure Clear; override;
     procedure Assign(source: TPersistent); override;
     procedure TakeFromList(source: TStreamableComponentList);  //с парам. OwnsObjects
+    procedure SetObjectsOwner(value: TComponent);
     function IndexOf(component: TComponent): Integer;
     function Exist(component: Tcomponent): Boolean;
     function NamesAsString: string;
     property Count: Integer read GetCount;
     property Item[index: Integer]: TStreamingClass read GetItem; default;
   published
-    property OwnsObjects: boolean read fOwnsObjects write fOwnsObjects default false;
+    property OwnsObjects: boolean read fOwnsObjects write SetOwnsObjects default false;
     property UseNotifications: boolean read fUseNotifications write fUseNotifications default false;
 end;
 
@@ -73,7 +75,6 @@ end;
 
 procedure TStreamableComponentList.ResolveNames;
 var i: Integer;
-    c: TComponent;
 begin
   for i:=0 to fList.Count-1 do begin
     fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
@@ -273,6 +274,23 @@ begin
   inherited Notification(aComponent,operation);
   if UseNotifications and (operation=opRemove) and Exist(aComponent) then
     fList.Delete(IndexOf(aComponent));
+end;
+
+procedure TStreamableComponentList.SetObjectsOwner(value: TComponent);
+var i: Integer;
+begin
+  for i:=0 to Count-1 do
+    if Item[i].Owner<>value then begin
+      if Assigned(Item[i].Owner) then Item[i].Owner.RemoveComponent(Item[i]);
+      if Assigned(value) then value.InsertComponent(Item[i]);
+    end;
+  fOwnsObjects:=(value=self);
+end;
+
+procedure TStreamableComponentList.SetOwnsObjects(value: Boolean);
+begin
+  if value then SetObjectsOwner(self);
+//  else SetObjectsOwner(nil);
 end;
 
 initialization
