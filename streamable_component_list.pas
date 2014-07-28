@@ -14,17 +14,17 @@ TStreamableComponentList=class(TStreamingClass)
     fList: TStrings;
     fOwnsObjects: boolean;
     fUseNotifications: boolean;
-    procedure ResolveNames;
     procedure SetList(writer: TWriter);
     procedure GetList(reader: TReader);
     procedure SetOwnsObjects(value: Boolean);
     function GetItem(index: Integer): TStreamingClass;
     function GetCount: Integer;
   protected
-    procedure Loaded; override;
+//    procedure Loaded; override;
     procedure DefineProperties(Filer: TFiler); override;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
   public
+    procedure ResolveNames;
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
     procedure Add(component: TComponent);
@@ -83,10 +83,12 @@ begin
   fResolved:=true;
 end;
 
+(*
 procedure TStreamableComponentList.Loaded;
 begin
   if not fResolved then ResolveNames;
 end;
+*)
 
 procedure TStreamableComponentList.DefineProperties(Filer: TFiler);
 begin

@@ -17,6 +17,9 @@ TstreamingClass=class(TComponent)
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
     constructor LoadFromString(text: string);
     constructor Clone(source: TStreamingClass;owner: TComponent=nil);
+    //конструктор это конечно хорошо, однако нужно знать, какой класс имеет созд. объект
+    //опробуем классовые функции
+    class function LoadComponentFromString(text: string): TComponent;
     procedure Clear; virtual; abstract;
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
@@ -248,6 +251,20 @@ begin
   ObjectTextToBinary(StrStream,BinStream);
   BinStream.Seek(0, soFromBeginning);
   BinStream.ReadComponent(Self);
+  BinStream.Free;
+  StrStream.Free;
+end;
+
+class function TStreamingClass.LoadComponentFromString(text: string): TComponent;
+var
+  StrStream: TStringStream;
+  BinStream: TMemoryStream;
+begin
+  BinStream:=TMemoryStream.Create;
+  StrStream:=TStringStream.Create(text);
+  ObjectTextToBinary(StrStream,BinStream);
+  BinStream.Seek(0, soFromBeginning);
+  Result:=BinStream.ReadComponent(nil);
   BinStream.Free;
   StrStream.Free;
 end;
