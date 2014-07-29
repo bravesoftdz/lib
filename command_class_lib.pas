@@ -279,6 +279,7 @@ type
       procedure DoLoad; virtual;
       property onDocumentChange: TNotifyEvent read fOnDocumentChange write SetOnDocumentChange;
       property onLoad: TNotifyEvent read fOnLoad write SetOnLoad;
+      property CriticalSection: TCriticalSection read fCriticalSection;
       function Hash: T4x4LongWordRecord;
     published
       UndoTree: TCommandTree;
@@ -1143,10 +1144,19 @@ end;
 procedure TAbstractDocument.GetChildren(Proc: TGetChildProc; Root: TComponent);
 var
   i : Integer;
+  fList: TStringList;
 begin
+  fList:=TStringList.Create;
   for i := 0 to ComponentCount-1 do
     if not (csSubComponent in Components[i].ComponentStyle) and (((Components[i]<>UndoTree) and (Components[i]<>Tool))  or SaveWithUndo) then
-      Proc( Components[i] );
+      fList.AddObject(Components[i].Name,Components[i]);
+  fList.Sort;
+  //тем самым объекты расположатс€ в алфавитном пор€дке а не в пор€дке создани€
+  //поскольку разные манипул€ции могут изменить пор€док и не совпадет хэш
+  //нам этого не надо!
+  for i:=0 to fList.Count-1 do
+    Proc( TComponent(fList.Objects[i]) );
+  fList.Free;
 end;
 
 function TAbstractDocument.isEmpty: Boolean;
@@ -1252,7 +1262,7 @@ begin
     end;
   end;
   str.Free;
-//  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
+  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
   SaveWithUndo:=buSaveWithUndo;
   fCriticalSection.Leave;
 end;

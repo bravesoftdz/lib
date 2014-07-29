@@ -34,7 +34,9 @@ TstreamingClass=class(TComponent)
     function FindOwner: TComponent; //доходит до самого высокого уровня
 
     function GetFloatProperty(aPath: string): Real;
+    function NameExistsSomewhere(proposedName: string; aowner: Tcomponent): boolean;
     procedure ensureCorrectName(proposedName: string; aowner: TComponent);
+    procedure ensureCorrectNames(aowner: TComponent);
   end;
 
 TStreamingClassClass=class of TStreamingClass;
@@ -150,6 +152,17 @@ begin
       Proc( Components[i] );
 end;
 
+function TStreamingClass.NameExistsSomewhere(proposedName: string; aowner: TComponent): boolean;
+var i: integer;
+begin
+  Result:=Assigned(aowner.FindComponent(proposedName));
+  if not Result then
+    for i:=0 to aOwner.ComponentCount-1 do begin
+      Result:=Result or NameExistsSomewhere(proposedName,aowner.Components[i]);
+      if Result=true then break;
+    end;
+end;
+
 procedure TStreamingClass.ensureCorrectName(proposedName: string; aowner: TComponent);
 var FullName: string;
     i: Integer;
@@ -157,12 +170,22 @@ begin
   FullName:=proposedName;
   if assigned(aowner) then begin
     i:=0;
-    while aowner.FindComponent(FullName)<>nil do begin
+//    while aowner.FindComponent(FullName)<>nil do begin
+    while NameExistsSomewhere(FullName,aowner) do begin
       FullName:=proposedName+IntToStr(i);
       inc(i);
     end;
+//нужен вариант проверки и компонентах, принадлежащих Owner,
   end;
   Name:=FullName;
+end;
+
+procedure TStreamingClass.ensureCorrectNames(aowner: TComponent);
+var i: Integer;
+begin
+  ensureCorrectName(Name,aowner);
+  for i:=0 to ComponentCount-1 do
+    if Components[i] is TStreamingClass then TStreamingClass(Components[i]).ensureCorrectNames(aowner);
 end;
 
 procedure TstreamingClass.SaveToFile(filename: string);

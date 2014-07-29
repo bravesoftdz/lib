@@ -20,7 +20,7 @@ TStreamableComponentList=class(TStreamingClass)
     function GetItem(index: Integer): TStreamingClass;
     function GetCount: Integer;
   protected
-//    procedure Loaded; override;
+    procedure Loaded; override;
     procedure DefineProperties(Filer: TFiler); override;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
   public
@@ -76,23 +76,28 @@ end;
 procedure TStreamableComponentList.ResolveNames;
 var i: Integer;
 begin
-  for i:=0 to fList.Count-1 do begin
-    fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
-    if (not OwnsObjects) and UseNotifications then (fList.Objects[i] as TComponent).FreeNotification(self);
-  end;
+  if OwnsObjects then
+    for i:=0 to ComponentCount-1 do
+      fList.AddObject(components[i].Name,components[i])
+  else
+    for i:=0 to fList.Count-1 do begin
+      fList.Objects[i]:=FindNestedComponent(FindOwner,fList.Strings[i]);
+      if UseNotifications then (fList.Objects[i] as TComponent).FreeNotification(self);
+    end;
   fResolved:=true;
 end;
 
-(*
+
 procedure TStreamableComponentList.Loaded;
 begin
-  if not fResolved then ResolveNames;
+  ResolveNames; //если списка вообще не было, значит fResolved так и не сбросилс€ в false
+//  if not fResolved then ResolveNames;
 end;
-*)
+
 
 procedure TStreamableComponentList.DefineProperties(Filer: TFiler);
 begin
-  Filer.DefineProperty('data',GetList,SetList,Count>0);
+  Filer.DefineProperty('data',GetList,SetList,(Count>0) and not ownsObjects);
 end;
 
 procedure TStreamableComponentList.SetList(writer: TWriter);
@@ -165,6 +170,7 @@ end;
 
 function TStreamableComponentList.GetCount: Integer;
 begin
+  if not fResolved then ResolveNames;
   Result:=fList.Count;
 end;
 
@@ -291,6 +297,8 @@ end;
 
 procedure TStreamableComponentList.SetOwnsObjects(value: Boolean);
 begin
+  if not fResolved then ResolveNames;
+  fOwnsObjects:=value;
   if value then SetObjectsOwner(self);
 //  else SetObjectsOwner(nil);
 end;
