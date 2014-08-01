@@ -25,8 +25,7 @@ end;
 
 
 procedure TPngImageList.ReadData(Stream: TStream);
-var i: Integer;
-    img: TPngObject;
+var img: TPngObject;
     btmp: TBitmap;
 begin
 //  inherited WriteData(Stream);

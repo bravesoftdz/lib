@@ -154,8 +154,10 @@ end;
 
 function TStreamingClass.NameExistsSomewhere(proposedName: string; aowner: TComponent): boolean;
 var i: integer;
+    c: TComponent;
 begin
-  Result:=Assigned(aowner.FindComponent(proposedName));
+  c:=aowner.FindComponent(proposedName);
+  Result:=Assigned(c) and (c<>self);
   if not Result then
     for i:=0 to aOwner.ComponentCount-1 do begin
       Result:=Result or NameExistsSomewhere(proposedName,aowner.Components[i]);
@@ -181,11 +183,23 @@ begin
 end;
 
 procedure TStreamingClass.ensureCorrectNames(aowner: TComponent);
-var i: Integer;
+var i,j: Integer;
+    FullName: string;
+    c: TStreamingClass;
 begin
-  ensureCorrectName(Name,aowner);
+  ensureCorrectName(Name,aowner); //это корешок, что его имени тут нет - и так проверится
   for i:=0 to ComponentCount-1 do
-    if Components[i] is TStreamingClass then TStreamingClass(Components[i]).ensureCorrectNames(aowner);
+    if Components[i] is TStreamingClass then begin
+      c:=TStreamingClass(Components[i]);
+      FullName:=c.Name;
+      j:=0;
+      while c.NameExistsSomewhere(FullName,aowner) or c.NameExistsSomewhere(FullName,self) do begin
+        fullName:=c.Name+IntToStr(j);
+        inc(j);
+      end;
+      c.Name:=FullName;
+    end;
+//    if Components[i] is TStreamingClass then TStreamingClass(Components[i]).ensureCorrectNames(aowner);
 end;
 
 procedure TstreamingClass.SaveToFile(filename: string);

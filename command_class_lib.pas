@@ -1262,7 +1262,7 @@ begin
     end;
   end;
   str.Free;
-  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
+//  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
   SaveWithUndo:=buSaveWithUndo;
   fCriticalSection.Leave;
 end;
