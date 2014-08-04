@@ -19,15 +19,19 @@ TAbstractDocumentActionList=class(TActionList)
     fButtonHeight: Integer;
     fCellPadding: Integer;
     fMaxCount: Integer;
+//    procedure SetDoc(value: PAbstractDocument);
     procedure DrawBranch(br: TAbstractCommand; level: Integer=0; row: Integer=-1);
+    procedure MakeHistory;
   public
     Doc: PAbstractDocument;
     constructor Create(owner: TComponent); override;
     function ExecuteAction(Action: TBasicAction): boolean; override;
     procedure ShowHistory;
+    procedure ChangeHistory;
     procedure HistoryClickEvent(Sender: TObject);
     procedure RefreshHistoryHighlights;
     procedure SetupTool;
+//    property Doc: PAbstractDocument read fDoc write SetDoc;
   published
     property ButtonHeight: Integer read fButtonHeight write fButtonHeight;
     property CellPadding: Integer read fCellPadding write FCellPadding;
@@ -138,6 +142,15 @@ begin
   frmHistory:=TFrmHistory.Create(self);
 end;
 
+(*
+procedure TAbstractDocumentActionList.SetDoc(value: PAbstractDocument);
+begin
+  //нам нужна более тесная связь, чем та, которую может дать FreeNotification
+  fDoc:=value;
+  if Assigned(fDoc) then fDoc.RegisterActionList(self);
+end;
+*)
+
 function TAbstractDocumentActionList.ExecuteAction(Action: TBasicAction): boolean;
 var Handled: Boolean;
 begin
@@ -234,7 +247,7 @@ begin
   btmp.Free;
 end;
 
-procedure TAbstractDocumentActionList.ShowHistory;
+procedure TAbstractDocumentActionList.MakeHistory;
 begin
   frmHistory.DestroyComponents; //жестоко!
   frmHistory.ClearLines;
@@ -257,8 +270,24 @@ begin
   frmHistory.Left:=(owner as TControl).Left+(owner as TControl).ClientWidth-frmHistory.Width;
 
   RefreshHistoryHighlights;
-  frmHistory.Show;
-  frmHistory.FormPaint(self);
+end;
+
+procedure TAbstractDocumentActionList.ChangeHistory;
+begin
+  //вызывается каждый раз, когда выполняется новое действие
+  if frmHistory.Visible then begin
+    MakeHistory;
+    frmHistory.FormPaint(self);
+  end;
+end;
+
+procedure TAbstractDocumentActionList.ShowHistory;
+begin
+  if not frmHistory.Visible then begin
+    MakeHistory;
+    frmHistory.Show;
+    frmHistory.FormPaint(self);
+  end;
 end;
 
 procedure TAbstractDocumentActionList.HistoryClickEvent(Sender: TObject);
@@ -268,7 +297,8 @@ begin
     State:=TAbstractCommand((Sender as TComponent).tag);
     doc^.jumpToBranch(state);
   end;
-  RefreshHistoryHighlights;
+//  RefreshHistoryHighlights;
+// оно выполнится внутри jumpToBranch
 end;
 
 procedure TAbstractDocumentActionList.RefreshHistoryHighlights;
@@ -334,6 +364,7 @@ begin
     new_doc.onLoad:=doc.onLoad;
     new_doc.onDocumentChange:=doc.onDocumentChange;
     doc.Release;
+    (ActionList as TAbstractDocumentActionList).ChangeHistory;
     //пусть документ будет сам по себе, свой собственный, оно проще
   end;
 end;
@@ -382,6 +413,7 @@ begin
   //теперь перем. doc ссылается уже на новую.
   new_doc.onLoad:=doc.onLoad;
   new_doc.onDocumentChange:=doc.onDocumentChange;
+    (ActionList as TAbstractDocumentActionList).ChangeHistory;
   doc.Release;
 //  doc.Free;
 end;

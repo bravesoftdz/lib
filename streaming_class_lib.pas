@@ -8,6 +8,8 @@ type
 StreamingClassSaveFormat=(fBinary,fAscii,fCyr);
 
 TstreamingClass=class(TComponent)
+  private
+    procedure RecursiveEnsure(our_root,aowner: TStreamingClass);
   protected
     procedure   GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function    GetChildOwner: TComponent; override;
@@ -34,9 +36,12 @@ TstreamingClass=class(TComponent)
     function FindOwner: TComponent; //доходит до самого высокого уровня
 
     function GetFloatProperty(aPath: string): Real;
-    function NameExistsSomewhere(proposedName: string; aowner: Tcomponent): boolean;
+    function NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean; virtual;
+    //есть ли "внутри нас" компонент с таким именем
     procedure ensureCorrectName(proposedName: string; aowner: TComponent);
-    procedure ensureCorrectNames(aowner: TComponent);
+    //убедиться, что при вставке в aowner не возникнет проблемы с нашим именем
+    procedure ensureCorrectNames(aowner: TStreamingClass);
+    //и у всех наших "подчиненных" имена нормальные 
   end;
 
 TStreamingClassClass=class of TStreamingClass;
@@ -152,16 +157,18 @@ begin
       Proc( Components[i] );
 end;
 
-function TStreamingClass.NameExistsSomewhere(proposedName: string; aowner: TComponent): boolean;
+function TStreamingClass.NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean;
 var i: integer;
     c: TComponent;
 begin
-  c:=aowner.FindComponent(proposedName);
-  Result:=Assigned(c) and (c<>self);
+  c:=FindComponent(proposedName);
+  Result:=Assigned(c) and (c<>me);
   if not Result then
-    for i:=0 to aOwner.ComponentCount-1 do begin
-      Result:=Result or NameExistsSomewhere(proposedName,aowner.Components[i]);
-      if Result=true then break;
+    for i:=0 to ComponentCount-1 do begin
+      if Components[i] is TStreamingClass then begin
+        Result:=Result or TStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
+        if Result=true then break;
+      end;
     end;
 end;
 
@@ -173,7 +180,7 @@ begin
   if assigned(aowner) then begin
     i:=0;
 //    while aowner.FindComponent(FullName)<>nil do begin
-    while NameExistsSomewhere(FullName,aowner) do begin
+    while (aowner as TStreamingClass).NameExistsSomewhere(FullName,self) do begin
       FullName:=proposedName+IntToStr(i);
       inc(i);
     end;
@@ -182,24 +189,29 @@ begin
   Name:=FullName;
 end;
 
-procedure TStreamingClass.ensureCorrectNames(aowner: TComponent);
+procedure TStreamingClass.RecursiveEnsure(our_root,aowner: TStreamingClass);
+var i: Integer;
+    fullName: string;
+begin
+  i:=0;
+  fullName:=Name;
+  while aowner.NameExistsSomewhere(FullName,self) or our_root.NameExistsSomewhere(FullName,self) do begin
+    fullName:=Name+IntToStr(i);
+    inc(i);
+  end;
+  Name:=FullName;
+  //себя переименовали
+  for i:=0 to ComponentCount-1 do
+    if Components[i] is TStreamingClass then
+      TStreamingClass(Components[i]).RecursiveEnsure(our_root,aowner);
+end;
+
+procedure TStreamingClass.ensureCorrectNames(aowner: TStreamingClass);
 var i,j: Integer;
     FullName: string;
     c: TStreamingClass;
 begin
-  ensureCorrectName(Name,aowner); //это корешок, что его имени тут нет - и так проверится
-  for i:=0 to ComponentCount-1 do
-    if Components[i] is TStreamingClass then begin
-      c:=TStreamingClass(Components[i]);
-      FullName:=c.Name;
-      j:=0;
-      while c.NameExistsSomewhere(FullName,aowner) or c.NameExistsSomewhere(FullName,self) do begin
-        fullName:=c.Name+IntToStr(j);
-        inc(j);
-      end;
-      c.Name:=FullName;
-    end;
-//    if Components[i] is TStreamingClass then TStreamingClass(Components[i]).ensureCorrectNames(aowner);
+  RecursiveEnsure(self,aowner);
 end;
 
 procedure TstreamingClass.SaveToFile(filename: string);

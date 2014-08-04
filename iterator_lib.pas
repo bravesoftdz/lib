@@ -142,7 +142,6 @@ end;
 procedure TAbstractDocumentRawIterator.rawNext(var iterator);
 var i: Integer;
     c: TComponent;
-    clas: TClass;
 begin
   while fObjStack.Count>0 do begin
     c:=TComponent(fObjStack.Pop); //извлекаем текущий компонент и номер его "ребенка"
@@ -150,7 +149,6 @@ begin
     for i:=Integer(fStack.Pop) to c.ComponentCount-1 do //цикл понадобился
       if (not (c.Components[i] is TCommandTree)) and  //лишь из-за "неугодных"
       (not (c.Components[i] is TAbstractToolAction)) then begin  //ветвей
-        clas:=c.Components[i].ClassType;
         Pointer(iterator):=c.Components[i];  //есть еще непосещенный компонент
         fObjStack.Push(c);  //вернули на место
         fStack.Push(Pointer(i+1)); //ведь i мы уже посетили

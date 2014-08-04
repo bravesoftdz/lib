@@ -253,10 +253,12 @@ type
       fOnDocumentChange: TNotifyEvent;
       fOnLoad: TNotifyEvent;
       fCriticalSection: TCriticalSection;
+      fActionList: TActionList;
       procedure SetOnDocumentChange(value: TNotifyEvent);
       procedure SetOnLoad(value: TNotifyEvent);
     protected
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
+      procedure Notification(aComponent: TComponent; operation: TOperation); override;
     public
       SaveWithUndo: boolean;
       StatusPanel: TStatusPanel;
@@ -266,6 +268,11 @@ type
       procedure AfterConstruction; override;
       destructor Destroy; override;
       procedure Release;
+
+      function NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean; override;
+
+      //для взаимодействия с ActionList
+      procedure RegisterActionList(value: TActionList);
 
       procedure Undo;
       procedure Redo;
@@ -492,7 +499,6 @@ end;
                                           *)
 function TBranchCommand.caption: string;
 begin
-//  Result:='Ветвь создана '+DateTimeToStr(NameToDateTime);
   Result:='Ветвь создана '+SmartDateTimeToStr;
 end;
 
@@ -1159,6 +1165,27 @@ begin
   fList.Free;
 end;
 
+function TAbstractDocument.NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean;
+var i: integer;
+    c: TComponent;
+begin
+  c:=FindComponent(proposedName);
+  Result:=Assigned(c) and (c<>me);
+  if not Result then
+    for i:=0 to ComponentCount-1 do begin
+      if (Components[i] is TStreamingClass) and not (Components[i] is TCommandTree) and not (Components[i] is TAbstractToolAction) then begin
+        Result:=Result or TStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
+        if Result=true then break;
+      end;
+    end;
+end;
+
+procedure TAbstractDocument.Notification(aComponent: TComponent; operation: TOperation);
+begin
+  if (operation=opRemove) and (aComponent=fActionList) then
+    fActionList:=nil;
+end;
+
 function TAbstractDocument.isEmpty: Boolean;
 begin
   Result:=(UndoTree.Root.Next=nil);
@@ -1167,6 +1194,14 @@ end;
 function TAbstractDocument.Changed: Boolean;
 begin
   Result:=(UndoTree.current<>initial_pos) or new_commands_added;
+end;
+
+procedure TAbstractDocument.RegisterActionList(value: TActionList);
+begin
+  fActionList:=value;
+  if Assigned(value) then
+    value.FreeNotification(self); //если будет удаляться, то пусть мы об этом
+    //узнаем и выставим знач. в nil
 end;
 
 function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
@@ -1178,22 +1213,27 @@ begin
   if undotree.CheckForExistingCommand(command) then begin
     //состояние уже поменялось, мы выполнили существующую команду
     change;
+    //но history не надо перестраивать, лишь указать тек. команду
+    if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+      TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
     command.Free;
     Result:=false;
   end
-  else if command.Execute then begin
-    undotree.RemoveComponent(command);
-    UndoTree.Add(command);
-    Change;
-    new_commands_added:=true;
-    if command is THashedCommand then THashingThread.Create(THashedCommand(command),false);
-    Result:=true;
+  else
+    if command.Execute then begin
+      undotree.RemoveComponent(command);
+      UndoTree.Add(command);
+      Change;
+      if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+        TAbstractDocumentActionList(fActionList).ChangeHistory;
+      new_commands_added:=true;
+      if command is THashedCommand then THashingThread.Create(THashedCommand(command),false);
+      Result:=true;
     end
     else begin
       command.Free;
       Result:=false;
     end;
-
   fCriticalSection.Leave;
 end;
 
@@ -1213,6 +1253,8 @@ begin
       UndoTree.Undo;
     fCriticalSection.Leave;
     Change;
+    if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+      TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
   end;
 end;
 
@@ -1223,6 +1265,8 @@ begin
       UndoTree.Redo;
     fCriticalSection.Leave;
     Change;
+    if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+      TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
   end;
 end;
 
@@ -1232,6 +1276,8 @@ begin
     UndoTree.JumpToBranch(Branch);
   fCriticalSection.Leave;
   Change;
+  if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+    TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
 end;
 
 procedure TAbstractDocument.Change;
