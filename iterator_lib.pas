@@ -26,6 +26,8 @@ TAbstractDocumentRawIterator=class(TComponent)
   private
     fStack: TCleanableStack;  //номер посещ. компонента
     fObjStack: TCleanableStack; //текущий узел, по которому "итерируем"
+    fRecursive: boolean;
+    procedure SetRecursive(value: boolean);
   public
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
@@ -33,6 +35,7 @@ TAbstractDocumentRawIterator=class(TComponent)
 
     procedure rawFirst(var iterator); virtual;
     procedure rawNext(var iterator); virtual;
+    property recursive: Boolean read frecursive write SetRecursive default true;
 end;
 
 TAbstractDocumentClassIterator=class(TAbstractDocumentRawIterator)
@@ -99,7 +102,7 @@ begin
 end;
 
 (*
-    TAbstractDocumentIterator
+    TAbstractDocumentRawIterator
                                   *)
 constructor TAbstractDocumentRawIterator.Create(owner: TComponent);
 begin
@@ -107,6 +110,7 @@ begin
   SetSubComponent(true);
   fstack:=TCleanableStack.Create;
   fObjStack:=TCleanableStack.Create;
+  fRecursive:=true;
 end;
 
 destructor TAbstractDocumentRawIterator.Destroy;
@@ -116,9 +120,18 @@ begin
   inherited Destroy;
 end;
 
+procedure TAbstractDocumentRawIterator.SetRecursive(value: boolean);
+var iterator: Pointer;
+begin
+  fRecursive:=value;
+  rawFirst(iterator); //чтобы очистить стеки с прошлого раза
+  //иначе могут быть очень странные глюки
+end;
+
 procedure TAbstractDocumentRawIterator.rawFirst(var iterator);
 begin
   fstack.Clear;
+  fObjStack.Clear;
   if Assigned(Owner) then begin
     fObjStack.Push(Owner);
     fStack.Push(Pointer(0));
@@ -129,25 +142,29 @@ end;
 procedure TAbstractDocumentRawIterator.rawNext(var iterator);
 var i: Integer;
     c: TComponent;
+    clas: TClass;
 begin
-  if fObjStack.Count=0 then Pointer(iterator):=nil //конец итераций
-  else begin
+  while fObjStack.Count>0 do begin
     c:=TComponent(fObjStack.Pop); //извлекаем текущий компонент и номер его "ребенка"
     //на котором остановились
     for i:=Integer(fStack.Pop) to c.ComponentCount-1 do //цикл понадобился
       if (not (c.Components[i] is TCommandTree)) and  //лишь из-за "неугодных"
       (not (c.Components[i] is TAbstractToolAction)) then begin  //ветвей
+        clas:=c.Components[i].ClassType;
         Pointer(iterator):=c.Components[i];  //есть еще непосещенный компонент
         fObjStack.Push(c);  //вернули на место
         fStack.Push(Pointer(i+1)); //ведь i мы уже посетили
-        fObjStack.Push(c.Components[i]);  //а у него возможно дети
-        fStack.Push(Pointer(0));
+        if Recursive then begin
+          fObjStack.Push(c.Components[i]);  //а у него возможно дети
+          fStack.Push(Pointer(0));
+        end;
         Exit;
       end;
     //если мы дошли до этого места, значит, не нашлось у нашего компонента больше "детей"
     //tail recursion тут можно, или тупо цикл
-    rawNext(iterator);
+//    rawNext(iterator);
   end;
+  Pointer(iterator):=nil //конец итераций
 end;
 
 (*

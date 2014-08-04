@@ -166,6 +166,7 @@ function TStreamableComponentList.GetItem(index: Integer): TStreamingClass;
 begin
   if not fResolved then ResolveNames;
   Result:=fList.Objects[index] as TStreamingClass;
+  Assert(Result<>nil, 'wtf nil item');
 end;
 
 function TStreamableComponentList.GetCount: Integer;
