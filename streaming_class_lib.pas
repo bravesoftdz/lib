@@ -207,9 +207,6 @@ begin
 end;
 
 procedure TStreamingClass.ensureCorrectNames(aowner: TStreamingClass);
-var i,j: Integer;
-    FullName: string;
-    c: TStreamingClass;
 begin
   RecursiveEnsure(self,aowner);
 end;
@@ -398,6 +395,8 @@ function TStreamingClass.EqualsByAnyOtherName(what: TStreamingClass): boolean;
 var our_class: TStreamingClassClass;
     t: TStreamingClass;
 begin
+//не самый надежный метод,
+//клон может потерять связи с документом
   if ClassType=what.ClassType then begin
     our_class:=TStreamingClassClass(ClassType);
     t:=our_class.Clone(what);

@@ -2,36 +2,31 @@ unit command_class_lib;
 
 interface
 
-uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls,messages;
+uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls,messages,abstract_command_lib;
 
 type
-  TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
+  TAbstractTreeCommand=class(TAbstractCommand)  //чтобы историю изменений можно было хранить вместе со всем остальным
     private
-      fNext,fPrev,fBranch: TAbstractCommand;
+      fNext,fPrev,fBranch: TAbstractTreeCommand;
       fTurnLeft: Boolean;
     protected
       fActiveBranch: Boolean;
-      fImageIndex: Integer;
     public
       constructor Create(Aowner: TComponent); override;
       procedure Clear; override;
-      function Execute: Boolean; virtual; abstract;
-      function Undo: boolean; virtual; abstract;
-      function caption: string; virtual;
       procedure ResolveMemory; virtual;
       function NameToDateTime: TDateTime;
       function NameToDate(aName: TComponentName): Integer;
-      property ImageIndex: Integer read fImageIndex;
       function EqualsByAnyOtherName(what: TStreamingClass): boolean; override;
     published
-      property Prev: TAbstractCommand read fPrev write fPrev;
-      property Next: TAbstractCommand read fNext write fNext;
-      property Branch: TAbstractCommand read fBranch write fBranch;
+      property Prev: TAbstractTreeCommand read fPrev write fPrev;
+      property Next: TAbstractTreeCommand read fNext write fNext;
+      property Branch: TAbstractTreeCommand read fBranch write fBranch;
       property ActiveBranch: Boolean read fActiveBranch write fActiveBranch default false;
       property TurnLeft: Boolean read fTurnLeft write fTurnLeft default false;
     end;
 
-  TInfoCommand=class(TAbstractCommand)
+  TInfoCommand=class(TAbstractTreeCommand)
     public
       constructor Create(AOwner: TComponent); override;
       function Execute: Boolean; override;
@@ -54,7 +49,7 @@ type
       property FileName: string read fFileName write fFileName;
     end;
 
-  THashedCommand=class(TAbstractCommand)
+  THashedCommand=class(TAbstractTreeCommand)
     private
       fHash: T4x4LongWordRecord;
       procedure WriteHash(stream: TStream);
@@ -80,7 +75,7 @@ type
 
 
 
-  TChangePropertiesCommand=class(TAbstractCommand)
+  TChangePropertiesCommand=class(TAbstractTreeCommand)
     protected
       instance: TPersistent;
       fPropInfo: PPropInfo;
@@ -186,64 +181,41 @@ type
     public
       constructor Create(AOwner: TComponent); overload; override;
       constructor Create(aPropPath: string; valName: string); reintroduce; overload;
-
       function Execute: Boolean; override;
       function Undo: Boolean; override;
       function Caption: string; override;
     end;
 
-
-  TCommandList=class(TStreamingClass) //список для undo/redo и даже для сохранения данных в файл
+  TCommandTree=class(TAbstractCommandContainer) //дерево для undo/redo с многими ветвями
     private
-      fRoot: TComponent;
-      fcount: Integer;
-      fcurrent: Integer; //наше данное положение - куда добавлять команду. Т.е по умолчанию - 0
-
-      procedure ReadCount(reader: TReader);
-      procedure WriteCount(writer: TWriter);
-      procedure ReadCurrent(reader: TReader);
-      procedure WriteCurrent(writer: TWriter);
+      fRoot,fCurrent,fIterator: TAbstractTreeCommand;
+      procedure RecursiveCompare(t1,t2: TabstractTreeCommand;var same,plus,minus: Integer);
+      procedure RecursiveMerge(t1,t2: TAbstractTreeCommand);
+      procedure Assimilate(t: TAbstractTreeCommand);
     protected
-      procedure DefineProperties(filer: TFiler); override;
-    public
-      constructor Create(Aowner: TComponent); override;
-
-
-      procedure Add(command: TAbstractCommand);
-      procedure Undo;
-      procedure Redo;
-      function UndoEnabled: Boolean;
-      function RedoEnabled: Boolean;
-      destructor Destroy; override;
-      procedure Clear; override;
-      property count: Integer read fcount;
-      property current: Integer read fcurrent;
-    end;
-
-  TCommandTree=class(TStreamingClass) //дерево для undo/redo с многими ветвями
-    private
-      fRoot: TAbstractCommand;
-      fCurrent: TAbstractCommand;
-      procedure RecursiveCompare(t1,t2: TabstractCOmmand;var same,plus,minus: Integer);
-      procedure RecursiveMerge(t1,t2: TAbstractCommand);
-      procedure Assimilate(t: TAbstractCommand);
-    protected
-      function FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
+      function FindExistingCommand(command: TAbstractTreeCommand;position: TAbstractTreeCommand): boolean;
     public
       constructor Create(AOwner: TComponent); override;
-      function CheckForExistingCommand(command: TAbstractCommand): boolean;
-      procedure Add(command: TAbstractCommand);
-      procedure Undo;
-      procedure Redo;
-      procedure JumpToBranch(command: TAbstractCommand);
-      function UndoEnabled: Boolean;
-      function RedoEnabled: Boolean;
+      procedure Clear; override;
+
+      function CheckForExistingCommand(command: TAbstractCommand): boolean; override;
+      function UndoEnabled: Boolean; override;
+      function RedoEnabled: Boolean; override;
+
+      procedure Add(command: TAbstractCommand); override;
+      procedure Undo; override;
+      procedure Redo; override;
+      procedure JumpToBranch(command: TAbstractCommand); override;
+
+      function CurrentExecutedCommand: TAbstractCommand; override;
+      function PrevCommand: TAbstractCommand; override;
+      function NextCommand: TAbstractCommand; override; //для построения списков undo/redo
+
       procedure CompareWith(tree: TCommandTree;var same,plus,minus: Integer);
       procedure MergeWith(tree: TCommandTree);
-      procedure Clear; override;
     published
-      property Root: TAbstractCommand read fRoot write fRoot;
-      property Current: TAbstractCommand read fCurrent write fCurrent;
+      property Root: TAbstractTreeCommand read fRoot write fRoot;
+      property Current: TAbstractTreeCommand read fCurrent write fCurrent;
     end;
   TAbstractToolAction=class;
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
@@ -284,12 +256,14 @@ type
       procedure Save;
       procedure Change; virtual;
       procedure DoLoad; virtual;
+      function Hash: T4x4LongWordRecord;
+      function UndoTree: TCommandTree;
       property onDocumentChange: TNotifyEvent read fOnDocumentChange write SetOnDocumentChange;
       property onLoad: TNotifyEvent read fOnLoad write SetOnLoad;
       property CriticalSection: TCriticalSection read fCriticalSection;
-      function Hash: T4x4LongWordRecord;
+
     published
-      UndoTree: TCommandTree;
+      UndoContainer: TAbstractCommandContainer;
       Tool: TAbstractToolAction;
     end;
 
@@ -335,7 +309,7 @@ uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms;
 (*
         TAbstractCommand
                                  *)
-constructor TAbstractCommand.Create(AOwner: TComponent);
+constructor TAbstractTreeCommand.Create(AOwner: TComponent);
 var t: TTimeStamp;
 begin
   inherited Create(AOwner);
@@ -348,7 +322,7 @@ begin
   Clear;
 end;
 
-procedure TAbstractCommand.Clear;
+procedure TAbstractTreeCommand.Clear;
 begin
   Next:=nil;
   Prev:=nil;
@@ -358,10 +332,10 @@ begin
 end;
 
 
-function TAbstractCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
-var t: TAbstractCommand;
+function TAbstractTreeCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
+var t: TAbstractTreeCommand;
     buName: string;
-    buNext,buPrev,buBranch: TAbstractCommand;
+    buNext,buPrev,buBranch: TAbstractTreeCommand;
     buActiveBranch,buTurnLeft: boolean;
     buHash: T4x4LongWordRecord;
     bin1,bin2: TMemoryStream;
@@ -369,7 +343,7 @@ var t: TAbstractCommand;
     ComponentWithSameName: TComponent;
 begin
   if ClassType=what.ClassType then begin
-    t:=what as TAbstractCommand;
+    t:=what as TAbstractTreeCommand;
     //нынче команды очень сложные пошли, завязанные на документ
     //выдернуть их из документа - не поймут, что происходит
     //придется действовать аккуратно...
@@ -434,7 +408,7 @@ begin
 end;
 
 
-function TAbstractCommand.NameToDateTime: TDateTime;
+function TAbstractTreeCommand.NameToDateTime: TDateTime;
 var t: TTimeStamp;
 begin
   t.Date:=StrToInt('0x'+midstr(Name,2,8));
@@ -442,17 +416,12 @@ begin
   Result:=TimeStampToDateTime(t);
 end;
 
-function TAbstractCommand.NameToDate(aname: TComponentName): Integer;
+function TAbstractTreeCommand.NameToDate(aname: TComponentName): Integer;
 begin
   Result:=StrToInt('0x'+midstr(aName,2,8));
 end;
 
-function TAbstractCommand.caption: string;
-begin
-  result:=self.ClassName;
-end;
-
-procedure TAbstractCommand.ResolveMemory;
+procedure TAbstractTreeCommand.ResolveMemory;
 begin
   //здесь можно отправиться в прошлое/альтернат. вселенную,
   //чтобы узнать необходимую информацию
@@ -484,7 +453,7 @@ begin
 end;
 
 function TInfoCommand.SmartDateTimeToStr: string;
-var last: TAbstractCommand;
+var last: TAbstractTreeCommand;
 begin
   last:=prev;
   while Assigned(last) and not (last is TInfoCommand) do last:=last.Prev;
@@ -512,7 +481,7 @@ begin
 end;
 
 function TSavedAsInfoCommand.caption: string;
-var last: TAbstractCommand;
+var last: TAbstractTreeCommand;
 begin
   last:=prev;
   while Assigned(last) and not (last is TSavedAsInfoCommand) do last:=last.Prev;
@@ -995,104 +964,6 @@ begin
 end;
 
 (*
-            TCommandList
-                                  *)
-
-constructor TCommandList.Create(AOwner: TComponent);
-var tmp: TComponent;
-begin
-  inherited Create(AOwner);
-  if Aowner=nil then FRoot:=self
-  else begin
-    tmp:=Aowner;
-    repeat
-      FRoot:=tmp;
-      tmp:=tmp.Owner;
-    until tmp=nil;
-  end;
-end;
-
-procedure TCommandList.Add(command: TAbstractCommand);
-var i:Integer;
-begin
-  for i:=fcount-1 downto fcurrent do components[i].Free;
-  insertComponent(command);
-  inc(fcurrent);
-  fcount:=fcurrent;
-end;
-
-procedure TCommandList.Undo;
-var res: Boolean;
-begin
-  if UndoEnabled then begin
-    dec(fcurrent);
-    res:=(components[fcurrent] as TAbstractCommand).Undo;
-    Assert(res,'undo command failed');
-  end;
-end;
-
-procedure TCommandList.Redo;
-var res: Boolean;
-begin
-  if RedoEnabled then begin
-    res:=(components[fcurrent] as TAbstractCommand).Execute;
-    Assert(res,'redo command failed');
-    inc(fcurrent);
-  end;
-end;
-
-function TCommandList.UndoEnabled: boolean;
-begin
-  Result:=(fcurrent>0);
-end;
-
-function TCommandList.RedoEnabled: boolean;
-begin
-  Result:=(fcurrent<fcount);
-end;
-
-destructor TCommandList.Destroy;
-begin
-  Clear;
-  inherited Destroy;
-end;
-
-procedure TCommandList.Clear;
-begin
-  self.DestroyComponents;
-  fcurrent:=0;
-  fcount:=0;
-end;
-
-procedure TCommandList.DefineProperties(filer: TFiler);
-begin
-  inherited;
-  Filer.DefineProperty('count',ReadCount,WriteCount,(fcount>0));
-  Filer.DefineProperty('current',ReadCurrent,WriteCurrent,(fcurrent>0));
-end;
-
-procedure TCommandList.ReadCount(reader: TReader);
-begin
-  fcount:=reader.ReadInteger;
-end;
-
-procedure TCommandList.WriteCount(writer: TWriter);
-begin
-  writer.writeInteger(fcount);
-end;
-
-procedure TCommandList.ReadCurrent(reader: TReader);
-begin
-  fcurrent:=reader.ReadInteger;
-end;
-
-procedure TCommandList.WriteCurrent(writer: TWriter);
-begin
-  writer.writeInteger(fcurrent);
-end;
-
-
-(*
               TAbstractDocument
                                       *)
 
@@ -1108,7 +979,7 @@ begin
   inherited LoadFromFile(aFileName);
   FileName:=aFileName;
   new_commands_added:=false;
-  if Assigned(UndoTree) then initial_pos:=UndoTree.current;
+  if (UndoTree<>nil) then initial_pos:=UndoTree.current;
 end;
 
 procedure TAbstractDocument.afterConstruction;
@@ -1116,9 +987,9 @@ var i: Integer;
     buCurrent: TAbstractCommand;
 begin
   if UndoTree=nil then begin
-    UndoTree:=TCommandTree.Create(self);
-    with UndoTree do begin
-      Name:='UndoTree';
+    UndoContainer:=TCommandTree.Create(self);
+    with UndoContainer as TCommandTree do begin
+      Name:='UndoContainer';
       Root:=TBranchCommand.Create(UndoTree);
       Current:=Root;
       Root.ActiveBranch:=true;
@@ -1128,8 +999,8 @@ begin
   else begin
     buCurrent:=UndoTree.Current;
     for i:=0 to UndoTree.ComponentCount-1 do
-      if UndoTree.Components[i] is TAbstractCommand then
-        TAbstractCommand(UndoTree.Components[i]).ResolveMemory;
+      if UndoTree.Components[i] is TAbstractTreeCommand then
+        TAbstractTreeCommand(UndoTree.Components[i]).ResolveMemory;
     UndoTree.JumpToBranch(buCurrent);
   end;
 end;
@@ -1290,6 +1161,11 @@ begin
   if Assigned(onLoad) then onLoad(self);
 end;
 
+function TAbstractDocument.UndoTree: TCommandTree;
+begin
+  Result:=UndoContainer as TCommandTree;
+end;
+
 function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
     str: TMemoryStream;
@@ -1341,7 +1217,7 @@ begin
   fCurrent:=nil;
 end;
 
-function TCommandTree.FindExistingCommand(command: TAbstractCommand;position: TAbstractCommand): boolean;
+function TCommandTree.FindExistingCommand(command: TAbstractTreeCommand;position: TAbstractTreeCommand): boolean;
 begin
   if position=nil then Result:=false
   else if position.EqualsByAnyOtherName(command) then begin
@@ -1359,12 +1235,13 @@ begin
 //add разделить на 2 части
 //поиск в глубину, сначала идем прямо по курсу
 if current is TInfoCommand then
-  Result:=FindExistingCommand(command,current)
+  Result:=FindExistingCommand(command as TAbstractTreeCommand,current)
 else
-  Result:=FindExistingCommand(command,current.Next) or FindExistingCommand(command,current.Branch);
+  Result:=FindExistingCommand(command as TAbstractTreeCommand,current.Next) or FindExistingCommand(command as TAbstractTreeCommand,current.Branch);
 end;
 
 procedure TCommandTree.Add(command: TAbstractCommand);
+var treecom: TAbstractTreeCommand;
 begin
   while (current.Next<>nil) and (current.Next is TInfoCommand) do begin
     current.ActiveBranch:=true;
@@ -1390,14 +1267,15 @@ begin
     current.TurnLeft:=false;
   end;
   //теперь заведомо концевой узел, просто добавляем новый элемент
-  command.ensureCorrectName(command.Name,self);
-  insertComponent(command);
+  treecom:=command as TAbstractTreeCommand;
+  treecom.ensureCorrectName(treecom.Name,self);
+  insertComponent(treecom);
 
-  current.Next:=command;
-  command.ActiveBranch:=true;
-  command.TurnLeft:=false;
-  command.Prev:=current;
-  current:=command;
+  current.Next:=treecom;
+  treecom.ActiveBranch:=true;
+  treecom.TurnLeft:=false;
+  treecom.Prev:=current;
+  current:=treecom;
 end;
 
 procedure TCommandTree.Undo;
@@ -1420,10 +1298,6 @@ procedure TCommandTree.Redo;
 begin
   //проверка RedoEnabled гарантирует, что вызов undo будет произведен
   //когда его можно сделать
-  while current.TurnLeft do begin
-    current:=current.Branch;
-    current.ActiveBranch:=true;
-  end;
   repeat
     if current.TurnLeft then current:=current.Branch
     else current:=current.Next;
@@ -1434,12 +1308,13 @@ begin
 end;
 
 procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
-var b: TAbstractCommand;
+var b: TAbstractTreeCommand;
 begin
   //самая веселая команда
   //нужно перейти на произвольное состояние
   //первым делом, надо проторить путь от command до активного пути
-  b:=command;
+  if command=nil then command:=root;
+  b:=command as TAbstractTreeCommand;
   while not b.ActiveBranch do begin
     b.ActiveBranch:=true;
     b.Prev.TurnLeft:=(b.Prev.Branch=b);
@@ -1468,7 +1343,7 @@ begin
 end;
 
 function TCommandTree.UndoEnabled: Boolean;
-var t: TAbstractCommand;
+var t: TAbstractTreeCommand;
 begin
   t:=current;
   while (t is TInfoCommand) and (t.Prev<>nil) do t:=t.Prev;
@@ -1476,14 +1351,48 @@ begin
 end;
 
 function TCommandTree.RedoEnabled: Boolean;
-var t: TAbstractCommand;
+var t: TAbstractTreeCommand;
 begin
   t:=current;
-  while (t.Next<>nil) and (t.Next is TInfoCommand) do t:=t.Next;
-  Result:=(t.Next<>nil);
+  repeat
+    if t.TurnLeft then t:=t.Branch
+    else t:=t.Next;
+  until (t=nil) or (not (t is TInfoCommand));
+  Result:=Assigned(t);
 end;
 
-procedure TCommandTree.RecursiveCompare(t1,t2: TAbstractCommand;var same,plus,minus: Integer);
+function TCommandTree.CurrentExecutedCommand: TAbstractCommand;
+begin
+  //здесь мы игнорируем инфокоманды и инициализируем итератор
+  fIterator:=current;
+  while Assigned(fIterator) and (fIterator is TInfoCommand) do fIterator:=fIterator.Prev;
+  Result:=fIterator;
+  if fIterator=nil then fIterator:=root;
+end;
+
+function TCommandTree.PrevCommand: TAbstractCommand;
+begin
+  if Assigned(fIterator) then begin
+    fIterator:=fIterator.Prev;
+    while Assigned(fIterator) and (fIterator is TInfoCommand) do fIterator:=fIterator.Prev;
+    Result:=fIterator;
+  end
+  else Result:=nil;
+end;
+
+function TCommandTree.NextCommand: TAbstractCommand;
+begin
+  if Assigned(fIterator) then begin
+    repeat
+      if fIterator.TurnLeft then fIterator:=fIterator.Branch
+      else fIterator:=fIterator.Next;
+    until (fIterator=nil) or (not (fIterator is TInfoCommand));
+    Result:=fIterator;
+  end
+  else Result:=nil;
+end;
+
+procedure TCommandTree.RecursiveCompare(t1,t2: TAbstractTreeCommand;var same,plus,minus: Integer);
 begin
   if t1=nil then begin
     if t2<>nil then begin
@@ -1551,8 +1460,8 @@ begin
   //а дереву 2 незачем прыгать, оно скоро уничтожится
 end;
 
-procedure TCommandTree.RecursiveMerge(t1,t2: TAbstractCommand);
-var iterator: TAbstractCommand;
+procedure TCommandTree.RecursiveMerge(t1,t2: TAbstractTreeCommand);
+var iterator: TAbstractTreeCommand;
 begin
   if t1.Next=nil then begin
     if t2.Next<>nil then begin
@@ -1601,7 +1510,7 @@ begin
   end;
 end;
 
-procedure TCommandTree.Assimilate(t: TAbstractCommand);
+procedure TCommandTree.Assimilate(t: TAbstractTreeCommand);
 begin
   t.Owner.RemoveComponent(t);
   InsertComponent(t);
@@ -1723,6 +1632,6 @@ begin
 end;
 
 initialization
-RegisterClasses([TCommandList,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand]);
+RegisterClasses([TCommandTree,TChangeFloatProperty,TChangeBoolProperty,TChangeEnumProperty,TChangeIntegerProperty,TChangeStringProperty,TBranchCommand,TInfoCommand,TSavedAsInfoCommand]);
 
 end.

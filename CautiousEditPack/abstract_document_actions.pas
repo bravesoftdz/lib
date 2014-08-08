@@ -20,7 +20,7 @@ TAbstractDocumentActionList=class(TActionList)
     fCellPadding: Integer;
     fMaxCount: Integer;
 //    procedure SetDoc(value: PAbstractDocument);
-    procedure DrawBranch(br: TAbstractCommand; level: Integer=0; row: Integer=-1);
+    procedure DrawBranch(br: TAbstractTreeCommand; level: Integer=0; row: Integer=-1);
     procedure MakeHistory;
   public
     Doc: PAbstractDocument;
@@ -122,7 +122,7 @@ procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics,math,formMergeOrRewrite,streaming_class_lib;
+uses forms,windows,sysutils,buttons,graphics,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
 
 procedure Register;
 begin
@@ -170,10 +170,10 @@ begin
   end;
 end;
 
-procedure TAbstractDocumentActionList.DrawBranch(br: TAbstractCommand;level:Integer=0;row: Integer=-1);
+procedure TAbstractDocumentActionList.DrawBranch(br: TAbstractTreeCommand;level:Integer=0;row: Integer=-1);
 var w,wmax,i: Integer;
     CommandsCount: Integer;
-    item,pr: TAbstractCommand;
+    item,pr: TAbstractTreeCommand;
     btn: TBitBtn;
     buttons: array of TBitBtn;
     btmp: TBitmap;
@@ -291,10 +291,10 @@ begin
 end;
 
 procedure TAbstractDocumentActionList.HistoryClickEvent(Sender: TObject);
-var state: TAbstractCommand;
+var state: TAbstractTreeCommand;
 begin
   if Assigned(Doc) and Assigned(Doc^) then begin
-    State:=TAbstractCommand((Sender as TComponent).tag);
+    State:=TAbstractTreeCommand((Sender as TComponent).tag);
     doc^.jumpToBranch(state);
   end;
 //  RefreshHistoryHighlights;
@@ -304,12 +304,12 @@ end;
 procedure TAbstractDocumentActionList.RefreshHistoryHighlights;
 var i: Integer;
     btn: TBitBtn;
-    item: TAbstractCommand;
+    item: TAbstractTreeCommand;
 begin
   for i:=0 to frmHistory.ComponentCount-1 do begin
     if frmHistory.Components[i] is TBitBtn then begin
       btn:=TBitBtn(frmHistory.Components[i]);
-      item:=TAbstractCommand(btn.Tag);
+      item:=TAbstractTreeCommand(btn.Tag);
       if item.ActiveBranch then begin
 //        if not (item is TInfoCommand) then btn.Font.Style:=[fsBold];
         btn.Font.Style:=[fsBold];
@@ -643,27 +643,25 @@ begin
 end;
 
 procedure TUndoPopup.DoPopup(Sender: TObject);
-var UndoTree: TCommandTree;
+var UndoObj: TAbstractCommandContainer;
     i: Integer;
     iterator: TAbstractCommand;
     item: TMenuItem;
 begin
   items.Clear;
-  if Assigned(ActionList) and Assigned(ActionList.Doc) and Assigned(ActionList.Doc^) and Assigned(ActionList.Doc^.UndoTree) then begin
-    UndoTree:=ActionList.Doc^.UndoTree;
-    iterator:=UndoTree.Current;
+  if Assigned(ActionList) and Assigned(ActionList.Doc) and Assigned(ActionList.Doc^) and (ActionList.Doc^.UndoContainer<>nil) then begin
+    UndoObj:=ActionList.Doc^.UndoContainer;
+    iterator:=UndoObj.currentExecutedCommand;
     i:=0;
-    while Assigned(iterator.Prev) and (i<MaxCount) do begin
-      if not (iterator is TInfoCommand) then begin
-        item:=TMenuItem.Create(nil);
-        item.Caption:=iterator.caption;
-        item.Tag:=Integer(iterator.prev);
-        item.OnClick:=ProcessPopupMenu;
-        item.ImageIndex:=iterator.ImageIndex;
-        Items.Insert(i,item);
-        inc(i);
-      end;
-      iterator:=iterator.Prev;
+    while Assigned(iterator) and (i<MaxCount) do begin
+      item:=TMenuItem.Create(nil);
+      item.Caption:=iterator.caption;
+      item.OnClick:=ProcessPopupMenu;
+      item.ImageIndex:=iterator.ImageIndex;
+      iterator:=UndoObj.PrevCommand;
+      item.Tag:=Integer(iterator);
+      items.Insert(i,item);
+      inc(i);
     end;
 
     if Assigned(fHistoryAction) then begin
@@ -694,31 +692,26 @@ end;
       TRedoPopup
                     *)
 procedure TRedoPopup.DoPopup(Sender: TObject);
-var UndoTree: TCommandTree;
+var UndoObj: TAbstractCommandContainer;
     i: Integer;
     iterator: TAbstractCommand;
     item: TMenuItem;
 begin
   items.Clear;
-  if Assigned(ActionList) and Assigned(ActionList.Doc) and Assigned(ActionList.Doc^) and Assigned(ActionList.Doc^.UndoTree) then begin
-    UndoTree:=ActionList.Doc^.UndoTree;
-    iterator:=UndoTree.Current;
-    while iterator.TurnLeft do iterator:=iterator.Branch;
-    iterator:=iterator.Next;
+  if Assigned(ActionList) and Assigned(ActionList.Doc) and Assigned(ActionList.Doc^) and (ActionList.Doc^.UndoContainer<>nil) then begin
+    UndoObj:=ActionList.Doc^.UndoContainer;
+    iterator:=UndoObj.currentExecutedCommand;
+    iterator:=UndoObj.NextCommand;
     i:=0;
     while Assigned(iterator) and (i<MaxCount) do begin
-      if not (iterator is TInfoCommand) then begin
-        item:=TMenuItem.Create(nil);
-        item.Caption:=iterator.caption;
-        item.Tag:=Integer(iterator);
-        item.OnClick:=ProcessPopupMenu;
-        item.ImageIndex:=iterator.ImageIndex;
-
-        Items.Insert(i,item);
-        inc(i);
-      end;
-      while iterator.TurnLeft do iterator:=iterator.Branch;
-      iterator:=iterator.Next;
+      item:=TMenuItem.Create(nil);
+      item.Caption:=iterator.caption;
+      item.Tag:=Integer(iterator);
+      item.OnClick:=ProcessPopupMenu;
+      item.ImageIndex:=iterator.ImageIndex;
+      Items.Insert(i,item);
+      inc(i);
+      iterator:=UndoObj.NextCommand;
     end;
 
     if Assigned(fHistoryAction) then begin
