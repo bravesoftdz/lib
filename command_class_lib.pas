@@ -67,6 +67,8 @@ type
     private
       fcommand: THashedCommand;
       fIsUndo: boolean;
+      fErrorString: string;
+      procedure ShowError;
     protected
       procedure Execute; override;
     public
@@ -355,11 +357,12 @@ begin
 //    self.SaveToFile('wtf1.txt');
     //теперь можно поменять имя второй команде, если там не существует компонента с таким же
     //именем
+    tmpName:=Name;
     if Assigned(t.Owner) and (Name<>t.Name) and Assigned(t.Owner.FindComponent(Name)) then begin
       //небольшая чехарда
       ComponentWithSameName:=t.Owner.FindComponent(Name);
-      tmpName:=Name;
       ComponentWithSameName.Name:='';
+      //возможно, что это были мы...
     end
     else ComponentWithSameName:=nil;
     //можем безболезненно провести сравнение "на месте"
@@ -383,12 +386,12 @@ begin
     bin2:=TMemoryStream.Create;
     bin2.WriteComponent(t);
     bin2.Seek(0,soFromBeginning);
-    if bin1.Size<>bin2.Size then begin
-      Result:=false;
-//    what.saveFormat:=fCyr;
-//    what.SaveToFile('wtf2.txt');
-    end
+    if bin1.Size<>bin2.Size then Result:=false
     else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
+//    if Result=false then begin
+//      what.saveFormat:=fCyr;
+//      what.SaveToFile('wtf2.txt');
+//    end;
     bin1.Free;
     bin2.Free;
 
@@ -542,15 +545,19 @@ begin
   Resume;
 end;
 
+procedure THashingThread.ShowError;
+begin
+  application.MessageBox(PAnsiChar(fErrorString),'HashedCommand');
+end;
+
 procedure THashingThread.Execute;
 var tmpHash: T4x4LongWordRecord;
-  s: string;
 begin
   tmpHash:=(fcommand.FindOwner as TAbstractDocument).Hash;
   if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
-    if fIsUndo then s:='отмене' else s:='повторе';
-    s:='Несовпадение хэша при '+s+' команды';
-    application.MessageBox(PAnsiChar(s),'HashedCommand');
+    if fIsUndo then fErrorString:='отмене' else fErrorString:='повторе';
+    fErrorString:='Несовпадение хэша при '+fErrorString+' команды';
+    Synchronize(ShowError);
   end
   else
     fcommand.fHash:=tmpHash;
@@ -1325,6 +1332,7 @@ begin
   //пойдем от текущего положения до b, по пути отменяя все операции
   while current<>b do begin
     if not current.Undo then Raise Exception.Create('Undo command failed');
+//    if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),true);
     current.ActiveBranch:=false;
     current:=current.Prev;
     while (current is TInfoCommand) and (current<>b) do begin
