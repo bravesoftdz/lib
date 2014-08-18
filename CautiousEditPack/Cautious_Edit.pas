@@ -3,7 +3,7 @@ unit Cautious_Edit;
 interface
 
 uses
-  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs;
+  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls;
 
 type
   TCautiousEdit=class(TEdit)
@@ -97,6 +97,7 @@ type
     property enabled;
   end;
 
+//  TLabeledFloatEdit=class(TLabeledEdit)
 
 procedure Register;
 

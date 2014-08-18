@@ -496,6 +496,7 @@ begin
             mrCancel: CanClose:=false;
             200: our_doc.UndoTree.MergeWith(tmp.UndoTree);
           end;
+          frmMergeOrRewrite.Free;
         end;
         tmp.Release;
       except

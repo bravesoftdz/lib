@@ -13,6 +13,8 @@ TBitStream=class(TStream)
     fcapacity: Integer;
   public
     constructor Create(stream: Tstream);
+    function Read(var Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
   end;
 
 TWriteBitStream=class(TBitStream)
@@ -28,13 +30,28 @@ TReadBitStream=class(TBitStream)
 
 
 implementation
-
+(*
+      TBitStream
+                        *)
 constructor TBitStream.Create(stream: TStream);
 begin
   inherited Create;
   fStream:=stream;
 end;
 
+function TBitStream.Read(var Buffer; count: Integer): Integer;
+begin
+  Result:=fstream.Read(Buffer, count);
+end;
+
+function TBitStream.Write(const Buffer; count: Integer): Integer;
+begin
+  Result:=fstream.Write(Buffer,count);
+end;
+
+(*
+    TWriteBitStream
+                        *)
 procedure TWriteBitStream.WriteBits(source: Integer; count: Integer);
 var mask: Integer;
 begin
@@ -64,7 +81,9 @@ begin
   inherited Destroy;
 end;
 
-
+(*
+      TReadBitStream
+                          *)
 function TReadBitStream.ReadBits(out dest: Integer; count: Integer): Integer;
 var mask: Integer;
     item: Integer;

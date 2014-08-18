@@ -229,6 +229,7 @@ begin
         BinStreamCyr:=TMemoryStream.Create;
         ObjectBinaryToText(BinStream, BinStreamCyr);
         ObjectTextToCyr(BinStreamCyr,FileStream);
+        BinStreamCyr.Free;  //was memory leak
       end;
     BinStream.Free
     end;
