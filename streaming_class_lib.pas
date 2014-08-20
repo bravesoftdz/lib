@@ -22,7 +22,8 @@ TstreamingClass=class(TComponent)
     //конструктор это конечно хорошо, однако нужно знать, какой класс имеет созд. объект
     //опробуем классовые функции
     class function LoadComponentFromString(text: string): TComponent;
-    procedure Clear; virtual; abstract;
+    procedure Clear; virtual;
+    //будет вызываться перед Assign, чтобы инициализировать объект нач. значениями
     procedure SaveToFile(filename: string);
     procedure SaveBinaryToFile(filename: string);
     procedure LoadBinaryFromFile(filename: string);
@@ -41,7 +42,9 @@ TstreamingClass=class(TComponent)
     procedure ensureCorrectName(proposedName: string; aowner: TComponent);
     //убедиться, что при вставке в aowner не возникнет проблемы с нашим именем
     procedure ensureCorrectNames(aowner: TStreamingClass);
-    //и у всех наших "подчиненных" имена нормальные 
+    //и у всех наших "подчиненных" имена нормальные
+    procedure SetDefaultProperties; //находит default-значения и присваивает их
+
   end;
 
 TStreamingClassClass=class of TStreamingClass;
@@ -424,17 +427,40 @@ begin
   until tmp=nil;
 end;
 
-(*
+
 procedure TStreamingClass.Clear;
+var i: Integer;
 begin
   //в производных классах в этой процедуре нужно описывать процесс возврата в
   //первоначальное состояние
-  //InitInstance(self);
-  //заполняет все нулями, булевы значение в false, указатели в nil.
-  //обязательно в начале Clear в производном классе надо вызвать
-  //inherited
+  SetDefaultProperties;
+  for i:=0 to ComponentCount-1 do
+    if Components[i] is TStreamingClass then
+      TStreamingClass(Components[i]).Clear;
 end;
-*)
+
+procedure TStreamingClass.SetDefaultProperties;
+//from book "Delphi in a nutshell" by Ray Lischner
+const
+  tkOrdinal=[tkEnumeration, tkInteger, tkChar, tkSet, tkWChar];
+  noDefault = Low(Integer);
+var
+  PropList: PPropList;
+  Count, I: Integer;
+  Value: Integer;
+begin
+  Count:= GetPropList(PTypeInfo(self.ClassInfo),tkOrdinal,nil);
+  GetMem(PropList,Count*SizeOf(PPropInfo));
+  try
+    GetPropList(PTypeInfo(self.ClassInfo),tkOrdinal,PropList);
+    for i:=0 to Count-1 do
+      if PropList[i].Default<>NoDefault then
+        SetOrdProp(self,PropList[i],PropList[i].Default)
+  finally
+    FreeMem(PropList);
+  end;
+end;
+
 
 procedure TStreamingClass.myGetPropInfo(propPath: string; out Instance: TPersistent; out fPropInfo: PPropInfo);
 var i,j,L: Integer;
