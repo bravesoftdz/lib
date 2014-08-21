@@ -14,6 +14,8 @@ TstreamingClass=class(TComponent)
     procedure   GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function    GetChildOwner: TComponent; override;
     procedure myGetPropInfo(propPath: string; out instance: TPersistent; out fPropInfo: PPropInfo);
+    function OwnedBy(Component, Owner: TComponent): Boolean;
+    function GetComponentValue(Component,LookUpRoot: TComponent): string;
   public
     saveFormat: StreamingClassSaveFormat;
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
@@ -506,6 +508,38 @@ begin
   if fPropInfo.PropType^.Kind<>tkFloat then Raise Exception.Create('error: property is not float number');
   Result:=GetFloatProp(instance,fPropInfo);
 end;
+
+function TStreamingClass.OwnedBy(Component, Owner: TComponent): Boolean;
+  begin
+    Result := True;
+    while Component <> nil do
+      if Component = Owner then
+        Exit
+      else
+        Component := Component.Owner;
+    Result := False;
+  end;
+
+
+function TStreamingClass.GetComponentValue(Component,LookUpRoot: TComponent): string;
+  begin
+    if Component.Owner = LookupRoot then
+      Result := Component.Name
+    else if Component = LookupRoot then
+      Result := 'Owner'                                                       { Do not translate }
+    else if (Component.Owner <> nil) and (Component.Owner.Name <> '') and
+      (Component.Name <> '') then
+      if OwnedBy(Component.Owner, LookupRoot) then
+        Result := GetComponentValue(Component.Owner,LookUpRoot) + '.' + Component.Name
+      else
+        Result := Component.Owner.Name + '.' + Component.Name
+    else if Component.Name <> '' then
+      Result := Component.Name + '.Owner'                                     { Do not translate }
+    else Result := '';
+  end;
+
+
+
 
 
 end.

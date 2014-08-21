@@ -106,37 +106,6 @@ var i: Integer;
     LookupRoot: TComponent;
     s: string;
 
-
-  function OwnedBy(Component, Owner: TComponent): Boolean;
-  begin
-    Result := True;
-    while Component <> nil do
-      if Component = Owner then
-        Exit
-      else
-        Component := Component.Owner;
-    Result := False;
-  end;
-
-
-  function GetComponentValue(Component,LookUpRoot: TComponent): string;
-  begin
-    if Component.Owner = LookupRoot then
-      Result := Component.Name
-    else if Component = LookupRoot then
-      Result := 'Owner'                                                       { Do not translate }
-    else if (Component.Owner <> nil) and (Component.Owner.Name <> '') and
-      (Component.Name <> '') then
-      if OwnedBy(Component.Owner, LookupRoot) then
-        Result := GetComponentValue(Component.Owner,LookUpRoot) + '.' + Component.Name
-      else
-        Result := Component.Owner.Name + '.' + Component.Name
-    else if Component.Name <> '' then
-      Result := Component.Name + '.Owner'                                     { Do not translate }
-    else Result := '';
-  end;
-
-
 begin
   if not fResolved then ResolveNames;
   LookupRoot:=FindOwner;

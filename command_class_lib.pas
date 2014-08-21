@@ -105,6 +105,23 @@ type
       function caption: string; override;
   end;
 //  TChIntCaptionFormat=(cfDec,cfHex);
+  TChangeIntegerCommand=class(TChangePropertiesCommand)
+    private
+      fVal, fBackup: Integer;
+      fComponent: TPersistent;
+      fPropName: string;
+    public
+      constructor Create(AOwner: TComponent);overload; override;
+      constructor Create(acomponent: TPersistent; propName: string; value: Integer); reintroduce; overload;
+
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    published
+      property Val: Integer read fVal write fVal;
+      property Backup: Integer read fBackup write fBackup;
+    end;
+
   TChangeIntegerProperty=class(TChangePropertiesCommand)
     private
       fPropPath: string;
@@ -656,6 +673,51 @@ procedure TChangeFloatProperty.WriteBackup(writer: TWriter);
 begin
   writer.WriteFloat(fBackup);
 end;
+
+(*
+              TChangeIntegerCommand
+                                        *)
+constructor TChangeIntegerCommand.Create(AOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  fImageIndex:=13;
+end;
+
+constructor TChangeIntegerCommand.Create(aComponent: TPersistent;propName: string; value: Integer);
+begin
+  Create(nil);
+  fComponent:=aComponent;
+  fPropName:=propName;
+  fVal:=value;
+end;
+
+function TChangeIntegerCommand.Execute: boolean;
+var propInfo: PPropInfo;
+begin
+  propInfo:=GetPropInfo(fComponent,fPropName);
+  if propInfo=nil then Raise Exception.CreateFmt('ChangeIntegerCommand: property %s not exist',[fPropName]);
+  if propInfo.SetProc=nil then Raise Exception.CreateFmt('ChangeIntegerCommand: write to read-only property %s',[fPropName]);
+  if PropInfo.PropType^.Kind<>tkInteger then Raise Exception.CreateFmt('ChangeIntegerCommand: property %s is not integer',[fPropName]);
+  fBackup:=GetOrdProp(fComponent,propInfo);
+  if fBackup=fVal then result:=false
+  else begin
+    SetOrdProp(fComponent,propInfo,fVal);
+    Result:=true;
+  end;
+end;
+
+function TChangeIntegerCommand.Undo: Boolean;
+begin
+
+
+end;
+
+function TChangeIntegerCommand.Caption: string;
+begin
+
+
+end;
+
 
 (*
               TChangeIntegerProperty
