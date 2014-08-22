@@ -28,8 +28,7 @@ requires
   rtl,
   vcl,
   indy,
-  tee,
-  PNGImagePack;
+  tee;
 
 contains
   Cautious_Edit in 'Cautious_Edit.pas',
@@ -40,7 +39,6 @@ contains
   streaming_class_lib in '..\streaming_class_lib.pas',
   formHistory in 'formHistory.pas' {frmHistory},
   formMergeOrRewrite in 'formMergeOrRewrite.pas' {frmMergeOrRewrite},
-  PNGImageList in 'PNGImageList.pas',
   abstract_command_lib in '..\abstract_command_lib.pas';
 
 end.
