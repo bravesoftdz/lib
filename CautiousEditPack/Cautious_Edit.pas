@@ -38,6 +38,7 @@ type
   public
     constructor Create(owner: TComponent); override;
     procedure Change; override;
+    function isValid: boolean;
   published
     property value: Real Read get_value Write set_value;
   end;
@@ -263,6 +264,12 @@ constructor TFloatEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
   if (csDesigning in ComponentState) then value:=0;
+end;
+
+function TFloatEdit.isValid: Boolean;
+var t: Extended;
+begin
+  Result:=TryStrToFloat(text,t);
 end;
 
 (*

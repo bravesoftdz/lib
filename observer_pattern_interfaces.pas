@@ -2,7 +2,7 @@ unit observer_pattern_interfaces;
 
 interface
 
-uses Classes;
+uses Classes,Typinfo,command_class_lib;
 
 type
   IObserver=interface
@@ -34,7 +34,23 @@ type
 
 //немного из другой оперы - расширение properties для отобр. в программе свойств
 //объекта.
-  RegisterPropertyProc = procedure(name,title,hint: string) of object;
+TAdvPropInfo=class
+  public
+    PropType: PPTypeInfo;
+    GetProc: Pointer;
+    SetProc: Pointer;
+    StoredProc: Pointer;
+    Index: Integer;
+    Default: Longint;
+    NameIndex: SmallInt;
+    Name: ShortString;
+    instance: TPersistent; //кому принадл. свойство
+    title,hint: string;
+    doc: TAbstractDocument;
+end;
+
+
+  RegisterPropertyProc = procedure(PropInfo: TAdvPropInfo) of object;
   AddTitleAndHintProc=procedure(name,title,hint: string) of object;
   UnRegisterPropertyProc = procedure(name: string) of object;
   IAdvancedProperties=interface
