@@ -449,7 +449,6 @@ const
 var
   PropList: PPropList;
   Count, I: Integer;
-  Value: Integer;
 begin
   Count:= GetPropList(PTypeInfo(self.ClassInfo),tkOrdinal,nil);
   GetMem(PropList,Count*SizeOf(PPropInfo));

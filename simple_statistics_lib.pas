@@ -97,7 +97,20 @@ TOneOfTwoChoicePick=class(TDiscretePick)
     function Pick: Integer; override;
   end;
 
-function CreateAppropriatePick(count: Integer): TDiscretePick;
+TPermanentOneOfTwoChoicePick=class(TDiscretePick)
+  private
+    fprob: array [0..1] of Real;
+    fthreshold: Real;
+  protected
+    function GetCount: Integer; override;
+    procedure SetCount(value: Integer); override;
+    function GetProb(index: Integer): Real; override;
+    procedure SetProb(index: Integer; value: Real); override;
+  public
+    function Pick: Integer; override;
+  end;
+
+function CreateAppropriatePick(count: Integer;PickToChangeRatio: Real=1000): TDiscretePick;
 
 
 
@@ -333,11 +346,45 @@ begin
   else Result:=1;
 end;
 
+(*
+    TPermanentOneOfTwoChoicePick
+                                    *)
+procedure TPermanentOneOfTwoChoicePick.SetCount(value: Integer);
+begin
+  assert(value=2,'PermanentOneOfTwoChoicePick: unable to change count');
+end;
+
+function TPermanentOneOfTwoChoicePick.GetCount: Integer;
+begin
+  Result:=2;
+end;
+
+procedure TPermanentOneOfTwoChoicePick.SetProb(index: Integer; value: Real);
+begin
+  fprob[index]:=value;
+  fthreshold:=fprob[0]/(fprob[0]+fprob[1]);
+end;
+
+function TPermanentOneOfTwoChoicePick.GetProb(index: Integer): Real;
+begin
+  Result:=fprob[index];
+end;
+
+function TPermanentOneOfTwoChoicePick.Pick: Integer;
+begin
+  if Random<fthreshold then Result:=0
+  else Result:=1;
+end;
+
 //фабрика
-function CreateAppropriatePick(count: Integer): TDiscretePick;
+function CreateAppropriatePick(count: Integer;PickToChangeRatio: Real=1000): TDiscretePick;
 begin
   if count=1 then Result:=TNoChoicePick.Create
-  else if count=2 then Result:=TOneOfTwoChoicePick.Create
+  else if count=2 then begin
+    if PickToChangeRatio>10 then Result:=TPermanentOneOfTwoChoicePick.Create
+    else
+    Result:=TOneOfTwoChoicePick.Create;
+    end
   else begin
     Result:=TSimplestPick.create;
     Result.Count:=count;

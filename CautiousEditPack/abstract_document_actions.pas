@@ -701,7 +701,7 @@ begin
   items.Clear;
   if Assigned(ActionList) and Assigned(ActionList.Doc) and Assigned(ActionList.Doc^) and (ActionList.Doc^.UndoContainer<>nil) then begin
     UndoObj:=ActionList.Doc^.UndoContainer;
-    iterator:=UndoObj.currentExecutedCommand;
+    UndoObj.currentExecutedCommand;
     iterator:=UndoObj.NextCommand;
     i:=0;
     while Assigned(iterator) and (i<MaxCount) do begin
