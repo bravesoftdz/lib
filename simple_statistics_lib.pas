@@ -117,6 +117,8 @@ function CreateAppropriatePick(count: Integer;PickToChangeRatio: Real=1000): TDi
 
 implementation
 
+uses SysUtils;
+
 (*
       T1Dstats
                       *)
@@ -156,6 +158,7 @@ end;
 
 function T1Dstats.get_ave: Real;
 begin
+  if _count=0 then Raise Exception.Create('T1Dstas.ave: empty list');
   Result:=_sum/_count;
 end;
 

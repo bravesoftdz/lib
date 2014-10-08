@@ -131,4 +131,7 @@ begin
   writer.writeInteger(fcurrent);
 end;
 
+initialization
+  RegisterClasses([TCommandList]);
+
 end.

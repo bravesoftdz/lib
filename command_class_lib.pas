@@ -178,6 +178,7 @@ type
     public
       SaveWithUndo: boolean;
       StatusPanel: TStatusPanel;
+      DoneStatusPanel: TStatusPanel;
       FileName: string;
       constructor Create(Aowner: TComponent); override;
       constructor LoadFromFile(aFileName: string); override;
@@ -887,8 +888,6 @@ end;
 constructor TCommandTree.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  fRoot:=nil;
-  fCurrent:=nil;
 end;
 
 procedure TCommandTree.Clear;

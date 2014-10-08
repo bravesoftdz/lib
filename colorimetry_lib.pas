@@ -117,7 +117,7 @@ implementation
 
 function TSpectrum.radiant_power: Real;
 begin
-  Result:=integrate;
+  Result:=CalculateArea;
 end;
 
 function TSpectrum.luminance: Real;
@@ -126,7 +126,7 @@ begin
   tmp:=table_func.Create;
   tmp.assign(self);
   tmp.multiply(yt);
-  Result:=683*tmp.integrate;
+  Result:=683*tmp.CalculateArea;
   tmp.Free;
 end;
 
@@ -138,7 +138,7 @@ begin
   tmp.assign(self);
   for i:=0 to Length(tmp.X)-1 do
     tmp.Y[i]:=tmp.Y[i]*tmp.X[i];
-  Result:=tmp.integrate/integrate;
+  Result:=tmp.CalculateArea/CalculateArea;
   tmp.Free;
 end;
 
@@ -276,17 +276,17 @@ begin
 temp:=table_func.Create;
 temp.assign(xt);
 temp.multiply(sp);
-x:=temp.integrate;
+x:=temp.CalculateArea;
 
 temp.Clear;
 temp.assign(yt);
 temp.multiply(sp);
-y:=temp.integrate;
+y:=temp.CalculateArea;
 
 temp.Clear;
 temp.assign(zt);
 temp.multiply(sp);
-z:=temp.integrate;
+z:=temp.CalculateArea;
 temp.Free;
 
 m:=x+y+z;
@@ -426,9 +426,9 @@ function colorimetry_funcs.ColorOfRGBSum: TColor;
 var r,g,b,m: Real;
     ri,gi,bi: Integer;
 begin
-  r:=rt.integrate;
-  g:=gt.integrate;
-  b:=bt.integrate;
+  r:=rt.CalculateArea;
+  g:=gt.CalculateArea;
+  b:=bt.CalculateArea;
   if r<0 then r:=0;
   if g<0 then g:=0;
   if b<0 then b:=0;
@@ -465,17 +465,17 @@ begin
 temp:=table_func.Create;
 temp.assign(xt);
 temp.multiply(sp);
-Spectrum2XYZ.X:=temp.integrate;
+Spectrum2XYZ.X:=temp.CalculateArea;
 
 temp.Clear;
 temp.assign(yt);
 temp.multiply(sp);
-spectrum2XYZ.Y:=temp.integrate;
+spectrum2XYZ.Y:=temp.CalculateArea;
 
 temp.Clear;
 temp.assign(zt);
 temp.multiply(sp);
-spectrum2XYZ.Z:=temp.integrate;
+spectrum2XYZ.Z:=temp.CalculateArea;
 temp.Free;
 end;
 
