@@ -2,9 +2,12 @@ unit expression_lib;
 
 interface
 
-uses classes,Contnrs;
+uses classes,Contnrs,SysUtils;
 
 type
+
+ESyntaxErr=class(Exception)
+end;
 
 TEvaluationTreeNode=class(TComponent) //тогда сразу ему компоненты могут принадлежать-удобно
   public
@@ -64,6 +67,8 @@ TMathFuncNode=class(TNonTerminalNode)
     function Ln(x: Real): Real;
     function Lg(x: Real): Real;
     function Sin(x: Real): Real;
+    function Cos(x: Real): Real;
+    function Sqrt(x: Real): Real;
   end;
 
 TVariableNode=class(TEvaluationTreeNode)
@@ -79,6 +84,7 @@ TVariableNode=class(TEvaluationTreeNode)
 
 TFloatExpression=class(TComponent)
   private
+    fWorking: boolean; //чтобы поймать циклическую ссылку
     fstring: string;
     fRootComponent: TComponent;
     fEvaluationTreeRoot: TEvaluationTreeNode;
@@ -91,6 +97,7 @@ TFloatExpression=class(TComponent)
     procedure ReadString(reader: TReader);
     procedure WriteString(writer: TWriter);
     function fIsIndependent: boolean;
+    function getCorrect: boolean;
   protected
     procedure DefineProperties(Filer: TFiler); override;
     procedure MakeEvaluationTree;
@@ -109,7 +116,7 @@ TFloatExpression=class(TComponent)
 //    procedure DoChange;
     function getString: string;
     function getValue: Real;
-    property isCorrect: Boolean read fcorrect;
+    property isCorrect: Boolean read GetCorrect;
     property errorMsg: string read fLastErrorMsg;
     property isIndependent: boolean read fIsIndependent;
 //    property onChange: TNotifyEvent read fOnChange write SetOnChange;
@@ -117,7 +124,7 @@ TFloatExpression=class(TComponent)
 
 implementation
 
-uses SysUtils,TypInfo,StrUtils,math;
+uses TypInfo,StrUtils,math;
 
 (*
     TConstantNode
@@ -225,6 +232,16 @@ end;
 function TMathFuncNode.Sin(x: Real): Real;
 begin
   Result:=system.Sin(x);
+end;
+
+function TMathFuncNode.Cos(x: Real): Real;
+begin
+  Result:=system.Cos(x);
+end;
+
+function TMathFuncNode.Sqrt(x: Real): Real;
+begin
+  Result:=system.Sqrt(x);
 end;
 
 (*
@@ -336,8 +353,18 @@ end;
 procedure TFloatExpression.MakeEvaluationTree;
 begin
   FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сносится
-  PlusMinus(fstring,fEvaluationTreeRoot);
-  fIndependent:=fEvaluationTreeRoot.isIndependent;
+  try
+    PlusMinus(fstring,fEvaluationTreeRoot);
+    fcorrect:=true;
+    fIndependent:=fEvaluationTreeRoot.isIndependent;
+  except
+    on Ex: ESyntaxErr do begin
+      fLastErrorMsg:=Ex.message;
+      fcorrect:=false;
+    end;
+    else
+      raise;
+  end;
   fchanged:=false;
 end;
 
@@ -374,7 +401,7 @@ begin
     end;
     if s[i]='(' then inc(brCount)
     else if s[i]=')' then dec(brCount);
-    if brCount<0 then Raise Exception.CreateFMT('FloatExpression.PlusMinus: too many closing brackets in %s',[s]);
+    if brCount<0 then Raise ESyntaxErr.CreateFMT('FloatExpression.PlusMinus: too many closing brackets in %s',[s]);
   end;
   if signCount=0 then MulDiv(s,treeNode)
   else begin
@@ -420,7 +447,7 @@ begin
     end;
     if s[i]='(' then inc(brCount)
     else if s[i]=')' then dec(brCount);
-    if brCount<0 then Raise Exception.CreateFMT('FloatExpression.MulDiv: too many closing brackets in %s',[s]);
+    if brCount<0 then Raise EsyntaxErr.CreateFMT('FloatExpression.MulDiv: too many closing brackets in %s',[s]);
   end;
   if Length(children)=0 then Pow(s,treeNode)
   else begin
@@ -477,7 +504,7 @@ begin
           treeNode.InsertComponent(temp);
           Exit;
         end;
-      Raise Exception.Create('TFloatExpression.BracketAndFuncs: closing bracket without opening');
+      Raise ESyntaxErr.Create('TFloatExpression.BracketAndFuncs: closing bracket without opening');
     end;
   end
   else ConstsAndVars(s,treeNode);
@@ -502,7 +529,7 @@ begin
       while (i>0) and (s[i]<>'.') do dec(i);
       fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
       if fComponent=nil then
-        Raise Exception.CreateFmt('Wrong expression: %s',[s]);
+        Raise ESyntaxErr.CreateFmt('Wrong expression: %s',[s]);
       treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
     end;
   end;
@@ -511,9 +538,16 @@ end;
 function TFloatExpression.getValue: Real;
 begin
   if fchanged then MakeEvaluationTree;
-  if Assigned(fEvaluationTreeRoot) then
-    Result:=fEvaluationTreeRoot.getValue
-  else Raise Exception.Create('TFloatExpression.getValue: empty evaluation tree');
+  if fCorrect then begin
+    if Assigned(fEvaluationTreeRoot) then begin
+      if fworking then Raise Exception.CreateFMT('циклическая ссылка в выражении %s',[fstring]);
+      fworking:=true;
+      Result:=fEvaluationTreeRoot.getValue;
+      fworking:=false;
+    end
+    else Raise Exception.Create('TFloatExpression.getValue: empty evaluation tree');
+  end
+  else Raise Exception.Create(fLastErrorMsg);
 end;
 
 function TFLoatExpression.fIsIndependent: Boolean;
@@ -522,6 +556,10 @@ begin
   Result:=fIndependent;
 end;
 
-
+function TFloatExpression.getCorrect: Boolean;
+begin
+  if fchanged then MakeEvaluationTree;
+  Result:=fCorrect;
+end;
 
 end.

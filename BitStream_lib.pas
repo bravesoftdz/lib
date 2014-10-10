@@ -21,11 +21,13 @@ TWriteBitStream=class(TBitStream)
   public
     destructor Destroy; override;
     procedure WriteBits(source: Integer; count: Integer);
+//    procedure WriteBitsUnsigned(source: Cardinal; count: Integer);
   end;
 
 TReadBitStream=class(TBitStream)
   public
-    function ReadBits(out dest: Integer; count: Integer): Integer;
+    function ReadBitsSigned(out dest: Integer; count: Integer): Integer;
+    function ReadBitsUnsigned(out dest: Cardinal; count: Integer): Integer;
   end;
 
 
@@ -84,7 +86,7 @@ end;
 (*
       TReadBitStream
                           *)
-function TReadBitStream.ReadBits(out dest: Integer; count: Integer): Integer;
+function TReadBitStream.ReadBitsSigned(out dest: Integer; count: Integer): Integer;
 var mask: Integer;
     item: Integer;
     bucount: Integer;
@@ -99,6 +101,7 @@ begin
     //dest:=dest sar (32-count)
 //    dest:=dest shr (32-count);
     dest:=dest div (1 shl (32-count));
+    if count=1 then dest:=-dest;
     Result:=fCapacity;
     count:=count-fCapacity;
     fCapacity:=fstream.Read(fBitBuffer,SizeOf(fBitBuffer))*8;
@@ -110,8 +113,10 @@ begin
   //сейчас по-хорошему нужно провернуть arithmetic shift right
   //dest:=dest sar (32-count);
 //  dest:=dest shr (32-count);
-  if count=bucount then
-    item:=item div (1 shl (32-count))
+  if count=bucount then begin
+    item:=item div (1 shl (32-count));
+    if count=1 then item:=-item;
+  end
   else
     item:=item shr (32-count);
   dest:=dest or item;
@@ -120,6 +125,43 @@ begin
   Result:=Result+Count;
 end;
 
+function TReadBitStream.ReadBitsUnsigned(out dest: Cardinal; count: Integer): Integer;
+var mask: Integer;
+    item: Integer;
+    bucount: Integer;
+begin
+  dest:=0;
+  Result:=0;
+  bucount:=count;
+  if fCapacity<count then begin
+    mask:=(1 shl fCapacity)-1;  //уж сколько есть, столько и возьмем
+    dest:=fBitBuffer and (mask shl (32-fCapacity));
+    //сейчас нужен arithmetic shift right (sar)
+    //dest:=dest sar (32-count)
+//    dest:=dest shr (32-count);
+    dest:=dest shr (1 shl (32-count));
+    Result:=fCapacity;
+    count:=count-fCapacity;
+    fCapacity:=fstream.Read(fBitBuffer,SizeOf(fBitBuffer))*8;
+    //если fCapacity<count, нам остается лишь смириться
+    if fCapacity<count then count:=fCapacity;
+  end;
+  mask:=(1 shl count)-1;
+  item:=fBitBuffer and (mask shl (32-count));
+  //сейчас по-хорошему нужно провернуть arithmetic shift right
+  //dest:=dest sar (32-count);
+//  dest:=dest shr (32-count);
+(*
+  if count=bucount then
+    item:=item div (1 shl (32-count))
+  else
+  *)
+  item:=item shr (32-count);
 
+  dest:=dest or item;
+  fBitBuffer:=fBitBuffer shl count;
+  dec(fCapacity,count);
+  Result:=Result+Count;
+end;
 
 end.
