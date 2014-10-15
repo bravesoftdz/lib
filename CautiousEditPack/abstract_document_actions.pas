@@ -342,10 +342,13 @@ end;
         TNewProjectAction
                                 *)
 constructor TNewProjectAction.Create(AOwner: TComponent);
+resourcestring
+  NewProjectActionCaption = 'Новый проект';
+  NewProjectActionHint = 'Новый проект|закрывает старый проект и создает новый';
 begin
   inherited Create(AOwner);
-  Caption:='Новый проект';
-  Hint:='Новый проект|закрывает старый проект и создает новый';
+  Caption:=NewProjectActionCaption;
+  Hint:=NewProjectActionHint;
   ShortCut:=TextToShortcut('Ctrl+N');
   ImageIndex:=0;
 end;
@@ -353,10 +356,13 @@ end;
 procedure TNewProjectAction.ExecuteTarget(Target: TObject);
 var doc_class: TAbstractDocumentClass;
     doc,new_doc: TAbstractDocument;
+resourcestring
+  NewProjectActionWarningMsg='Все действия и история изменений будут потеряны. Продолжить?';
+  NewProjectActionTitle = 'Новый проект';
 begin
   //если эту функцию вызвали, значит знаем заранее: Target указывает на TAbstractDocument
   doc:=Target as TAbstractDocument;
-  if (not doc.Changed) or (Application.MessageBox('Все действия и история изменений будут потеряны. Продолжить?','Новый проект',MB_YesNo)=IDYes) then begin
+  if (not doc.Changed) or (Application.MessageBox(PChar(NewProjectActionWarningMsg),PChar(NewProjectActionTitle),MB_YesNo)=IDYes) then begin
     doc_class:=TAbstractDocumentClass(doc.ClassType);
 
     new_doc:=doc_class.Create(nil);
@@ -381,15 +387,19 @@ end;
         TOpenProjectAction
                                 *)
 constructor TOpenProjectAction.Create(AOwner: TComponent);
+resourcestring
+  OpenProjectActionFilter = 'Текстовый формат|*.txt|Двоичный формат|*.dat|Все файлы|*.*';
+  OpenProjectActionCaption = 'Открыть проект';
+  OpenProjectActionHint = 'Открыть проект|закрывает старый проект и открывает новый';
 begin
   inherited Create(AOwner);
   fOpenDialog:=TOpenDialog.Create(self);
   fOpenDialog.Name:='OpenDialog';
   fOpenDialog.SetSubComponent(true);
   fOpenDialog.DefaultExt:='txt';
-  fOpenDialog.Filter:='Текстовый формат|*.txt|Двоичный формат|*.dat|Все файлы|*.*';
-  Caption:='Открыть проект';
-  Hint:='Открыть проект|закрывает старый проект и открывает новый';
+  fOpenDialog.Filter:=OpenProjectActionFilter;
+  Caption:=OpenProjectActionCaption;
+  Hint:=OpenProjectActionHint;
   ShortCut:=TextToShortcut('Ctrl+O');
   ImageIndex:=1;
 end;
@@ -415,14 +425,16 @@ begin
   new_doc.onDocumentChange:=doc.onDocumentChange;
     (ActionList as TAbstractDocumentActionList).ChangeHistory;
   doc.Release;
-//  doc.Free;
 end;
 
 procedure TOpenProjectAction.ExecuteTarget(Target: TObject);
 var doc: TAbstractDocument;
+resourcestring
+  OpenProjectActionWarning ='Все несохраненные действия и история изменений будут потеряны. Продолжить?';
+  OpenProjectActionTitle = 'Открыть проект';
 begin
   doc:=Target as TAbstractDocument;
-  if (not doc.Changed) or (Application.MessageBox('Все несохраненные действия и история изменений будут потеряны. Продолжить?','Открыть проект',MB_YesNo)=IDYes) then
+  if (not doc.Changed) or (Application.MessageBox(PChar(OpenProjectActionWarning),PChar(OpenProjectActionTitle),MB_YesNo)=IDYes) then
     if fOpenDialog.Execute then
       LoadProject(fOpenDialog.FileName);
 end;
@@ -431,16 +443,20 @@ end;
         TSaveProjectAsAction
                                   *)
 constructor TSaveProjectAsAction.Create(AOwner: TComponent);
+resourcestring
+  SaveProjectAsActionFilter = 'Текстовый формат|*.txt|без кириллицы|*.dat|Двоичный формат|*.bin|Все файлы|*.*';
+  SaveProjectAsActionCaption = 'Сохранить проект как...';
+  SaveProjectAsActionHint = 'Сохранить проект как...|сохраняет проект под новым именем';
 begin
   inherited Create(AOwner);
   fSaveDialog:=TSaveDialog.Create(self);
   fSaveDialog.Name:='SaveDialog';
   fSaveDialog.SetSubComponent(true);
   fSaveDialog.DefaultExt:='txt';
-  fSaveDialog.Filter:='Текстовый формат|*.txt|без кириллицы|*.dat|Двоичный формат|*.bin|Все файлы|*.*';
+  fSaveDialog.Filter:=SaveProjectAsActionFilter;
   fSaveDialog.OnCanClose:=CheckExistingFile;
-  Caption:='Сохранить проект как...';
-  Hint:='Сохранить проект как...|сохраняет проект под новым именем';
+  Caption:=SaveProjectAsActionCaption;
+  Hint:= SaveProjectAsActionHint;
   ImageIndex:=3;
 end;
 
@@ -472,6 +488,10 @@ var FileName: string;
     tmp,our_doc: TAbstractDocument;
     same,plus,minus: Integer;
     mr: TModalResult;
+resourcestring
+  SaveProjectAsUndoCorruption = 'В выбранном файле нарушена структура дерева Undo, объединить их не удастся. Перезаписать содержимое?';
+  SaveProjectAsTitle = 'Сохранить как...';
+  SaveProjectAsRewriteWarning = 'Выбранный файл не является документом данной программы, при сохранении его старое содержимое будет утеряно. Вы хотите продолжить?';
 begin
   //пользователь выбрал файл для сохранения, мы хотим проверить, не потрем ли мы его содержимое
   FileName:=(Sender as TSaveDialog).FileName;
@@ -500,10 +520,10 @@ begin
         end;
         tmp.Release;
       except
-        CanClose:=(Application.MessageBox('В выбранном файле нарушена структура дерева Undo, объединить их не удастся. Перезаписать содержимое?','Сохранить как...',mb_YesNo)=IDYes);
+        CanClose:=(Application.MessageBox(PChar(SaveProjectAsUndoCorruption),PChar(SaveProjectAsTitle),mb_YesNo)=IDYes);
       end;
     except
-      CanClose:=(Application.MessageBox('Выбранный файл не является документом данной программы, при сохранении его старое содержимое будет утеряно. Вы хотите продолжить?','Сохранить как...',mb_YesNo)=IDYes);
+      CanClose:=(Application.MessageBox(PChar(SaveProjectAsRewriteWarning),PChar(SaveProjectAsTitle),mb_YesNo)=IDYes);
     end;
   end;
 end;
@@ -512,10 +532,13 @@ end;
       TSaveProjectAction
                               *)
 constructor TSaveProjectAction.Create(AOwner: TComponent);
+resourcestring
+  SaveProjectActionCaption = 'Сохранить проект';
+  SaveProjectActionHint = 'Сохранить проект |сохраняет проект под тем же именем';
 begin
   inherited Create(AOwner);
-  Caption:='Сохранить проект';
-  Hint:='Сохранить проект |сохраняет проект под тем же именем';
+  Caption:=SaveProjectActionCaption;
+  Hint:=SaveProjectActionHint;
   ShortCut:=TextToShortcut('Ctrl+S');
   ImageIndex:=2;
 end;
@@ -543,10 +566,13 @@ end;
       TDocUndoAction
                         *)
 constructor TDocUndoAction.Create(AOwner: TComponent);
+resourcestring
+  UndoActionCaption = 'Отменить';
+  UndoActionHint = 'Отменить |Отменяет последнее действие';
 begin
   inherited Create(AOwner);
-  caption:='Отменить';
-  Hint:='Отменить |Отменяет последнее действие';
+  caption:=UndoActionCaption;
+  Hint:=UndoActionHint;
   ImageIndex:=5;
   ShortCut:=TextToShortcut('Ctrl+Z');
 end;
@@ -568,10 +594,13 @@ end;
       TDocRedoAction
                         *)
 constructor TDocRedoAction.Create(AOwner: TComponent);
+resourcestring
+  RedoActionCaption = 'Повторить';
+  RedoActionHint = 'Повторить |Повторяет последнее отмененное действие';
 begin
   inherited Create(AOwner);
-  caption:='Повторить';
-  Hint:='Повторить |Повторяет последнее отмененное действие';
+  caption:=RedoActionCaption;
+  Hint:=RedoActionHint;
   ImageIndex:=6;
   ShortCut:=TextToShortCut('Ctrl+Y');
 end;
@@ -593,10 +622,13 @@ end;
     TDocShowHistoryAction
                               *)
 constructor TDocShowHistoryAction.Create(AOwner: TComponent);
+resourcestring
+  ShowHistoryActionCaption= 'Журнал';
+  ShowHistoryActionHint = 'Журнал|Показывает полное дерево изменений';
 begin
   inherited Create(AOwner);
-  caption:='Журнал';
-  Hint:='Журнал|Показывает полное дерево изменений';
+  caption:=ShowHistoryActionCaption;
+  Hint:=ShowHistoryActionHint;
   ShortCut:=TextToShortCut('Ctrl+H');
 end;
 

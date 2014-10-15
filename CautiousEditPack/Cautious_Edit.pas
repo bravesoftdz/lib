@@ -249,9 +249,11 @@ end;
 
 procedure TFloatEdit.Change;
 var res: Extended;
+resourcestring
+  FloatEditNotARealNumberMsg = 'Не является действительным числом';
 begin
   if TryStrToFloat(text,res) then ReturnToNormal
-  else TurnRed('Не является действительным числом');
+  else TurnRed(FloatEditNotARealNumberMsg);
   inherited Change;
 end;
 
@@ -297,9 +299,11 @@ end;
 
 procedure TIntegerEdit.Change;
 var res: Integer;
+resourcestring
+  IntegerEditNotAnIntegerNumberMsg = 'Не является целым числом';
 begin
   if TryStrToInt(text,res) then ReturnToNormal
-  else TurnRed('Не является целым числом');
+  else TurnRed(IntegerEditNotAnIntegerNumberMsg);
   inherited Change;
 end;
 

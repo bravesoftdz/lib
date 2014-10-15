@@ -413,8 +413,10 @@ end;
             TBranchCommand
                                           *)
 function TBranchCommand.caption: string;
+resourcestring
+  BranchCommandMsg = 'Ветвь создана %s';
 begin
-  Result:='Ветвь создана '+SmartDateTimeToStr;
+  Result:=Format(BranchCommandMsg,[SmartDateTimeToStr]);
 end;
 
 (*
@@ -428,13 +430,16 @@ end;
 
 function TSavedAsInfoCommand.caption: string;
 var last: TAbstractTreeCommand;
+resourcestring
+  SavedAsInfoCommandSavedMsg='Сохранен %s';
+  SavedAsInfoCommandSavedAsMsg='Сохранен как %s %s';
 begin
   last:=prev;
   while Assigned(last) and not (last is TSavedAsInfoCommand) do last:=last.Prev;
   if Assigned(last) and (TSavedAsInfoCommand(last).FileName=FileName) then
-    Result:='Сохранен '+SmartDateTimeToStr
+    Result:=Format(SavedAsInfoCommandSavedMsg,[SmartDateTimeToStr])
   else
-    Result:='Сохранен как '+fFileName+' '+SmartDateTimeToStr;
+    Result:=Format(SavedAsInfoCommandSavedAsMsg,[fFileName,SmartDateTimeToStr]);
 end;
 
 (*

@@ -28,8 +28,10 @@ TStreamableComponentList=class(TStreamingClass)
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
     procedure Add(component: TComponent);
+    procedure XAdd(component: TComponent); //если нет - добавим, если есть-удалим
     procedure Delete(component: TComponent);
-    procedure Remove(index: Integer);
+    procedure Remove(index: Integer); overload;
+    procedure Remove(component: TComponent); overload;
     procedure Clear; override;
     procedure Assign(source: TPersistent); override;
     procedure TakeFromList(source: TStreamableComponentList);  //с парам. OwnsObjects
@@ -71,6 +73,12 @@ begin
     end
     else if UseNotifications then
       component.FreeNotification(self);
+end;
+
+procedure TStreamableComponentList.XAdd(component: TComponent);
+begin
+  if Exist(component) then Remove(component)
+  else Add(component);
 end;
 
 procedure TStreamableComponentList.ResolveNames;
@@ -186,6 +194,11 @@ procedure TStreamableComponentList.Remove(Index: Integer);
 begin
   if (not OwnsObjects) and UseNotifications then Item[Index].RemoveFreeNotification(self);
   fList.Delete(index);
+end;
+
+procedure TStreamableComponentList.Remove(component: TComponent);
+begin
+  Remove(IndexOf(component));
 end;
 
 procedure TStreamableComponentList.TakeFromList(source: TStreamableComponentList);

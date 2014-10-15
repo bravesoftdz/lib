@@ -128,11 +128,9 @@ end;
 function TReadBitStream.ReadBitsUnsigned(out dest: Cardinal; count: Integer): Integer;
 var mask: Integer;
     item: Integer;
-    bucount: Integer;
 begin
   dest:=0;
   Result:=0;
-  bucount:=count;
   if fCapacity<count then begin
     mask:=(1 shl fCapacity)-1;  //уж сколько есть, столько и возьмем
     dest:=fBitBuffer and (mask shl (32-fCapacity));
@@ -151,11 +149,6 @@ begin
   //сейчас по-хорошему нужно провернуть arithmetic shift right
   //dest:=dest sar (32-count);
 //  dest:=dest shr (32-count);
-(*
-  if count=bucount then
-    item:=item div (1 shl (32-count))
-  else
-  *)
   item:=item shr (32-count);
 
   dest:=dest or item;
