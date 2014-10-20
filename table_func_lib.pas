@@ -586,6 +586,7 @@ begin
   end;
 end;
 
+(*$WARNINGS OFF*)
 procedure table_func.LoadFromTextTable(filename: string; x_column,y_column: Integer);
 var p: TSimpleParser;
     F: TextFile;
@@ -611,11 +612,14 @@ begin
       else p.getFloat;
       inc(i);
     end;
+
     AddPoint(cX,cY);
+    //мы точно знаем, что cX,cY инициализированы, жаль компилятор этого не понимает
   end;
   p.Free;
   CloseFile(F);
 end;
+(*$WARNINGS ON*)
 
 procedure table_func.write_to_stream(var F: Textfile);
 var old_format: boolean;
@@ -1109,6 +1113,8 @@ begin
       scale:=Ceil((xmax-xmin)/Period)*Period;
 //      end_x:=start_x+scale;
     end;
+    else
+      Raise Exception.Create('Table_func.FourierSeries: unsupported window type');
   end;
   cur_x:=start_x;
   increment:=Period/100;
@@ -1123,6 +1129,7 @@ begin
     for i:=0 to slen do s[i]:=0;   //*sin(0)
     alpha:=0;
     alpha_incr:=2*pi/100;
+    cur_val:=0;
     while cur_x<end_X do begin
       cur_x:=cur_x+increment;
       alpha:=alpha+alpha_incr;

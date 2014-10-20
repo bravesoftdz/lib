@@ -229,6 +229,7 @@ type
     function Update: Boolean; override;
   published
     property Caption;
+    property Hint;
     property ImageIndex;
   end;
 

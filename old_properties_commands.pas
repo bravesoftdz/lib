@@ -532,6 +532,8 @@ end;
 
 
 
-
+initialization
+  RegisterClasses([TChangeBoolProperty,TChangeEnumProperty,TChangeFloatProperty,
+    TChangeIntegerProperty,TChangeStringProperty]);
 
 end.

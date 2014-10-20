@@ -360,6 +360,7 @@ resourcestring
   NewProjectActionWarningMsg='Все действия и история изменений будут потеряны. Продолжить?';
   NewProjectActionTitle = 'Новый проект';
 begin
+//  Application.MessageBox(PChar(self.Caption),'NewProjectAction',MB_OK);
   //если эту функцию вызвали, значит знаем заранее: Target указывает на TAbstractDocument
   doc:=Target as TAbstractDocument;
   if (not doc.Changed) or (Application.MessageBox(PChar(NewProjectActionWarningMsg),PChar(NewProjectActionTitle),MB_YesNo)=IDYes) then begin
