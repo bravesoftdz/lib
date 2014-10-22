@@ -8,6 +8,8 @@ uses
 type
   TCautiousEdit=class(TEdit)
   private
+    fAllowExpressions: Boolean;
+    fExpressionRootComponent: TComponent;
     backupHint: string;
     fSeemsNormal: boolean;
     fControlToDisable: TControl;
@@ -29,12 +31,12 @@ type
   published
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
     property OnValidateResult: TNotifyEvent read fonValidateResult write SetOnValidateResult;
+    property AllowExpressions: boolean read fAllowExpressions write fAllowExpressions default true;
+    property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions;
   end;
 
   TFloatEdit = class(TCautiousEdit)
   private
-    fAllowExpressions: Boolean;
-    fExpressionRootComponent: TComponent;
     function get_value: Real;
     procedure set_value(value: Real);
   public
@@ -43,8 +45,6 @@ type
     function isValid: boolean;
   published
     property value: Real Read get_value Write set_value;
-    property AllowExpressions: boolean read fAllowExpressions write fAllowExpressions default true;
-    property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions; 
   end;
 
   TIntegerEdit=class(TCautiousEdit)
@@ -157,6 +157,7 @@ begin
   inherited Create(owner);
   backupHint:=Hint;
   fSeemsNormal:=true;
+  AllowExpressions:=true;
 end;
 
 procedure TCautiousEdit.SetControlToDisable(value: TControl);
@@ -292,7 +293,6 @@ constructor TFloatEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
   if (csDesigning in ComponentState) then value:=0;
-  AllowExpressions:=true;
 end;
 
 function TFloatEdit.isValid: Boolean;
@@ -316,30 +316,59 @@ end;
 
 function TIntegerEdit.get_value: Integer;
 var res: Integer;
+    expr: TFloatExpression;
 begin
-  if TryStrToInt(text,res) then begin
-    Result:=res;
-    end
-  else begin
-    Result:=0;
-    if not (csDesigning in self.ComponentState) then
-      Raise Exception.Create('TIntegerEdit: Not a number');
-  end;
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then Result:=expr.getIntegerValue
+    else TurnRed(expr.errorMsg);
+    expr.Free;
+  end
+  else
+    if TryStrToInt(text,res) then begin
+      Result:=res;
+      end
+    else begin
+      Result:=0;
+      if not (csDesigning in self.ComponentState) then
+        Raise Exception.Create('TIntegerEdit: Not a number');
+    end;
 end;
 
 function TIntegerEdit.isValid: boolean;
 var t: Integer;
+    expr: TFloatExpression;
 begin
-  Result:=TryStrToInt(text,t);
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    Result:=expr.isCorrect;
+    expr.Free;
+  end
+  else
+    Result:=TryStrToInt(text,t);
 end;
 
 procedure TIntegerEdit.Change;
 var res: Integer;
+    expr: TFloatExpression;
 resourcestring
   IntegerEditNotAnIntegerNumberMsg = 'Не является целым числом';
 begin
-  if TryStrToInt(text,res) then ReturnToNormal
-  else TurnRed(IntegerEditNotAnIntegerNumberMsg);
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then ReturnToNormal
+    else TurnRed(expr.errorMsg);
+    expr.Free;
+  end
+  else
+    if TryStrToInt(text,res) then ReturnToNormal
+    else TurnRed(IntegerEditNotAnIntegerNumberMsg);
   inherited Change;
 end;
 

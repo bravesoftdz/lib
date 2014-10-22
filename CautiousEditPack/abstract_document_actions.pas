@@ -367,6 +367,9 @@ begin
     doc_class:=TAbstractDocumentClass(doc.ClassType);
 
     new_doc:=doc_class.Create(nil);
+    //новый документ успешно создан, теперь надо сбросить инструмент старого, если таковой есть
+    if Assigned(doc.Tool) then doc.Tool.Unselect;    
+
     (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
     new_doc.onLoad:=doc.onLoad;
     new_doc.onDocumentChange:=doc.onDocumentChange;
@@ -420,6 +423,8 @@ begin
   new_doc:=doc_class.LoadFromFile(filename);
   //на этом этапе могла произойти ошибка, благодаря исп. new_doc если здесь прерв
   //выполнение, он выругается, а старый проект останется на месте
+  if Assigned(doc.Tool) then doc.Tool.Unselect;
+
   (ActionList as TAbstractDocumentActionList).Doc^:=new_doc;
   //теперь перем. doc ссылается уже на новую.
   new_doc.onLoad:=doc.onLoad;

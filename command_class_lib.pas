@@ -129,6 +129,20 @@ type
       property Val: boolean read fVal write fVal;
     end;
 
+  TChangeStringCommand=class(TChangePropertyCommand)
+    private
+      fstring: string;
+      fbackup: string;
+    public
+      constructor Create(aComponent: TStreamingClass; propName: string; value: string); reintroduce;
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    published
+      property val: string read fstring write fstring;
+      property backup: string read fbackup write fbackup;
+    end;
+
 
   TCommandTree=class(TAbstractCommandContainer) //дерево для undo/redo с многими ветвями
     private
@@ -566,6 +580,45 @@ end;
 function TChangeIntegerCommand.Caption: string;
 begin
   Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+IntToStr(fVal);
+end;
+
+(*
+          TChangeStringCommand
+                                      *)
+constructor TChangeStringCommand.Create(aComponent: TStreamingClass;PropName: string; value: String);
+begin
+  inherited Create(nil);
+  fcomponent:=acomponent;
+  fPropName:=PropName;
+  fString:=value;
+end;
+
+function TChangeStringCommand.Execute: Boolean;
+var propInfo: PPropInfo;
+begin
+  propInfo:=NewGetPropInfo;
+  if not (propInfo.PropType^.Kind in [tkString,tkLString,tkWString]) then Raise Exception.CreateFmt('ChangeStringCommand: property %s is not string',[fPropName]);
+  fBackup:=GetStrProp(fComponent,propInfo);
+  if fBackup=fstring then Result:=false
+  else begin
+    SetStrProp(fComponent,propInfo,fstring);
+    Result:=true;
+  end;
+end;
+
+function TChangeStringCommand.Undo: Boolean;
+var propInfo: PPropInfo;
+begin
+  propInfo:=NewGetPropInfo;
+  if not (propInfo.PropType^.Kind in [tkString,tkLString,tkWString]) then Raise Exception.CreateFmt('ChangeStringCommand: property %s is not string',[fPropName]);
+  SetStrProp(fComponent,propInfo,fBackup);
+  fBackup:='';
+  Result:=true;
+end;
+
+function TChangeStringCommand.Caption: string;
+begin
+  Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+fstring;
 end;
 
 (*
@@ -1319,6 +1372,6 @@ end;
 
 initialization
 RegisterClasses([TCommandTree,TBranchCommand,TInfoCommand,TSavedAsInfoCommand,
-TChangeIntegerCommand,TChangeBoolCommand,TChangeFloatCommand]);
+TChangeIntegerCommand,TChangeBoolCommand,TChangeFloatCommand,TChangeStringCommand]);
 
 end.
