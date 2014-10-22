@@ -110,11 +110,11 @@ TFloatExpression=class(TComponent)
     constructor Create(Owner: TComponent); override;
     constructor CreateZero(Owner: TComponent);
 
-    //обычно так TComponent создается, но нам хватит Persistent'a
     destructor Destroy; override;
     procedure SetString(value: string);
 //    procedure DoChange;
     function getString: string;
+    procedure SetRootComponent(value: TComponent);
     function getValue: Real;
     property isCorrect: Boolean read GetCorrect;
     property errorMsg: string read fLastErrorMsg;
@@ -343,6 +343,11 @@ begin
   end;
 end;
 
+procedure TFloatExpression.SetRootComponent(value: TComponent);
+begin
+  fRootComponent:=value;
+end;
+
 function TFloatExpression.getString: string;
 begin
   Result:=fstring;
@@ -492,6 +497,7 @@ var f: string;
   i: Integer;
   temp: TEvaluationTreeNode;
 begin
+  if Length(s)=0 then raise ESyntaxErr.Create('TFloatExpression.BracketAndFuncs: empty string');
   if s[Length(s)]=')' then begin
     if s[1]='(' then
       PlusMinus(MidStr(s,2,Length(s)-2),treeNode)
@@ -519,7 +525,7 @@ begin
     treeNode:=TConstantNode.Create(val,nil)
   else if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
   else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
-  else begin
+  else if Assigned(fRootComponent) then begin
   //видать, переменная
     fComponent:=FindNestedComponent(fRootComponent,s);
     if Assigned(fComponent) and (fComponent is TFloatExpression) then
@@ -532,7 +538,8 @@ begin
         Raise ESyntaxErr.CreateFmt('Wrong expression: %s',[s]);
       treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
     end;
-  end;
+  end
+  else raise ESyntaxErr.CreateFmt('Wrong expression: %s',[s]);
 end;
 
 function TFloatExpression.getValue: Real;

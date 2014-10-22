@@ -33,6 +33,8 @@ type
 
   TFloatEdit = class(TCautiousEdit)
   private
+    fAllowExpressions: Boolean;
+    fExpressionRootComponent: TComponent;
     function get_value: Real;
     procedure set_value(value: Real);
   public
@@ -41,6 +43,8 @@ type
     function isValid: boolean;
   published
     property value: Real Read get_value Write set_value;
+    property AllowExpressions: boolean read fAllowExpressions write fAllowExpressions default true;
+    property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions; 
   end;
 
   TIntegerEdit=class(TCautiousEdit)
@@ -104,6 +108,7 @@ procedure Register;
 
 implementation
 
+uses expression_lib;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
@@ -236,24 +241,45 @@ end;
 
 function TFloatEdit.get_value: Real;
 var res: Extended;
+    expr: TFloatExpression;
 begin
-  if TryStrToFloat(text,res) then begin
-    Result:=res;
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then Result:=expr.getValue
+    else TurnRed(expr.errorMsg);
+    expr.Free;
   end
-  else begin
-    Result:=0;
-    if not (csDesigning in self.ComponentState) then
+  else
+    if TryStrToFloat(text,res) then begin
+      Result:=res;
+    end
+    else begin
+      Result:=0;
+      if not (csDesigning in self.ComponentState) then
         Raise Exception.Create('TFloatLabel: Not a number');
-  end;
+    end;
 end;
 
 procedure TFloatEdit.Change;
 var res: Extended;
+    expr: TFloatExpression;
 resourcestring
   FloatEditNotARealNumberMsg = 'Не является действительным числом';
 begin
-  if TryStrToFloat(text,res) then ReturnToNormal
-  else TurnRed(FloatEditNotARealNumberMsg);
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then ReturnToNormal
+    else TurnRed(expr.errorMsg);
+    expr.Free;
+  end
+  else
+    if TryStrToFloat(text,res) then ReturnToNormal
+    else TurnRed(FloatEditNotARealNumberMsg);
+
   inherited Change;
 end;
 
@@ -266,12 +292,22 @@ constructor TFloatEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
   if (csDesigning in ComponentState) then value:=0;
+  AllowExpressions:=true;
 end;
 
 function TFloatEdit.isValid: Boolean;
 var t: Extended;
+    expr: TFloatExpression;
 begin
-  Result:=TryStrToFloat(text,t);
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    Result:=expr.isCorrect;
+    expr.Free;
+  end
+  else
+    Result:=TryStrToFloat(text,t);
 end;
 
 (*
