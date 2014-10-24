@@ -196,6 +196,7 @@ type
       FileName: string;
       constructor Create(Aowner: TComponent); override;
       constructor LoadFromFile(aFileName: string); override;
+      constructor LoadFromTemporaryFile(aFileName: string);
       procedure AfterConstruction; override;
       destructor Destroy; override;
       procedure Release;
@@ -720,6 +721,12 @@ begin
   FileName:=aFileName;
   new_commands_added:=false;
   if (UndoTree<>nil) then initial_pos:=UndoTree.current;
+end;
+
+constructor TAbstractDocument.LoadFromTemporaryFile(aFileName: string);
+begin
+  inherited LoadFromFile(aFileName);
+  new_commands_added:=false;
 end;
 
 procedure TAbstractDocument.afterConstruction;

@@ -127,7 +127,7 @@ end;
 
 function TReadBitStream.ReadBitsUnsigned(out dest: Cardinal; count: Integer): Integer;
 var mask: Integer;
-    item: Integer;
+    item: Cardinal;
 begin
   dest:=0;
   Result:=0;

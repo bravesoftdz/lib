@@ -382,6 +382,7 @@ end;
 //фабрика
 function CreateAppropriatePick(count: Integer;PickToChangeRatio: Real=1000): TDiscretePick;
 begin
+  if count=0 then Raise Exception.Create('CreateAppropriatePick: zero count');
   if count=1 then Result:=TNoChoicePick.Create
   else if count=2 then begin
     if PickToChangeRatio>10 then Result:=TPermanentOneOfTwoChoicePick.Create

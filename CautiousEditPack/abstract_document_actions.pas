@@ -51,7 +51,7 @@ TOpenProjectAction=class(TAbstractDocumentAction)
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure ExecuteTarget(Target: TObject); override;
-    procedure LoadProject(filename: string);
+    procedure LoadProject(filename: string; isTemporary: Boolean=false);
   published
     property OpenDialog: TOpenDialog read fOpenDialog;
   end;
@@ -117,6 +117,8 @@ TRedoPopup=class(TUndoPopup)
   protected
     procedure DoPopup(Sender: TObject); override;
   end;
+
+const CurProjectFileName: string='current_project.txt'; //not to translate
 
 procedure Register;
 
@@ -414,13 +416,14 @@ begin
   inherited Destroy;
 end;
 
-procedure TOpenProjectAction.LoadProject(filename: string);
+procedure TOpenProjectAction.LoadProject(filename: string; isTemporary: Boolean=false);
 var doc,new_doc: TAbstractDocument;
     doc_class: TAbstractDocumentClass;
 begin
   doc:=getDoc;
   doc_class:=TAbstractDocumentClass(doc.ClassType);
-  new_doc:=doc_class.LoadFromFile(filename);
+  if isTemporary then new_doc:=doc_class.LoadFromTemporaryFile(fileName)
+  else new_doc:=doc_class.LoadFromFile(filename);
   //на этом этапе могла произойти ошибка, благодар€ исп. new_doc если здесь прерв
   //выполнение, он выругаетс€, а старый проект останетс€ на месте
   if Assigned(doc.Tool) then doc.Tool.Unselect;
@@ -448,11 +451,13 @@ end;
 (*
         TSaveProjectAsAction
                                   *)
+
+
 constructor TSaveProjectAsAction.Create(AOwner: TComponent);
 resourcestring
   SaveProjectAsActionFilter = '“екстовый формат|*.txt|без кириллицы|*.dat|ƒвоичный формат|*.bin|¬се файлы|*.*';
-  SaveProjectAsActionCaption = '—охранить проект как...';
   SaveProjectAsActionHint = '—охранить проект как...|сохран€ет проект под новым именем';
+  SaveProjectAsActionCaption = '—охранить проект как...';
 begin
   inherited Create(AOwner);
   fSaveDialog:=TSaveDialog.Create(self);
@@ -474,9 +479,14 @@ end;
 
 procedure TSaveProjectAsAction.ExecuteTarget(Target: TObject);
 var doc: TAbstractDocument;
+resourcestring
+  SaveProjectAsCurrentProjWarning = '»м€ файла %s используетс€ дл€ хранени€ временного файла проекта, он может быть перезаписан с утратой данных. ¬ы уверены, что хотите сохранить проект именно под этим именем?';
 begin
   doc:=Target as TAbstractDocument;
   if fSaveDialog.Execute then begin
+    if (ExtractFileName(fSaveDialog.filename)=CurProjectFileName) and
+      (Application.MessageBox(PChar(Format(SaveProjectAsCurrentProjWarning,[CurProjectFileName])),PChar(caption),mb_YesNo)=IdNo) then
+      Exit;
     doc.FileName:=fSaveDialog.filename;
     case fSaveDialog.FilterIndex of
       1: doc.saveFormat:=fCyr;

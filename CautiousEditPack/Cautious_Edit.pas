@@ -243,13 +243,21 @@ end;
 function TFloatEdit.get_value: Real;
 var res: Extended;
     expr: TFloatExpression;
+    E: Exception;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then Result:=expr.getValue
-    else TurnRed(expr.errorMsg);
+    else begin
+      Result:=0;
+      if not (csDesigning in self.ComponentState) then begin
+        E:=Exception.CreateFMT('TFloatLabel: %s',[expr.errorMsg]);
+        expr.Free;  //не хотим терять память
+        Raise E;
+      end;
+    end;
     expr.Free;
   end
   else
@@ -317,13 +325,21 @@ end;
 function TIntegerEdit.get_value: Integer;
 var res: Integer;
     expr: TFloatExpression;
+    E: Exception;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then Result:=expr.getIntegerValue
-    else TurnRed(expr.errorMsg);
+    else begin
+      Result:=0;
+      if not (csDesigning in ComponentState) then begin
+        E:=Exception.CreateFmt('TIntegerEdit: %s',[expr.errorMsg]);
+        expr.Free;
+        raise E;
+      end;
+    end;
     expr.Free;
   end
   else
