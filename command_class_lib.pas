@@ -80,9 +80,12 @@ type
     protected
       fComponent: TStreamingClass;
       fPropName: string;
+      fComponentNameStr: string;
       function NewGetPropInfo: PPropInfo;
     public
       Constructor Create(AOwner: TComponent); override;
+      procedure ResolveMemory; override;
+      function Execute: Boolean; override;
     published
       property Component: TStreamingClass read fComponent write fComponent;
       property PropName: string read fPropName write fPropName;
@@ -266,6 +269,17 @@ type
 implementation
 
 uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms;
+
+var BeginHashEvent: TEvent;
+
+procedure WaitForHashEvent;
+begin
+  case BeginHashEvent.WaitFor(1000) of
+    wrTimeout: raise Exception.Create('DispatchCommand: wait for hash begin timeout');
+    wrError: raise Exception.Create('DispatchCommand: wait for hash begin error');
+    wrAbandoned: raise Exception.Create('DispatchCommand: Hashing Thread abandoned');
+  end;
+end;
 
 (*
         TAbstractCommand
@@ -517,6 +531,8 @@ end;
 procedure THashingThread.Execute;
 var tmpHash: T4x4LongWordRecord;
 begin
+  (fcommand.FindOwner as TAbstractDocument).fCriticalSection.Acquire;
+  BeginHashEvent.SetEvent;
   tmpHash:=(fcommand.FindOwner as TAbstractDocument).Hash;
   if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
     if fIsUndo then fErrorString:='отмене' else fErrorString:='повторе';
@@ -525,6 +541,7 @@ begin
   end
   else
     fcommand.fHash:=tmpHash;
+  (fcommand.FindOwner as TAbstractDocument).fCriticalSection.Release;
 end;
 
 (*
@@ -543,6 +560,20 @@ begin
   if Result.SetProc=nil then Raise Exception.CreateFmt('ChangeIntegerCommand: write to read-only property %s',[fPropName]);
 end;
 
+procedure TChangePropertyCommand.ResolveMemory;
+begin
+  (Owner as TCommandTree).JumpToBranch(self); //попадаем на состояние документа
+  //после выполнения нашей команды
+  (Owner as TCommandTree).Undo;
+  fComponentNameStr:=GetComponentValue(fComponent,fComponent.FindOwner);
+end;
+
+function TChangePropertyCommand.Execute: Boolean;
+begin
+  fComponentNameStr:=GetComponentValue(fComponent,fComponent.FindOwner);
+  Result:=true;
+end;
+
 (*
               TChangeIntegerCommand
                                         *)
@@ -558,6 +589,7 @@ end;
 function TChangeIntegerCommand.Execute: boolean;
 var propInfo: PPropInfo;
 begin
+  inherited Execute;
   PropInfo:=NewGetPropInfo;
   if PropInfo.PropType^.Kind<>tkInteger then Raise Exception.CreateFmt('ChangeIntegerCommand: property %s is not integer',[fPropName]);
   fBackup:=GetOrdProp(fComponent,propInfo);
@@ -580,7 +612,7 @@ end;
 
 function TChangeIntegerCommand.Caption: string;
 begin
-  Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+IntToStr(fVal);
+  Result:=fComponentNameStr+'.'+fPropName+'='+IntToStr(fVal);
 end;
 
 (*
@@ -597,6 +629,7 @@ end;
 function TChangeStringCommand.Execute: Boolean;
 var propInfo: PPropInfo;
 begin
+  inherited Execute;
   propInfo:=NewGetPropInfo;
   if not (propInfo.PropType^.Kind in [tkString,tkLString,tkWString]) then Raise Exception.CreateFmt('ChangeStringCommand: property %s is not string',[fPropName]);
   fBackup:=GetStrProp(fComponent,propInfo);
@@ -619,7 +652,7 @@ end;
 
 function TChangeStringCommand.Caption: string;
 begin
-  Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+fstring;
+  Result:=fComponentNameStr+'.'+fPropName+'='+fstring;
 end;
 
 (*
@@ -636,6 +669,7 @@ end;
 function TChangeFloatCommand.Execute: Boolean;
 var propInfo: PPropInfo;
 begin
+  inherited Execute;
   propInfo:=NewGetPropInfo;
   if propInfo.PropType^.Kind<>tkFloat then Raise Exception.CreateFmt('ChangeFloatCommand: property %s is not float',[fPropName]);
   fBackup:=GetFloatProp(fComponent,propInfo);
@@ -659,7 +693,7 @@ end;
 
 function TChangeFloatCommand.Caption: string;
 begin
-  Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+FloatToStr(fVal);
+  Result:=fComponentNameStr+'.'+fPropName+'='+FloatToStr(fVal);
 end;
 
 
@@ -679,6 +713,7 @@ function TChangeBoolCommand.Execute: boolean;
 var PropInfo: PPropInfo;
   res: LongInt;
 begin
+  inherited Execute;
   PropInfo:=NewGetPropInfo;
   if PropInfo.PropType^.Kind<>tkEnumeration then Raise Exception.CreateFmt('ChangeBoolCommand.Execute: property %s is not boolean', [fPropName] );
   res:=GetOrdProp(fComponent,PropInfo);
@@ -700,7 +735,7 @@ end;
 
 function TChangeBoolCommand.Caption: string;
 begin
-  Result:=GetComponentValue(fComponent,fComponent.FindOwner)+'.'+fPropName+'='+BoolToStr(fVal,true);
+  Result:=fComponentNameStr+'.'+fPropName+'='+BoolToStr(fVal,true);
 end;
 
 
@@ -825,6 +860,7 @@ end;
 function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
 begin
   fCriticalSection.Acquire;
+  BeginHashEvent.SetEvent;
   undotree.InsertComponent(command);
   //может быть, не нужно исполнять конкретно эту команду, она уже есть
   //именно когда обе команды еще не исполнены, их можно сравнивать
@@ -845,7 +881,10 @@ begin
       if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
         TAbstractDocumentActionList(fActionList).ChangeHistory;
       new_commands_added:=true;
-      if command is THashedCommand then THashingThread.Create(THashedCommand(command),false);
+      if (command is THashedCommand) then begin
+        BeginHashEvent.ResetEvent;
+        THashingThread.Create(THashedCommand(command),false);
+      end;
       Result:=true;
     end
     else begin
@@ -853,6 +892,7 @@ begin
       Result:=false;
     end;
   fCriticalSection.Leave;
+  WaitForHashEvent;
 end;
 
 procedure TAbstractDocument.Save;
@@ -867,9 +907,9 @@ end;
 procedure TAbstractDocument.Undo;
 begin
   if UndoTree.UndoEnabled then begin
-    fCriticalSection.Acquire;
+//    fCriticalSection.Acquire;
       UndoTree.Undo;
-    fCriticalSection.Leave;
+//    fCriticalSection.Leave;
     Change;
     if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
       TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
@@ -879,9 +919,9 @@ end;
 procedure TAbstractDocument.Redo;
 begin
   if UndoTree.RedoEnabled then begin
-    fCriticalSection.Acquire;
+//    fCriticalSection.Acquire;
       UndoTree.Redo;
-    fCriticalSection.Leave;
+//    fCriticalSection.Leave;
     Change;
     if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
       TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
@@ -890,9 +930,9 @@ end;
 
 procedure TAbstractDocument.JumpToBranch(Branch: TAbstractCommand);
 begin
-  fCriticalSection.Acquire;
+//  fCriticalSection.Acquire;
     UndoTree.JumpToBranch(Branch);
-  fCriticalSection.Leave;
+//  fCriticalSection.Leave;
   Change;
   if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
     TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
@@ -917,7 +957,7 @@ function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
     str: TMemoryStream;
 begin
-  fCriticalSection.Acquire;
+//  fCriticalSection.Acquire;
   buSaveWithUndo:=SaveWithUndo; //потом вернем
   SaveWithUndo:=false;  //чтобы найти хэш
   str:=TMemoryStream.Create;
@@ -933,7 +973,7 @@ begin
   str.Free;
 //  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
   SaveWithUndo:=buSaveWithUndo;
-  fCriticalSection.Leave;
+//  fCriticalSection.Leave;
 end;
 
 procedure TAbstractDocument.SetOnDocumentChange(value: TNotifyEvent);
@@ -1025,6 +1065,7 @@ end;
 
 procedure TCommandTree.Undo;
 begin
+  (Owner as TAbstractDocument).fCriticalSection.Acquire;
   //проверка UndoEnabled гарантирует, что вызов undo будет произведен
   //когда его можно сделать
   if current.Undo then begin
@@ -1034,13 +1075,17 @@ begin
       current.ActiveBranch:=false;
       current:=current.Prev;
     end;
-    if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),true);
+    if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),true)
+    else BeginHashEvent.SetEvent;
   end
   else Raise Exception.Create('Undo command failed');
+  (Owner as TAbstractDocument).fCriticalSection.Leave;
+  WaitForHashEvent;
 end;
 
 procedure TCommandTree.Redo;
 begin
+  (owner as TAbstractDocument).fCriticalSection.Acquire;
   //проверка RedoEnabled гарантирует, что вызов undo будет произведен
   //когда его можно сделать
   repeat
@@ -1049,12 +1094,17 @@ begin
     current.ActiveBranch:=true;
   until (not (current is TInfoCommand));
   if not current.Execute then Raise Exception.Create('Redo command failed');
-  if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),false);
+  if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),false)
+  else BeginHashEvent.SetEvent;
+  (owner as TAbstractDocument).fCriticalSection.Leave;
+
+  WaitForHashEvent;
 end;
 
 procedure TCommandTree.JumpToBranch(command: TAbstractCommand);
 var b: TAbstractTreeCommand;
 begin
+  (owner as TAbstractDocument).fCriticalSection.Acquire;
   //самая веселая команда
   //нужно перейти на произвольное состояние
   //первым делом, надо проторить путь от command до активного пути
@@ -1086,6 +1136,8 @@ begin
       if not current.Execute then Exception.Create('Redo command failed');
     end;
   end;
+
+  (owner as TAbstractDocument).fCriticalSection.Leave;
 end;
 
 function TCommandTree.UndoEnabled: Boolean;
@@ -1380,5 +1432,9 @@ end;
 initialization
 RegisterClasses([TCommandTree,TBranchCommand,TInfoCommand,TSavedAsInfoCommand,
 TChangeIntegerCommand,TChangeBoolCommand,TChangeFloatCommand,TChangeStringCommand]);
+BeginHashEvent:=TEvent.Create(nil,false,false,'AbstractDocumentBeginHash');
+
+finalization
+BeginHashEvent.Free;
 
 end.
