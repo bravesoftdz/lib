@@ -274,7 +274,7 @@ var BeginHashEvent: TEvent;
 
 procedure WaitForHashEvent;
 begin
-  case BeginHashEvent.WaitFor(1000) of
+  case BeginHashEvent.WaitFor(3000) of
     wrTimeout: raise Exception.Create('DispatchCommand: wait for hash begin timeout');
     wrError: raise Exception.Create('DispatchCommand: wait for hash begin error');
     wrAbandoned: raise Exception.Create('DispatchCommand: Hashing Thread abandoned');
@@ -536,12 +536,12 @@ begin
   tmpHash:=(fcommand.FindOwner as TAbstractDocument).Hash;
   if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
     if fIsUndo then fErrorString:='отмене' else fErrorString:='повторе';
-    fErrorString:='Несовпадение хэша при '+fErrorString+' команды';
-    Synchronize(ShowError);
+    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.Name+' ('+fcommand.ClassName+')';
   end
   else
     fcommand.fHash:=tmpHash;
   (fcommand.FindOwner as TAbstractDocument).fCriticalSection.Release;
+  if fErrorString<>'' then Synchronize(ShowError);
 end;
 
 (*

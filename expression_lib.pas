@@ -215,9 +215,12 @@ end;
     TMathFuncNode
                     *)
 constructor TMathFuncNode.Create(afunc: string; aowner: TComponent);
+resourcestring
+  MathFuncNodeUnknownFunc = 'Неизвестная функция: %s';
 begin
   inherited Create(aowner);
   @func:=MethodAddress(afunc);
+  if @func=nil then raise ESyntaxErr.CreateFmt(MathFuncNodeUnknownFunc,[afunc]);
 end;
 
 function TMathFuncNode.getValue: Real;
