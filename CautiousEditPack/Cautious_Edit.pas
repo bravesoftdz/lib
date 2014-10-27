@@ -6,6 +6,8 @@ uses
   SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls;
 
 type
+  TCautiousEditClass=class of TCautiousEdit;
+
   TCautiousEdit=class(TEdit)
   private
     fAllowExpressions: Boolean;
@@ -14,6 +16,7 @@ type
     fSeemsNormal: boolean;
     fControlToDisable: TControl;
     fonValidateResult: TNotifyEvent;
+    fonDestroy: TNotifyEvent;
     procedure SetOnValidateResult(value: TNotifyEvent);
     procedure SetControlToDisable(value:TControl);
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
@@ -23,7 +26,9 @@ type
     procedure DefineProperties(Filer: TFiler); override;
   public
     constructor Create(owner: TComponent); override;
+    destructor Destroy; override;
     procedure Change; override;
+    procedure DoDestroy;
     procedure Notification(aComponent: TComponent; operation: TOperation); override;
     procedure TurnRed(explain: string);
     procedure ReturnToNormal;
@@ -31,6 +36,7 @@ type
   published
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
     property OnValidateResult: TNotifyEvent read fonValidateResult write SetOnValidateResult;
+    property OnDestroy: TNotifyEvent read fonDestroy write fonDestroy;
     property AllowExpressions: boolean read fAllowExpressions write fAllowExpressions default true;
     property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions;
   end;
@@ -158,6 +164,17 @@ begin
   backupHint:=Hint;
   fSeemsNormal:=true;
   AllowExpressions:=true;
+end;
+
+destructor TCautiousEdit.Destroy;
+begin
+  DoDestroy;
+  inherited Destroy;
+end;
+
+procedure TCautiousEdit.DoDestroy;
+begin
+  if Assigned(fOnDestroy) then fOnDestroy(self);
 end;
 
 procedure TCautiousEdit.SetControlToDisable(value: TControl);
