@@ -419,10 +419,12 @@ var i,last_plus: Integer;
     temp: TEvaluationTreeNode;
     isNeg: boolean;
 begin
+  try
   brCount:=0;
   last_plus:=1;
   isNeg:=false;
   signCount:=0;
+  temp:=nil;
   for i:=1 to Length(s) do begin
     if brCount=0 then begin
       if ((s[i]='+') or (s[i]='-')) and ((i<1) or (uppercase(s[i-1])<>'E')) then begin
@@ -436,6 +438,7 @@ begin
           else
           children[length(children)-1]:=temp;
         end;
+        temp:=nil;
         last_plus:=i+1; //сразу за плюсом
         isNeg:=(s[i]='-');
         inc(signCount);
@@ -455,11 +458,22 @@ begin
     end
     else
       children[length(children)-1]:=temp;
+    temp:=nil;
     //вот, все "дети" в сборе!
     treeNode:=TAdditionNode.Create(nil);  //позже нас прикрепят, если надо
-    for i:=0 to Length(children)-1 do
+    for i:=0 to Length(children)-1 do begin
       treeNode.InsertComponent(children[i]);
+      children[i]:=nil;
+    end;
   end;
+
+
+  finally
+    for i:=0 to Length(children)-1 do
+      children[i].Free;
+    temp.Free;
+  end;
+
 end;
 
 procedure TFloatExpression.MulDiv(s: string; var treeNode: TEvaluationTreeNode);
@@ -469,6 +483,7 @@ var i,last_plus: Integer;
     temp: TEvaluationTreeNode;
     isNeg: boolean;
 begin
+//  try
   brCount:=0;
   last_plus:=1;
   isNeg:=false;
@@ -494,8 +509,10 @@ begin
   if Length(children)=0 then Pow(s,treeNode)
   else begin
     treeNode:=TMultiplicationNode.Create(nil);  //позже нас прикрепят, если надо
-    for i:=0 to Length(children)-1 do
+    for i:=0 to Length(children)-1 do begin
       treeNode.InsertComponent(children[i]);
+      children[i]:=nil;
+    end;
     Pow(RightStr(s,Length(s)-last_plus+1),temp);
     if isNeg then begin
       children[0]:=TInverseNode.Create(nil);
@@ -504,7 +521,14 @@ begin
     else
       children[0]:=temp;
     treeNode.InsertComponent(children[0]);
+    children[0]:=nil;
   end;
+(*
+  finally
+    for i:=0 to Length(children)-1 do
+      children[i].Free;
+  end;
+  *)
 end;
 
 procedure TFloatExpression.Pow(s: string; var treeNode: TEvaluationTreeNode);
