@@ -611,8 +611,17 @@ begin
 end;
 
 function TChangeIntegerCommand.Caption: string;
+var IntToIdent: TIntToIdent;
+    propInfo: PPropInfo;
+    s: string;
 begin
-  Result:=fComponentNameStr+'.'+fPropName+'='+IntToStr(fVal);
+  propInfo:=NewGetPropInfo;
+  IntToIdent:=FindIntToIdent(propInfo.PropType^);
+  if Assigned(IntToIdent) then
+    IntToIdent(fVal,s)
+  else
+    s:=IntToStr(fVal);
+  Result:=fComponentNameStr+'.'+fPropName+'='+s;
 end;
 
 (*
