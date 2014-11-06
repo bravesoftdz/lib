@@ -2,7 +2,8 @@ unit command_class_lib;
 
 interface
 
-uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,comctrls,messages,abstract_command_lib;
+uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,
+comctrls,messages,abstract_command_lib;
 
 type
   TAbstractTreeCommand=class(TAbstractCommand)  //чтобы историю изменений можно было хранить вместе со всем остальным
@@ -996,6 +997,9 @@ begin
   fOnLoad:=value;
   DoLoad;
 end;
+
+
+
 
 (*
       TCommandTree

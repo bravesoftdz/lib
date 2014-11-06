@@ -1,15 +1,15 @@
-unit geofrac_tools;
+unit IGraphicObject_tools;
 
 interface
 
-uses Controls,Classes,types,command_class_lib,messages,
+uses Controls,Classes,types,command_class_lib,messages,IGraphicObject_commands,
   strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit;
 
 type
 
 TGraphicTools=class(TAbstractToolAction)
 protected
-  function doc: TAbstractDocument;
+  function doc: TDocumentWithImage;
 end;
 
 TCustomAddLineTool=class(TGraphicTools)
@@ -29,14 +29,14 @@ end;
 
 TPickToolState=(sDeselect,sSizeTopLeft,sSizeTopRight,sSizeBottomLeft,
 sSizeBottomRight,sSizeTop,sSizeBottom,sSizeLeft,sSizeRight,sMove,sRotate);
-TPickTool=class(TGraphicTools,IObservable)
+TGraphicPickTool=class(TGraphicTools,IObservable)
 private
-  fPickedGroup: TBFGObjectGroup;
-  fPwndSelection: TBFGObjectGroup;
+  fPickedGroup: TGraphicObjectGroup;
+  fPwndSelection: TGraphicObjectGroup;
   fNotifier: TObservableImplementor;
   fMouseDown: Boolean;
   fIsRightButton: Boolean;
-  fstate: TBFGPickToolState;
+  fstate: TPickToolState;
   offset_x,offset_y: Integer; //смещение мыши отн. края вектора
   coords: array [0..1,0..1,0..1] of Integer;
   //1-я коорд - лево-право
@@ -53,10 +53,10 @@ private
   procedure CopyChosen;
   procedure FindSelRect;
   procedure ShowSquares;
-  procedure SetState(value: TBFGPickToolState);
+  procedure SetState(value: TPickToolState);
   procedure ProcessCorner(x,y: Integer; Shift: TShiftState; i,j: Integer);
   procedure ProcessEdge(x: Integer; Shift: TShiftState; i,j: Integer);
-  property state: TBFGPickToolState read fstate write SetState;
+  property state: TPickToolState read fstate write SetState;
 public
   constructor Create(owner: TComponent); override;
   destructor Destroy; override;
@@ -68,7 +68,7 @@ public
   procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
   property Notifier: TObservableImplementor read fNotifier implements IObservable;
 published
-  property PickedGroup: TBFGObjectGroup read fPickedGroup write fPickedGroup;
+  property PickedGroup: TGraphicObjectGroup read fPickedGroup write fPickedGroup;
 end;
 
 TProcessSelectedButton=class(TAbstractDocumentAction,IObserver)
@@ -76,38 +76,38 @@ private
   registered: boolean;
 public
   procedure Notification(aComponent: TComponent;operation: TOperation); override;
-  function doc: TGeofracData;
-  function pickTool: TBFGPickTool;
+  function doc: TAbstractDocument;
+  function pickTool: TGraphicPickTool;
   function update: boolean; override; //будем делать кнопку серой, если ничего не выделено
   procedure ObserverUpdate; virtual;
 end;
 
-TBFGDeleteButton=class(TProcessSelectedButton)
+TDeleteButtonAction=class(TProcessSelectedButton)
 public
   constructor Create(owner: TComponent); override;
   procedure ExecuteTarget(Target: TObject); override;
 end;
 
-TBFGCutButton=class(TProcessSelectedButton)
+TCutButtonAction=class(TProcessSelectedButton)
 public
   constructor Create(owner: TComponent); override;
   procedure ExecuteTarget(Target: TObject); override;
 end;
 
-TBFGCopyButton=class(TProcessSelectedButton)
+TCopyButtonAction=class(TProcessSelectedButton)
 public
   constructor Create(owner: TComponent); override;
   procedure ExecuteTarget(Target: TObject); override;
 end;
 
-TBFGGroupButton=class(TProcessSelectedButton)
+TGroupButtonAction=class(TProcessSelectedButton)
 public
   constructor Create(owner: TComponent); override;
   function update: boolean; override;
   procedure ExecuteTarget(Target: TObject); override;
 end;
 
-TBFGUngroupButton=class(TProcessSelectedButton)
+TUngroupButtonAction=class(TProcessSelectedButton)
 public
   constructor Create(owner: TComponent); override;
   function update: boolean; override;
@@ -117,7 +117,7 @@ end;
 TPropertyEditor=class
   protected
     function DrawLabel(aowner: TWinControl;left,top: Integer; aPropInfo: TAdvPropInfo): TLabel;
-    function AddCautiousEditor(aowner: TWinControl; EditorClass: TCautiousEditClass; left,top: Integer; aPropInfo: TAdvPropInfo): TCautiousEdit; 
+    function AddCautiousEditor(aowner: TWinControl; EditorClass: TCautiousEditClass; left,top: Integer; aPropInfo: TAdvPropInfo): TCautiousEdit;
   public
     procedure AddEditor(aowner: TWinControl;left,top: Integer;out right,bottom: Integer;aPropInfo: TAdvPropInfo); virtual; abstract;
 end;
@@ -162,7 +162,7 @@ TNamePropertyEditor=class(TStringPropertyEditor)
     procedure fvalidateproc(Sender: TObject); override;
   end;
 
-TBFGShowProperties=class(TProcessSelectedButton)
+TShowProperties=class(TProcessSelectedButton)
 private
   fControl: TWinControl; //куда вывести инфу
   fFullPropList: TStrings; //по кр. мере можно искать по имени
@@ -182,14 +182,14 @@ published
   property Control: TWinControl read fControl write SetControl;
 end;
 
-TBFGPasteButton=class(TAbstractDocumentAction)
+TPasteButtonAction=class(TAbstractDocumentAction)
 public
   constructor Create(owner: TComponent); override;
   function update: boolean; override;
   procedure ExecuteTarget(Target: TObject); override;
 end;
 
-TBFGSelectAllButton=class(TAbstractDocumentAction)
+TSelectAllButtonAction=class(TAbstractDocumentAction)
 public
   constructor Create(owner: TComponent); override;
   function update: boolean; override;
@@ -204,14 +204,14 @@ const //crRotate = crHandPoint;
 
 implementation
 
-uses actnList,extCtrls,geofrac_commands,windows,graphics,sysUtils,menus,clipbrd,
+uses actnList,extCtrls,windows,graphics,sysUtils,menus,clipbrd,
   streaming_class_lib,math;
 
 procedure Register;
 begin
-  RegisterActions('BFGActions',[TAddBasePointsTool,TAddLineTool,TAddVectorTool,
-  TBFGPickTool,TBFGDeleteButton,TBFGCopyButton,TBFGCutButton,TBFGShowProperties,
-  TBFGGroupButton,TBFGUngroupButton,TBFGPasteButton,TBFGSelectAllButton],nil);
+  RegisterActions('GraphicActions',[TGraphicPickTool,TDeleteButtonAction,
+  TCopyButtonAction,TCutButtonAction,TShowProperties,
+  TGroupButtonAction,TUngroupButtonAction,TPasteButtonAction,TSelectAllButtonAction],nil);
 end;
 
 function IsRectInsideRect(small,big: TRect): Boolean;
@@ -222,88 +222,21 @@ end;
 (*
     TBFGTools
                     *)
-function TBFGTools.doc: TAbstractDocument;
+function TGraphicTools.doc: TDocumentWithImage;
 begin
-  Result:=(owner as TAbstractDocument);
+  Result:=(owner as TDocumentWithImage);
 end;
 
-
-(*
-      TAddBasePointsTool
-                          *)
-constructor TAddBasePointsTool.Create(owner: TComponent);
-resourcestring
-  AddBasePointsToolCaption = 'Добавить базовую точку';
-  AddBasePointsToolHint = 'Добавить базовую точку';
-begin
-  inherited Create(owner);
-  GroupIndex:=1;
-//  ImageIndex:=11;
-  AutoCheck:=true;
-  Caption:=AddBasePointsToolCaption;
-  Hint:=AddBasePointsToolHint;
-end;
-
-procedure TAddBasePointsTool.Assign(source: TPersistent);
-begin
-  if not (source is TAddBasePointsTool) then
-    inherited Assign(source);
-  //нам ничего не нужно передавать, только сам факт - выбран этот инструмент
-end;
-
-function TAddBasePointsTool.Select: boolean;
-var bp1,bp2: TBasePoint;
-resourcestring
-  ChooseFirstBasePointStr = 'Выберите первую базовую точку';
-  ChooseSecondBasePointStr = 'Выберите вторую базовую точку';
-begin
-  bp1:=(doc as TGeofracData).BasePoints(0);
-  bp2:=(doc as TGeofracData).BasePoints(1);
-  Result:=((bp2=nil) or (bp1=nil)) or (WasHere and (fIndex=0));
-  if WasHere then fIndex:=1;
-  WasHere:=(bp1<>nil) and (bp2<>nil);
-
-  if (bp1=nil) or (WasHere and (fIndex=0)) then begin
-    SetStatusPanel(ChooseFirstBasePointStr);
-    fIndex:=0;
-  end
-  else begin
-    SetStatusPanel(ChooseSecondBasePointStr);
-    fIndex:=1;
-  end;
-end;
-
-procedure TAddBasePointsTool.Unselect;
-begin
-  SetStatusPanel('');
-end;
-
-procedure TAddBasePointsTool.MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
-var bp: TBasePoint;
-    fdoc: TGeofracData;
-begin
-  fdoc:=doc as TGeofracData;
-  if Assigned(fdoc.BasePoints(fIndex)) then
-    doc.DispatchCommand(TBFGMoveCommand.New(fdoc.BasePoints(fIndex),fdoc.XPix2Val(X)-fdoc.basePoints(fIndex).iX,fdoc.YPix2Val(Y)-fdoc.BasePoints(fIndex).iY))
-  else begin
-    bp:=TBasePoint.Create(nil);
-    bp.iX:=fdoc.XPix2Val(X);
-    bp.iY:=fdoc.YPix2Val(Y);
-    bp.pIndex:=fIndex;
-    bp.Name:='BP'+IntToStr(fIndex+1);
-    doc.DispatchCommand(TBFGAddCommand.NewObj(bp));
-  end;
-end;
 
 (*
         TBFGPickTool
                       *)
-procedure TBFGPickTool.DeleteChosen(cut: boolean=false);
+procedure TGraphicPickTool.DeleteChosen(cut: boolean=false);
 begin
-  doc.DispatchCommand(TBFGDeleteCommand.New(fPickedGroup,cut));
+  doc.DispatchCommand(TDeleteGraphicCommand.New(fPickedGroup,cut));
 end;
 
-procedure TBFGPickTool.CopyChosen;
+procedure TGraphicPickTool.CopyChosen;
 var i: Integer;
     s: string;
 begin
@@ -312,10 +245,10 @@ begin
   ClipBoard.AsText:=s;
 end;
 
-procedure TBFGPickTool.DrawSelection;
+procedure TGraphicPickTool.DrawSelection;
 var Canvas: TCanvas;
 begin
-  Canvas:=doc.image.Canvas;
+  Canvas:=doc.get_Image.Canvas;
   with Canvas do begin
     Canvas.Pen.Mode:=pmNotXor;
     Canvas.Pen.Style:=psDot;
@@ -323,7 +256,7 @@ begin
   end;
 end;
 
-constructor TBFGPickTool.Create(owner: TComponent);
+constructor TGraphicPickTool.Create(owner: TComponent);
 begin
   inherited Create(owner);
   GroupIndex:=1;
@@ -331,14 +264,14 @@ begin
   AutoCheck:=true;
   Caption:='Выделить';
   Hint:=Caption;
-  fPickedGroup:=TBFGObjectGroup.Create(self);
+  fPickedGroup:=TGraphicObjectGroup.Create(self);
   fPickedGroup.SetSubComponent(true);
-  fPwndSelection:=TBFGObjectGroup.Create(self);
+  fPwndSelection:=TGraphicObjectGroup.Create(self);
   fPwndSelection.OwnsObjects:=true;
   fNotifier:=TObservableImplementor.Create;
 end;
 
-destructor TBFGPickTool.Destroy;
+destructor TGraphicPickTool.Destroy;
 begin
 //  unselect;
 //  fPwndSelection.Free;  //в общем-то сам удалится
@@ -346,17 +279,17 @@ begin
   inherited Destroy;
 end;
 
-procedure TBFGPickTool.Assign(source: TPersistent);
+procedure TGraphicPickTool.Assign(source: TPersistent);
 begin
-  if source is TBFGPickTool then begin
-    PickedGroup.Assign(TBFGPickTool(source).PickedGroup);
+  if source is TGraphicPickTool then begin
+    PickedGroup.Assign(TGraphicPickTool(source).PickedGroup);
   end
   else inherited Assign(source);
 end;
 
-function TBFGPickTool.Select: boolean;
+function TGraphicPickTool.Select: boolean;
 var i: Integer;
-  iit: IBFGGraphicObject;
+  iit: IGraphicObject;
 begin
   Result:=true;
   //именно процедура select "берет на себя удар" в плане снять выделение если после undo/redo/jump
@@ -385,7 +318,7 @@ begin
   fNotifier.NotifyObservers;  //на всякий случай
 end;
 
-procedure TBFGPickTool.Unselect;
+procedure TGraphicPickTool.Unselect;
 begin
   SetStatusPanel('');
   ShowSquares;  //внутри ShowSquares будет проверка на наличие элем.
@@ -393,7 +326,7 @@ begin
   fNotifier.NotifyObservers;
 end;
 
-procedure TBFGPickTool.FindSelRect;
+procedure TGraphicPickTool.FindSelRect;
 var tmpRect: TRect;
 begin
   //это координаты для редактирования
@@ -413,7 +346,7 @@ begin
   end;
 end;
 
-procedure TBFGPickTool.ShowSquares;
+procedure TGraphicPickTool.ShowSquares;
 var canvas: TCanvas;
   s,x3,y3: Integer;
   i,j: Integer;
@@ -423,9 +356,9 @@ var canvas: TCanvas;
 begin
   if (doc=nil) or (PickedGroup.Count=0) then Exit;
   //а вот здесь координаты для отобр.
-  s:=doc.square_size;
+  s:=doc.get_square_size;
   empty_rect:=Rect(0,0,0,0);
-  canvas:=doc.image.Canvas;
+  canvas:=doc.get_Image.Canvas;
   canvas.CopyMode:=cmDstInvert;
   if state=sRotate then j:=1 else j:=0;
   x3:=(symbolic[0,0,j]+symbolic[1,0,j]) div 2;
@@ -463,7 +396,7 @@ begin
     canvas.CopyRect(Rect(Points[j].X,points[j].Y,Points[j].X+s,points[j].Y+s),canvas,empty_rect);
 end;
 
-procedure TBFGPickTool.SetState(value: TBFGPickToolState);
+procedure TGraphicPickTool.SetState(value: TPickToolState);
 var img: TImage;
     s: string;
 resourcestring
@@ -472,7 +405,7 @@ resourcestring
   PickToolMoveStr='Перемещение';
   PickToolDeselectStr='Снять выделение';
 begin
-  img:=doc.image;
+  img:=doc.get_image;
   fstate:=value;
   s:=PickToolResizeStr;
   with img do begin
@@ -501,7 +434,7 @@ begin
   SetStatusPanel(s);
 end;
 
-procedure TBFGPickTool.MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
+procedure TGraphicPickTool.MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
 var i,j: Integer;
 begin
   fMouseDown:=true;
@@ -522,16 +455,16 @@ begin
     fangle:=0;
     //и сейчас создадим копию всех выделенных объектов, чтобы их ПОМУЧАТЬ
     fPwndSelection.TakeFromList(fPickedGroup);
-    with doc.image.Canvas.pen do begin
+    with doc.get_image.Canvas.pen do begin
       Mode:=pmNotXor;
       Style:=psDot;
     end;
-    fPwndSelection.Draw(doc.image.Canvas);
+    fPwndSelection.Draw(doc.get_image.Canvas);
   end;
   //выделить можем только при отпускании мыши
 end;
 
-procedure TBFGPickTool.ProcessCorner(x,y: Integer; Shift: TShiftState; i,j: Integer);
+procedure TGraphicPickTool.ProcessCorner(x,y: Integer; Shift: TShiftState; i,j: Integer);
 var a: Real;
 begin
   //i - x-коорд угла, j-y.
@@ -552,7 +485,7 @@ begin
   end;
 end;
 
-procedure TBFGPickTool.ProcessEdge(x: Integer; Shift: TShiftState; i,j: Integer);
+procedure TGraphicPickTool.ProcessEdge(x: Integer; Shift: TShiftState; i,j: Integer);
 var a: Real;
 begin
   //x-координата, по которой мы двигаем, это может быть и x, и y
@@ -575,7 +508,7 @@ begin
   end;
 end;
 
-procedure TBFGPickTool.MouseMove(Shift: TShiftState; X,Y: Integer);
+procedure TGraphicPickTool.MouseMove(Shift: TShiftState; X,Y: Integer);
 var x1,y1,x2,y2,s: Integer;
     tmpRect: TRect;
 begin
@@ -587,7 +520,7 @@ begin
     //с инверсией - ничего страшного
     if state<>sDeselect then begin
       ShowSquares; //убираем старую
-      fPwndSelection.Draw(doc.image.Canvas);
+      fPwndSelection.Draw(doc.get_image.Canvas);
     end;
     case state of
       sSizeTopLeft: ProcessCorner(x,y,Shift,0,0);
@@ -636,12 +569,12 @@ begin
       symbolic[1,0,0]:=doc.XVal2Pix(tmpRect.Right);
       symbolic[1,1,0]:=doc.YVal2Pix(tmpRect.Bottom);
       ShowSquares;  //рисуем новую
-      fPwndSelection.Draw(doc.image.Canvas);
+      fPwndSelection.Draw(doc.get_image.Canvas);
     end;
   end
   else if PickedGroup.Count>0 then begin
     FindSelRect;
-    s:=doc.square_size;
+    s:=doc.get_square_size;
     x1:=symbolic[0,0,0]-s div 2;
     x2:=symbolic[1,0,0]+s div 2;
     y1:=symbolic[0,1,0]-s div 2;
@@ -718,16 +651,16 @@ begin
   end;
 end;
 
-procedure TBFGPickTool.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
+procedure TGraphicPickTool.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
 var x1,x2,y1,y2,sens,i,chosen: Integer;
     dist,tmp: Real;
     selRect: TRect;
-    intf: IBFGGraphicObject;
+    intf: IGraphicObject;
     needsNotify: boolean;
 begin
   needsNotify:=false;
   fMouseDown:=false;
-  sens:=doc.sensitivity;
+  sens:=doc.get_sensitivity;
   selRect:=Rect(doc.XPix2Val(fStartX),doc.YPix2Val(fStartY),doc.XPix2Val(fCurX),doc.YPix2Val(fCurY));
   if selRect.Left>selRect.Right then SwapIntegers(selRect.Left,selRect.Right);
   if selRect.Top>selRect.Bottom then SwapIntegers(selRect.Top,selRect.Bottom);
@@ -745,9 +678,9 @@ begin
       //внутри нее выбрать уже не получится (режим не тот)
       if (abs(fStartX-fCurX)<sens) and (abs(fStartY-fCurY)<sens) then begin
         chosen:=-1;
-        dist:=sens/doc.Scale;
+        dist:=sens/doc.get_Scale;
         for i:=0 to doc.ComponentCount-1 do
-          if doc.Components[i].GetInterface(IBFGGraphicObject,intf) then begin
+          if doc.Components[i].GetInterface(IGraphicObject,intf) then begin
             tmp:=intf.DistanceTo(doc.XPix2Val(X),doc.YPix2Val(Y));
             if tmp<dist then begin
               chosen:=i;
@@ -761,7 +694,7 @@ begin
       end
       else begin
         for i:=0 to doc.ComponentCount-1 do
-          if doc.Components[i].GetInterface(IBFGGraphicObject,intf) and IsRectInsideRect(intf.Rect,selRect) then begin
+          if doc.Components[i].GetInterface(IGraphicObject,intf) and IsRectInsideRect(intf.Rect,selRect) then begin
             fPickedGroup.XAdd(doc.Components[i]);
             needsNotify:=true;
           end;
@@ -771,11 +704,11 @@ begin
       ShowSquares;
     end;
     sMove: begin
-      x1:=Round((coords[0,0,0]-coords[0,0,1])/doc.Scale);
-      y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.Scale);
-      if not doc.DispatchCommand(TBFGMoveCommand.New(fPickedGroup,x1,y1)) then
+      x1:=Round((coords[0,0,0]-coords[0,0,1])/doc.get_Scale);
+      y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.get_Scale);
+      if not doc.DispatchCommand(TMoveGraphicCommand.New(fPickedGroup,x1,y1)) then
       //если не задалось, то не будет обновления - снова пунктирная рамка. Надо ее убрать
-        fPwndSelection.Draw(doc.image.Canvas)
+        fPwndSelection.Draw(doc.get_image.Canvas)
       else
         NeedsNotify:=true;
     end;
@@ -783,8 +716,8 @@ begin
       selRect:=fPickedGroup.Rect;
       x1:=(selRect.Left+selRect.Right) div 2;
       y1:=(selRect.Bottom+selRect.Top) div 2;
-      if not doc.DispatchCommand(TBFGRotateCommand.New(fPickedGroup,fangle,x1,y1)) then
-        fPwndSelection.Draw(doc.image.Canvas)
+      if not doc.DispatchCommand(TRotateGraphicCommand.New(fPickedGroup,fangle,x1,y1)) then
+        fPwndSelection.Draw(doc.get_image.Canvas)
       else
         NeedsNotify:=true;
     end;
@@ -792,12 +725,12 @@ begin
 //      fPwndSelection.saveFormat:=fCyr;
 //      fPwndSelection.SaveToFile('group.txt');
     //то или иное изм. размеров
-      x1:=Round((coords[0,0,0]-coords[0,0,1])/doc.Scale);
-      y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.Scale);
-      x2:=Round((coords[1,0,0]-coords[1,0,1])/doc.Scale);
-      y2:=Round((coords[1,1,0]-coords[1,1,1])/doc.Scale);
-      if not doc.DispatchCommand(TBFGResizeCommand.New(fPickedGroup,x1,y1,x2,y2)) then
-        fPwndSelection.Draw(doc.image.Canvas)
+      x1:=Round((coords[0,0,0]-coords[0,0,1])/doc.get_Scale);
+      y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.get_Scale);
+      x2:=Round((coords[1,0,0]-coords[1,0,1])/doc.get_Scale);
+      y2:=Round((coords[1,1,0]-coords[1,1,1])/doc.get_Scale);
+      if not doc.DispatchCommand(TResizeGraphicCommand.New(fPickedGroup,x1,y1,x2,y2)) then
+        fPwndSelection.Draw(doc.get_image.Canvas)
       else
         NeedsNotify:=true;
     end;
@@ -831,8 +764,8 @@ end;
 
 procedure TCustomAddLineTool.InverseLine;
 begin
-  doc.image.Canvas.MoveTo(fInitX,fInitY);
-  doc.image.Canvas.LineTo(fCurX,fCurY);
+  doc.get_image.Canvas.MoveTo(fInitX,fInitY);
+  doc.get_image.Canvas.LineTo(fCurX,fCurY);
 end;
 
 procedure TCustomAddLineTool.MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
@@ -842,8 +775,8 @@ begin
   fInitY:=Y;
   fCurX:=X;
   fCurY:=Y;
-  doc.image.Canvas.Pen.Mode:=pmNotXor;
-  doc.image.Canvas.Pen.Color:=clBlack;
+  doc.get_image.Canvas.Pen.Mode:=pmNotXor;
+  doc.get_image.Canvas.Pen.Color:=clBlack;
 end;
 
 procedure TCustomAddLineTool.MouseMove(Shift: TShiftState; X,Y: Integer);
@@ -863,111 +796,23 @@ begin
 end;
 
 (*
-    TAddLineTool
-                      *)
-constructor TAddLineTool.Create(owner: TComponent);
-resourcestring
-  AddLineToolCaption = 'Построить прямую';
-begin
-  inherited Create(owner);
-  GroupIndex:=1;
-//  ImageIndex:=11;
-  AutoCheck:=true;
-  Caption:= AddLineToolCaption;
-  Hint:=Caption;
-end;
-
-function TAddLineTool.Select: boolean;
-resourcestring
-  AddLineStatus = 'Построение прямой (вырожд. преобразования)';
-begin
-  SetStatusPanel(AddLineStatus);
-  Result:=true;
-end;
-
-procedure TAddLineTool.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
-var v: TFracVector;
-begin
-  inherited MouseUp(Button,Shift,X,Y);
-  v:=TFracVector.Create(nil);
-  with v do begin
-    ix1:=doc.XPix2Val(fInitX);
-    iy1:=doc.YPix2Val(fInitY);
-    ix2:=doc.XPix2Val(fCurX);
-    iy2:=doc.YPix2Val(fCurY);
-(*
-    if (x1=x2) and (y1=y2) then begin
-      v.Free;
-      Exit;
-    end;
-    *)
-    isLine:=true;
-    ensureCorrectName('lin',doc);
-  end;
-  doc.DispatchCommand(TBFGAddCommand.NewObj(v));
-end;
-
-(*
-    TAddVectorTool
-                        *)
-constructor TAddVectorTool.Create(owner: TComponent);
-resourcestring
-  AddVectorToolCaption = 'Добавить вектор';
-begin
-  inherited Create(owner);
-  GroupIndex:=1;
-//  ImageIndex:=11;
-  AutoCheck:=true;
-  Caption:=AddVectorToolCaption;
-  Hint:=Caption;
-end;
-
-function TAddVectorTool.Select: Boolean;
-resourcestring
-  AddVectorToolStatus = 'Построение вектора (преобразования подобия)';
-begin
-  SetStatusPanel(AddVectorToolStatus);
-  Result:=true;
-end;
-
-procedure TAddVectorTool.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
-var v: TFracVector;
-begin
-  inherited MouseUp(Button,Shift,X,Y);
-  v:=TFracVector.Create(nil);
-  with v do begin
-    ix1:=doc.XPix2Val(fInitX);
-    iy1:=doc.YPix2Val(fInitY);
-    ix2:=doc.XPix2Val(fCurX);
-    iy2:=doc.YPix2Val(fCurY);
-    if (ix1=ix2) and (iy1=iy2) then begin
-      v.Free;
-      Exit;
-    end;
-    isLine:=false;
-    EnsureCorrectName('vec',doc);
-  end;
-  doc.DispatchCommand(TBFGAddCommand.NewObj(v));
-end;
-
-(*
       TProcessSelectedButton
                                 *)
-function TProcessSelectedButton.doc: TGeofracData;
+function TProcessSelectedButton.doc: TAbstractDocument;
 begin
-  Result:=GetDoc as TGeofracData;
+  Result:=GetDoc as TAbstractDocument;
 end;
 
-function TProcessSelectedButton.pickTool: TBFGPickTool;
+function TProcessSelectedButton.pickTool: TGraphicPickTool;
 begin
-  if Assigned(doc.Tool) and (doc.Tool is TBFGPickTool) then
-    Result:=TBFGPickTool(doc.Tool)
+  if Assigned(doc.Tool) and (doc.Tool is TGraphicPickTool) then
+    Result:=TGraphicPickTool(doc.Tool)
   else Result:=nil;
 end;
 
 procedure TProcessSelectedButton.Notification(aComponent: TComponent; operation: TOperation);
 begin
-  if (aComponent is TBFGPickTool) and (operation=opRemove) then
+  if (aComponent is TGraphicPickTool) and (operation=opRemove) then
     Registered:=false;
   inherited Notification(aComponent,operation);
 end;
@@ -990,7 +835,7 @@ end;
 (*
       TBFGDeleteButton
                             *)
-constructor TBFGDeleteButton.Create(owner: TComponent);
+constructor TDeleteButtonAction.Create(owner: TComponent);
 resourcestring
   DeleteButtonCaption = 'Удалить';
   DeleteButtonHint = 'Удалить выбранный объект';
@@ -1002,7 +847,7 @@ begin
   ShortCut:=Menus.ShortCut(VK_DELETE,[]);
 end;
 
-procedure TBFGDeleteButton.ExecuteTarget(target: TObject);
+procedure TDeleteButtonAction.ExecuteTarget(target: TObject);
 begin
   PickTool.DeleteChosen;
 end;
@@ -1010,7 +855,7 @@ end;
 (*
       TBFGCutButton
                         *)
-constructor TBFGCutButton.Create(owner: TCOmponent);
+constructor TCutButtonAction.Create(owner: TCOmponent);
 resourcestring
   CutButtonCaption = 'Вырезать';
   CutButtonHint = 'Вырезать выбранный объект';
@@ -1022,7 +867,7 @@ begin
   ShortCut:=Menus.ShortCut(Word('X'),[ssCtrl]);
 end;
 
-procedure TBFGCutButton.ExecuteTarget(Target: TObject);
+procedure TCutButtonAction.ExecuteTarget(Target: TObject);
 begin
   PickTool.CopyChosen;
   PickTool.DeleteChosen(true);
@@ -1031,7 +876,7 @@ end;
 (*
       TBFGCopyButton
                         *)
-constructor TBFGCopyButton.Create(owner: TCOmponent);
+constructor TCopyButtonAction.Create(owner: TCOmponent);
 resourcestring
   CopyButtonCaption = 'Копировать';
   CopyButtonHint = 'Копировать выбранный объект';
@@ -1043,7 +888,7 @@ begin
   ShortCut:=Menus.ShortCut(Word('C'),[ssCtrl]);
 end;
 
-procedure TBFGCopyButton.ExecuteTarget(Target: TObject);
+procedure TCopyButtonAction.ExecuteTarget(Target: TObject);
 begin
   PickTool.CopyChosen;
 end;
@@ -1051,7 +896,7 @@ end;
 (*
       TBFGGroupButton
                             *)
-constructor TBFGGroupButton.Create(owner: TComponent);
+constructor TGroupButtonAction.Create(owner: TComponent);
 resourcestring
   GroupButtonCaption = 'Группировать';
   GroupButtonHint = 'Группировать выбранные объекты';
@@ -1063,23 +908,23 @@ begin
   ShortCut:=TextToShortcut('Ctrl+G');
 end;
 
-function TBFGGroupButton.update: boolean;
+function TGroupButtonAction.update: boolean;
 begin
   enabled:=(PickTool<>nil) and (PickTool.fPickedGroup.Count>1);
   Result:=true;
 end;
 
-procedure TBFGGroupButton.ExecuteTarget(Target: TObject);
-var gr: TBFGObjectGroup;
+procedure TGroupButtonAction.ExecuteTarget(Target: TObject);
+var gr: TGraphicObjectGroup;
 begin
-  gr:=TBFGObjectGroup.Create(nil);
+  gr:=TGraphicObjectGroup.Create(nil);
   gr.ensureCorrectName('gr',doc);
   gr.TakeFromList(PickTool.PickedGroup);
-  doc.DispatchCommand(TBFGGroupCommand.New(gr));
+  doc.DispatchCommand(TGroupGraphicCommand.New(gr));
   //после выполнения команды будет вызвано tool.select, но правильнее теперь
   //думать о них как о группе
   //возможно, gr уже сдох, если команда такая уже была
-  gr:=(doc.UndoTree.Current as TBFGGroupCommand).Objects;
+  gr:=(doc.UndoTree.Current as TGroupGraphicCommand).Objects;
   PickTool.PickedGroup.Add(gr);
   doc.Change;
 end;
@@ -1087,7 +932,7 @@ end;
 (*
     TBFGUngroupButton
                               *)
-constructor TBFGUngroupButton.Create(owner: TComponent);
+constructor TUngroupButtonAction.Create(owner: TComponent);
 resourcestring
   UngroupButtonCaption = 'Разгруппировать';
   UngroupButtonHint = 'Разгруппировать выбранные объекты';
@@ -1099,17 +944,17 @@ begin
   ShortCut:=TextToShortcut('Ctrl+Shift+G');
 end;
 
-function TBFGUngroupButton.update: Boolean;
+function TUngroupButtonAction.update: Boolean;
 begin
-  enabled:=(PickTool<>nil) and (PickTool.fPickedGroup.Count=1) and (PickTool.PickedGroup.Item[0] is TBFGObjectGroup);
+  enabled:=(PickTool<>nil) and (PickTool.fPickedGroup.Count=1) and (PickTool.PickedGroup.Item[0] is TGraphicObjectGroup);
   Result:=true;
 end;
 
-procedure TBFGUngroupButton.ExecuteTarget(Target: TObject);
-var gr: TBFGObjectGroup;
+procedure TUngroupButtonAction.ExecuteTarget(Target: TObject);
+var gr: TGraphicObjectGroup;
 begin
-  gr:=PickTool.PickedGroup.Item[0] as TBFGObjectGroup;
-  doc.DispatchCommand(TBFGUngroupCommand.New(gr));
+  gr:=PickTool.PickedGroup.Item[0] as TGraphicObjectGroup;
+  doc.DispatchCommand(TUngroupGraphicCommand.New(gr));
   //команда выполнилась, группа "распалась", выделение сбилось
   //надо его вернуть
   PickTool.PickedGroup.Clear;
@@ -1411,7 +1256,7 @@ end;
 (*
       TBFGShowProperties
                             *)
-constructor TBFGShowProperties.Create(Owner: TComponent);
+constructor TShowProperties.Create(Owner: TComponent);
 begin
   inherited Create(Owner);
   fFullPropList:=TStringList.Create;
@@ -1424,7 +1269,7 @@ begin
   fPropEditors.AddObject('TComponentName',TNamePropertyEditor.Create);
 end;
 
-destructor TBFGShowProperties.Destroy;
+destructor TShowProperties.Destroy;
 var i: Integer;
 begin
   for i:=0 to fFullPropList.Count-1 do
@@ -1436,7 +1281,7 @@ begin
   inherited Destroy;
 end;
 
-procedure TBFGShowProperties.SetControl(value: TWinControl);
+procedure TShowProperties.SetControl(value: TWinControl);
 begin
   if Assigned(fControl) then
     fControl.RemoveFreeNotification(self);
@@ -1445,19 +1290,19 @@ begin
     fControl.FreeNotification(self);
 end;
 
-procedure TBFGShowProperties.Notification(aComponent: TComponent; operation: TOperation);
+procedure TShowProperties.Notification(aComponent: TComponent; operation: TOperation);
 begin
   if (aComponent=fControl) and (operation=opRemove) then
     fControl:=nil;
   inherited Notification(aComponent,operation);
 end;
 
-function TBFGShowProperties.Update: Boolean;
+function TShowProperties.Update: Boolean;
 begin
   Result:=inherited Update;
 end;
 
-procedure TBFGShowProperties.AddTitleAndHint(name,title,hint: string);
+procedure TShowProperties.AddTitleAndHint(name,title,hint: string);
 var i: Integer;
   aprop: TAdvPropInfo;
 begin
@@ -1469,7 +1314,7 @@ begin
   end;
 end;
 
-procedure TBFGShowProperties.UnregisterProperty(name: string);
+procedure TShowProperties.UnregisterProperty(name: string);
 var i: Integer;
 begin
   i:=fFullPropList.IndexOf(name);
@@ -1479,7 +1324,7 @@ begin
   end;
 end;
 
-procedure TBFGShowProperties.ObserverUpdate;
+procedure TShowProperties.ObserverUpdate;
 const
   tkSupported=[tkEnumeration, tkInteger, tkChar, tkSet, tkWChar,tkFloat,tkString,tkLString,tkWString];
 var i,j,count: Integer;
@@ -1557,7 +1402,7 @@ end;
 (*
       TBFGPasteButton
                             *)
-constructor TBFGPasteButton.Create(owner: TComponent);
+constructor TPasteButtonAction.Create(owner: TComponent);
 resourcestring
   PasteButtonCaption = 'Вставить';
   PasteButtonHint = 'Вставить из буфера обмена';
@@ -1569,9 +1414,9 @@ begin
   ShortCut:=Menus.ShortCut(Word('V'),[ssCtrl]);
 end;
 
-function TBFGPasteButton.update: Boolean;
+function TPasteButtonAction.update: Boolean;
 var v: TComponent;
-  intf: IBFGGraphicObject;
+  intf: IGraphicObject;
   e: boolean;
 begin
   v:=nil;
@@ -1580,7 +1425,7 @@ begin
     if Uppercase(LeftStr(Clipboard.AsText,7))='OBJECT ' then
       try
         v:=TStreamingClass.LoadComponentFromString(Clipboard.AsText);
-        e:=(v.GetInterface(IBFGGraphicObject,intf));
+        e:=(v.GetInterface(IGraphicObject,intf));
 //почему-то эта строчка вызывает access violation при открытии History (!!!)
 //больше нет, прояснилась ситуация
       finally
@@ -1593,18 +1438,18 @@ begin
   Result:=true;
 end;
 
-procedure TBFGPasteButton.ExecuteTarget(Target: TObject);
+procedure TPasteButtonAction.ExecuteTarget(Target: TObject);
 var c: TComponent;
-  intf: IBFGGraphicObject;
+  intf: IGraphicObject;
   i,j: Integer;
-  doc: TGeofracData;
+  doc: TDocumentWithImage;
   strStream: TStringStream;
   BinStream: TMemoryStream;
-  gr: TBFGObjectGroup;
+  gr: TGraphicObjectGroup;
 begin
-  doc:=GetDoc as TGeofracData;
+  doc:=GetDoc as TDocumentWithImage;
   doc.criticalSection.Acquire;
-  gr:=TBFGObjectGroup.Create(doc);
+  gr:=TGraphicObjectGroup.Create(doc);
   gr.OwnsObjects:=true;
   BinStream:=TMemoryStream.Create;
   StrStream:=TStringStream.Create(Clipboard.AsText);
@@ -1613,7 +1458,7 @@ begin
   BinStream.Seek(0, soFromBeginning);
   while BinStream.Position<BinStream.Size do begin
     c:=BinStream.ReadComponent(nil);
-    if c.GetInterface(IBFGGraphicObject,intf) then begin
+    if c.GetInterface(IGraphicObject,intf) then begin
       (c as TStreamingClass).ensureCorrectNames(doc);
       doc.InsertComponent(c);
       if intf.isOkToPaste then gr.Add(c)
@@ -1626,19 +1471,12 @@ begin
   BinStream.Free;
   StrStream.Free;
 
-
-  //что-то пошло не так
-  //gr.saveFormat:=fCyr;
-//  gr.SaveToFile('group.txt');
-//  gr.Item[0].saveFormat:=fCyr;
-//  gr.Item[0].SaveToFile('group.txt');
-
   i:=0;
   while i<doc.ComponentCount do begin
-    if doc.Components[i].GetInterface(IBFGGraphicObject,intf) and (doc.Components[i]<>gr) then
+    if doc.Components[i].GetInterface(IGraphicObject,intf) and (doc.Components[i]<>gr) then
       for j:=0 to gr.Count-1 do
         if EqualRect(intf.Rect,gr.iitem(j).Rect) then begin
-          gr.Move(doc.duplicate_shift_x,doc.duplicate_shift_y);
+          gr.Move(doc.get_duplicate_shift_x,doc.get_duplicate_shift_y);
           i:=0; //надо проверить, может вот теперь дублируется
           break;
         end;
@@ -1647,7 +1485,7 @@ begin
   doc.RemoveComponent(gr);
   doc.CriticalSection.Release;  //перестали в свое удовольствие возиться с документом
   if gr.Count>0 then
-    doc.DispatchCommand(TBFGAddCommand.NewGr(gr,true))
+    doc.DispatchCommand(TAddGraphicCommand.NewGr(gr,true))
   else
     gr.Free;
 end;
@@ -1655,7 +1493,7 @@ end;
 (*
       TBFGSelectAllButton
                               *)
-constructor TBFGSelectAllButton.Create(owner: TComponent);
+constructor TSelectAllButtonAction.Create(owner: TComponent);
 resourcestring
   SelectAllCaption = 'Выбрать все';
   SelectAllHint = 'Выбрать все';
@@ -1667,41 +1505,41 @@ begin
   ShortCut:=TextToShortcut('Ctrl+A');
 end;
 
-function TBFGSelectAllButton.update: boolean;
-var intf: IBFGGraphicObject;
+function TSelectAllButtonAction.update: boolean;
+var intf: IGraphicObject;
 begin
-  (GetDoc as TGeofracData).GraphicObjectsIterator.First(intf);
+  (GetDoc as TDocumentWithImage).GraphicObjectsIterator.First(intf);
   enabled:=(intf<>nil); //должен быть хотя бы один!
   //мы здесь не удаляем объекты, поэтому пусть intf сам вызовет _release
   //выходя за область видимости
   Result:=true;
 end;
 
-procedure TBFGSelectAllButton.ExecuteTarget(Target: TObject);
-var pick: TBFGPickTool;
-    doc: TGeofracData;
+procedure TSelectAllButtonAction.ExecuteTarget(Target: TObject);
+var pick: TGraphicPickTool;
+    doc: TAbstractDocument;
     i: Integer;
-    intf: IBFGGraphicObject;
+    intf: IGraphicObject;
 begin
   pick:=nil;
   for i:=0 to ActionList.ActionCount-1 do
-    if ActionList.Actions[i] is TBFGPickTool then begin
-      pick:=TBFGPickTool(ActionList.Actions[i]);
+    if ActionList.Actions[i] is TGraphicPickTool then begin
+      pick:=TGraphicPickTool(ActionList.Actions[i]);
       break;
     end;
   if Assigned(pick) then begin
     pick.Execute;
-    doc:=GetDoc as TGeofracData;
-    pick:=doc.tool as TBFGPickTool;
+    doc:=GetDoc as TAbstractDocument;
+    pick:=doc.tool as TGraphicPickTool;
     pick.fPickedGroup.Clear;
     for i:=0 to doc.ComponentCount-1 do
-      if doc.Components[i].GetInterface(IBFGGraphicObject,intf) then
+      if doc.Components[i].GetInterface(IGraphicObject,intf) then
         pick.fPickedGroup.Add(intf.Implementor);
     doc.Change;
   end;
 end;
 
 initialization
-RegisterClasses([TAddLineTool,TAddVectorTool,TBFGPickTool,TAddBasePointsTool]);
-RegisterClasses([TBFGCutButton,TBFGCopyButton,TBFGDeleteButton,TBFGPasteButton]);
+RegisterClasses([TGraphicPickTool]);
+RegisterClasses([TCutButtonAction,TCopyButtonAction,TDeleteButtonAction,TPasteButtonAction]);
 end.

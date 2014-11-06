@@ -3,7 +3,7 @@ unit IGraphicObject_commands;
 interface
 
 uses command_class_lib,classes,types,observer_pattern_interfaces,graphics,
-streamable_component_list;
+streamable_component_list,iterator_lib,ExtCtrls;
 
 type
 
@@ -39,6 +39,24 @@ IGraphicObject=Interface
   function Implementor: TComponent;
   procedure Draw(canvas: TCanvas);
 end;
+
+TDocumentWithImage = class(TAbstractDocument)
+  protected
+    fGraphicObjectsIterator: TAbstractDocumentInterfaceIterator;
+  public
+    constructor Create(owner: TComponent); override;
+    function XPix2Val(X: Integer): Integer; virtual; abstract;
+    function YPix2Val(Y: Integer): Integer; virtual; abstract;
+    function XVal2Pix(X: Integer): Integer; virtual; abstract;
+    function YVal2Pix(Y: Integer): Integer; virtual; abstract;
+    function Get_square_size: Integer; virtual; abstract;
+    function Get_sensitivity: Integer; virtual; abstract;
+    function Get_duplicate_shift_x: Integer; virtual; abstract;
+    function Get_duplicate_shift_y: Integer; virtual; abstract;
+    function Get_scale: Real; virtual; abstract;
+    function Get_Image: TImage; virtual; abstract;
+    property GraphicObjectsIterator: TAbstractDocumentInterfaceIterator read fGraphicObjectsIterator;
+  end;
 
 TGraphicObjectGroup=class(TStreamableComponentList,IGraphicObject,IAdvancedProperties)
 public
@@ -944,7 +962,18 @@ begin
 end;
 
 
+(*
+      TDocumentWithImage
+                            *)
+constructor TDocumentWithImage.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  fGraphicObjectsIterator:=TAbstractDocumentInterfaceIterator.Create(self,IGraphicObject);
+end;
+
+
 initialization
   RegisterClasses([TAddGraphicCommand,TDeleteGraphicCommand,TMoveGraphicCommand,
-  TResizeGraphicCommand,TGroupGraphicCommand,TUngroupGraphicCommand,TRotateGraphicCommand]);
+  TResizeGraphicCommand,TGroupGraphicCommand,TUngroupGraphicCommand,
+  TRotateGraphicCommand,TGraphicObjectGroup]);
 end.
