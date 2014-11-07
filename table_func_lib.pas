@@ -785,11 +785,10 @@ end;
 
 
 procedure table_func.assign(source: TPersistent);
-var s: table_func;
+var s: table_func absolute source;
 begin
   if Source is table_func then
   begin
-    s:=table_func(source);
     ixmin:=S.ixmin;
     ixmax:=s.ixmax;
     iymin:=s.iymin;

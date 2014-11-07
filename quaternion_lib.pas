@@ -131,10 +131,9 @@ begin
 end;
 
 procedure TAbstractQuaternion.Assign(Source: TPersistent);
-var q: TAbstractQuaternion;
+var q: TAbstractQuaternion absolute Source;
 begin
   if Source is TAbstractQuaternion then begin
-    q:=Source as TAbstractQuaternion;
     a:=q.a;
     x:=q.x;
     y:=q.y;

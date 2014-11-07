@@ -1769,11 +1769,10 @@ begin
 end;
 
 procedure ComplexTernary2D.Assign(source: TPersistent);
-var _source: ComplexTernary2D;
+var _source: ComplexTernary2D absolute source;
     i: Integer;
 begin
   if source is ComplexTernary2D then begin
-    _source:=source as ComplexTernary2D;
     _qx:=_source._qx;
     _qy:=_source._qy;
     _Nx:=_source._Nx;
@@ -1793,11 +1792,10 @@ begin
 end;
 
 procedure RealTernary2D.Assign(source: TPersistent);
-var _source: RealTernary2D;
+var _source: RealTernary2D absolute source;
     i: Integer;
 begin
   if source is RealTernary2D then begin
-    _source:=source as RealTernary2D;
     _qx:=_source._qx;
     _qy:=_source._qy;
     _Nx:=_source._Nx;

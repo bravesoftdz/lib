@@ -309,7 +309,8 @@ end;
 
 
 function TAbstractTreeCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
-var t: TAbstractTreeCommand;
+var t: TAbstractTreeCommand absolute what;
+    hashedT: THashedCommand absolute t;
     buName: string;
     buNext,buPrev,buBranch: TAbstractTreeCommand;
     buActiveBranch,buTurnLeft: boolean;
@@ -319,7 +320,6 @@ var t: TAbstractTreeCommand;
     ComponentWithSameName: TComponent;
 begin
   if ClassType=what.ClassType then begin
-    t:=what as TAbstractTreeCommand;
     //нынче команды очень сложные пошли, завязанные на документ
     //выдернуть их из документа - не поймут, что происходит
     //придется действовать аккуратно...
@@ -353,8 +353,8 @@ begin
     t.ActiveBranch:=ActiveBranch;
     t.TurnLeft:=TurnLeft;
     if t is THashedCommand then begin
-      buHash:=THashedCommand(t).fHash;
-      THashedCommand(t).fHash:=(self as THashedCommand).fHash;
+      buHash:=HashedT.fHash;
+      HashedT.fHash:=(self as THashedCommand).fHash;
     end;
 
     bin2:=TMemoryStream.Create;
@@ -379,7 +379,7 @@ begin
     if Assigned(ComponentWithSameName) then
       ComponentWithSameName.Name:=tmpName;
     if t is THashedCommand then
-      THashedCommand(t).fHash:=buHash;
+      HashedT.fHash:=buHash;
   end
   else Result:=false;
 end;

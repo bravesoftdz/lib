@@ -126,10 +126,9 @@ begin
 end;
 
 procedure TVector.Assign(source: TPersistent);
-var t: TVector;
+var t: TVector absolute source;
 begin
   if source is TVector then begin
-    t:=source as TVector;
     x:=t.x;
     y:=t.y;
     z:=t.z;

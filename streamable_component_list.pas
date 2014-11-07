@@ -221,7 +221,7 @@ begin
 end;
 
 procedure TStreamableComponentList.Assign(source: TPersistent);
-var f: TStreamableComponentList;
+var f: TStreamableComponentList absolute source;
     cl: TStreamingClassClass;
     i: Integer;
     comp: TComponent;
@@ -229,7 +229,6 @@ begin
   if source is TStreamableComponentList then begin
   //если "наш" лист держит компоненты внутри себя, то сделает копию компонентов,
   //иначе просто сошлется на те же самые компоненты
-    f:=source as TStreamableComponentList;
     fList.Assign(f.fList);
     fResolved:=f.fResolved;
     fOwnsObjects:=f.fOwnsObjects; //иначе не будет работать Clone как надо
