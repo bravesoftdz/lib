@@ -4,6 +4,7 @@ interface
 uses math,graphics,windows;
 
 type
+
 RGBColor=record
     R: byte;
     G: byte;
@@ -11,16 +12,25 @@ RGBColor=record
     pad: byte;
 end;
 
+PRGBScanline = ^TRGBScanline;
+TRGBScanline=array [0..32767] of RGBColor;
+
+PColorScanline = ^TColorScanline;
+TColorScanline=array [0..32767] of TColor;
+
 function Real_from_monochrome (c: TColor): Real;
 function monochrome_from_Real (x: Real): TColor;
 function gamma(x: Real): Integer;
-function inverse_gamma(x: Integer): Real;
+//function inverse_gamma(x: Integer): Real;
 
 function ColorFromReals(R,G,B: Real): TColor;
+
+var inverseGammaTable: Array [0..255] of Real;
 
 implementation
 
 var gamma_table: Array [0..3333] of Integer;
+
 //для преобр. числа от 0 до 1 (1 - макс интенсивность) в целое от 0 до 255 - яркость пиксела
 function gamma(x: Real): Integer;
 begin
@@ -50,12 +60,12 @@ begin
 end;
 
 
-function inverse_gamma(x: Integer): Real;
+function honest_inverse_gamma(x: Integer): Real;
 begin
   assert(x>=0);
   assert(x<=255);
-  if x<11 then inverse_gamma:=x*0.000302341
-    else inverse_gamma:=power((x/256+0.055)/1.055,2.4);
+  if x<11 then Result:=x*0.000302341
+    else Result:=power((x/256+0.055)/1.055,2.4);
 end;
 
 function monochrome_from_Real (x:Real): TColor;
@@ -69,7 +79,7 @@ function real_from_monochrome (c: TColor): Real;
 var i: Integer;
 begin
   i:=RGBColor(c).G;
-  result:=inverse_gamma(i);
+  result:=InverseGammaTable[i];
 end;
 
 function ColorFromReals(R,G,B: Real): TColor;
@@ -85,6 +95,8 @@ var i: Integer;
 begin
   for i:=0 to 3333 do
     gamma_table[i]:=honest_gamma(i*0.0003);
+  for i:=0 to 255 do
+    InverseGammaTable[i]:=honest_inverse_gamma(i);
 end;
 
 initialization
