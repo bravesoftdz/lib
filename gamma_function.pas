@@ -6,10 +6,12 @@ uses math,graphics,windows;
 type
 
 RGBColor=record
-    R: byte;
-    G: byte;
-    B: byte;
-    pad: byte;
+  case Integer of
+  0: (pad: byte;
+      B: byte;
+      G: byte;
+      R: byte);
+  1: (Color: TColor);
 end;
 
 PRGBScanline = ^TRGBScanline;

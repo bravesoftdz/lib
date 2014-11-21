@@ -8,6 +8,21 @@ type
 
 TSLEQStatus = (slOneSolution,slNoSolution,slManySolutions);
 
+TVariableForEq=record
+  reference: Pointer;
+  coeff: Variant; //могут быть комплексные числа
+end;
+
+TVariableForEqArray=array of TVariableForEq;
+
+IKirhgofSLEQ=interface
+  procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
+  procedure SetTolerance(value: real);
+  function GetVariable(p: Pointer): Variant;
+  function GetStatus: TSLEQStatus;
+  procedure Solve;
+end;
+
 IAbstractSLEQ=interface
   procedure SetDimensions(NumOfVars,NumOfEqs: Integer);
   procedure SetMatrix(i,j: Integer; value: Real);
@@ -92,6 +107,20 @@ TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
 //    property Matrix[i,j: Integer]: Real read GetMatrix write SetMatrix;
 end;
 
+TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
+  private
+    fSolver: TSimpleGaussLEQ;
+    fList: TList;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
+    procedure SetTolerance(value: real);
+    function GetVariable(p: Pointer): Variant;
+    function GetStatus: TSLEQStatus;
+    procedure Solve;
+  end;
+
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
 
 implementation
@@ -111,10 +140,16 @@ begin
   SetLength(findexes,NumOfVars);
   SetLength(fvariables,NumOfVars);
   SetLength(fVariableNames,NumOfVars);
+  if NumOfVars>fNumOfVars then
+    for i:=0 to NumOfEqs-1 do begin
+      fmatrix[NumOfVars,i]:=fmatrix[fNumOfVars,i];
+      fmatrix[fNumOfVars,i]:=0;
+    end;
   fNumOfVars:=NumOfVars;
   fNumOfEqs:=NumOfEqs;
   for i:=0 to fNumOfVars-1 do
     findexes[i]:=i;
+
 end;
 
 procedure TSimpleGaussLEQ.SetMatrix(i,j: Integer; value: Real);
@@ -167,9 +202,9 @@ begin
     for i:=j to fNumOfVars-1 do
       for k:=j to fNumOfEqs-1 do
         if abs(fmatrix[i,k])>max_elem then begin
-        max_elem:=abs(fmatrix[j,i]);
-        row_num:=k;
-        col_num:=i;
+          max_elem:=abs(fmatrix[i,k]);
+          row_num:=k;
+          col_num:=i;
         end;
     if max_elem<=ftolerance then begin  //сплошь одни нули, не можем новый диаг. элем найти
       for i:=j to fNumOfEqs-1 do
@@ -478,6 +513,59 @@ begin
   V.VType:=varEmpty;
   TManySolutionsVarData(V).Ref.free;
 end;
+
+(*
+    TSimpleGaussLEQForKirhgof
+                                  *)
+constructor TSimpleGaussLEQForKirhgof.Create;
+begin
+  inherited Create;
+  fSolver:=TSimpleGaussLEQ.Create;
+  fList:=TList.Create;
+end;
+
+destructor TSimpleGaussLEQForKirhgof.Destroy;
+begin
+  fList.Free;
+  fSolver.Free;
+  inherited Destroy;
+end;
+
+procedure TSimpleGaussLEQForKirhgof.Solve;
+begin
+  fSolver.Solve;
+end;
+
+procedure TSimpleGaussLEQForKirhgof.SetTolerance(value: Real);
+begin
+  fSolver.SetTolerance(value);
+end;
+
+procedure TSimpleGaussLEQForKirhgof.AddEquation(vars: TVariableForEqArray; equals: Variant);
+var i,j: Integer;
+begin
+  fSolver.SetDimensions(fSolver.fNumOfVars,fSolver.fNumOfEqs+1);
+  for i:=0 to Length(vars)-1 do begin
+    j:=fList.IndexOf(vars[i].reference);
+    if j=-1 then begin
+      j:=fList.Add(vars[i].reference);
+      fSolver.SetDimensions(fSolver.fNumOfVars+1,fSolver.fNumOfEqs);
+    end;
+    fSolver.SetMatrix(j,fSolver.fNumOfEqs-1,vars[i].coeff);
+  end;
+  fSolver.SetMatrix(fSolver.fNumOfVars,fSolver.fNumOfEqs-1,equals);
+end;
+
+function TSimpleGaussLEQForKirhgof.GetVariable(p: Pointer): Variant;
+begin
+  Result:=fSolver.GetVariable(fList.IndexOf(p));
+end;
+
+function TSimpleGaussLEQForKirhgof.GetStatus: TSLEQStatus;
+begin
+  Result:=fSolver.GetStatus;
+end;
+
 
 (*
     Фабрики рабочим!

@@ -7,25 +7,27 @@ type
 
 T1Dstats=class(TPersistent)
   private
-    _max,_min,_sum,_sum_squares :Real;
+    _max,_min,_sum,_sum_squares :Extended;
     _count: Integer;
-    function get_std_dev: Real;
-    function get_ave: Real;
+    function get_std_dev: Extended;
+    function get_ave: Extended;
+    function getRMS: Extended;
   public
     constructor Create;
 
     procedure Clear;
-    procedure Add(value: Real);
+    procedure Add(value: Extended);
 
     procedure Append(values: T1Dstats);
   published
-    property sum: Real read _sum;
-    property sum_squares: Real read _sum_squares;
+    property sum: Extended read _sum;
+    property sum_squares: Extended read _sum_squares;
+    property rms: Extended read getRMS;
     property count: Integer read _count;
-    property std_dev: Real read get_std_dev;
-    property ave: Real read get_ave;
-    property max: Real read _max;
-    property min: Real read _min;
+    property std_dev: Extended read get_std_dev;
+    property ave: Extended read get_ave;
+    property max: Extended read _max;
+    property min: Extended read _min;
   end;
 
 TDiscretePick=class
@@ -138,7 +140,7 @@ begin
   _min:=1.0/0.0;
 end;
 
-procedure T1Dstats.Add(value: Real);
+procedure T1Dstats.Add(value: Extended);
 begin
   _sum:=_sum+value;
   _sum_squares:=_sum_squares+value*value;
@@ -156,15 +158,20 @@ begin
   if values._max>_max then _max:=values._max;
 end;
 
-function T1Dstats.get_ave: Real;
+function T1Dstats.get_ave: Extended;
 begin
   if _count=0 then Raise Exception.Create('T1Dstas.ave: empty list');
   Result:=_sum/_count;
 end;
 
-function T1Dstats.get_std_dev: Real;
+function T1Dstats.get_std_dev: Extended;
 begin
   result:=sqrt(_sum_squares/_count-get_ave*get_ave);
+end;
+
+function T1Dstats.getRMS: Extended;
+begin
+  result:=sqrt(_sum_squares/_count);
 end;
 
 (*
