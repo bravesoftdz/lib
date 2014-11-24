@@ -5,29 +5,58 @@ uses classes;
 
 type
 
-T1Dstats=class(TPersistent)
+T1DstatsOld=class(TPersistent)
   private
-    _max,_min,_sum,_sum_squares :Extended;
+    _max,_min,_sum,_sum_squares :Real;
     _count: Integer;
-    function get_std_dev: Extended;
-    function get_ave: Extended;
-    function getRMS: Extended;
+    function get_std_dev: Real;
+    function get_sample_std_dev: Real;
+    function get_ave: Real;
+    function getRMS: Real;
   public
     constructor Create;
 
     procedure Clear;
-    procedure Add(value: Extended);
+    procedure Add(value: Real);
 
-    procedure Append(values: T1Dstats);
+    procedure Append(values: T1DstatsOld);
   published
-    property sum: Extended read _sum;
-    property sum_squares: Extended read _sum_squares;
-    property rms: Extended read getRMS;
+    property sum: Real read _sum;
+    property sum_squares: Real read _sum_squares;
+    property rms: Real read getRMS;
     property count: Integer read _count;
-    property std_dev: Extended read get_std_dev;
-    property ave: Extended read get_ave;
-    property max: Extended read _max;
-    property min: Extended read _min;
+    property std_dev: Real read get_std_dev;
+    property sample_std_dev: Real read get_sample_std_dev;
+    property ave: Real read get_ave;
+    property max: Real read _max;
+    property min: real read _min;
+  end;
+
+T1Dstats=class(TPersistent)
+  private
+    fmax,fmin,fsum,fSumSquares,fSumDiff: Real;
+    fcount: Integer;
+    function get_ave: Real;
+    function getRMS: Real;
+    function get_std_dev: Real;
+    function get_sample_std_dev: Real;
+  public
+    constructor Create;
+
+    procedure Clear;
+    procedure Add(value: Real);
+
+    procedure Append(values: T1DStats);
+  published
+    property sum: Real read fsum;
+    property sum_squares: Real read fSumSquares;
+    property rms: Real read getRMS;
+    property count: Integer read fcount;
+    property std_dev: Real read get_Std_Dev;
+    property sample_std_dev: Real read get_sample_std_dev;
+    property ave: Real read get_ave;
+    property max: Real read fmax;
+    property min: Real read fmin;
   end;
 
 TDiscretePick=class
@@ -122,16 +151,16 @@ implementation
 uses SysUtils;
 
 (*
-      T1Dstats
+      T1DstatsOld
                       *)
 
-constructor T1Dstats.Create;
+constructor T1DstatsOld.Create;
 begin
   inherited Create;
   Clear;
 end;
 
-procedure T1Dstats.Clear;
+procedure T1DstatsOld.Clear;
 begin
   _sum:=0;
   _sum_squares:=0;
@@ -140,7 +169,7 @@ begin
   _min:=1.0/0.0;
 end;
 
-procedure T1Dstats.Add(value: Extended);
+procedure T1DstatsOld.Add(value: Real);
 begin
   _sum:=_sum+value;
   _sum_squares:=_sum_squares+value*value;
@@ -149,7 +178,7 @@ begin
   inc(_count);
 end;
 
-procedure T1Dstats.Append(values: T1Dstats);
+procedure T1DstatsOld.Append(values: T1DstatsOld);
 begin
   _count:=_count+values._count;
   _sum:=_sum+values._sum;
@@ -158,20 +187,87 @@ begin
   if values._max>_max then _max:=values._max;
 end;
 
-function T1Dstats.get_ave: Extended;
+function T1DstatsOld.get_ave: Real;
 begin
   if _count=0 then Raise Exception.Create('T1Dstas.ave: empty list');
   Result:=_sum/_count;
 end;
 
-function T1Dstats.get_std_dev: Extended;
+function T1DstatsOld.get_std_dev: Real;
 begin
   result:=sqrt(_sum_squares/_count-get_ave*get_ave);
 end;
 
-function T1Dstats.getRMS: Extended;
+function T1DStatsOld.get_sample_std_dev: Real;
+begin
+  result:=get_std_dev*sqrt(_Count/(_Count-1));
+end;
+
+function T1DstatsOld.getRMS: Real;
 begin
   result:=sqrt(_sum_squares/_count);
+end;
+
+(*
+        T1DStats
+                            *)
+constructor T1DStats.Create;
+begin
+  inherited Create;
+  Clear;
+end;
+
+procedure T1DStats.Clear;
+begin
+  fsum:=0;
+  fSumSquares:=0;
+  fSumDiff:=0;
+  fcount:=0;
+  fmax:=-1.0/0.0;
+  fmin:=1.0/0.0;
+end;
+
+procedure T1DStats.Add(value: Real);
+begin
+  //пока что get_ave возвращает среднее от занесенных чисел, т.е без value
+  if fcount=0 then fSumDiff:=0
+  else fSumDiff:=fSumDiff+fcount/(fcount+1)*Sqr(value-get_ave);
+  inc(fcount);
+  fsum:=fsum+value;
+  fSumSquares:=fSumSquares+value*value;
+  if value>fmax then fmax:=value;
+  if value<fmin then fmin:=value;
+end;
+
+procedure T1Dstats.Append(values: T1Dstats);
+begin
+  fcount:=fcount+values.fcount;
+  fsum:=fsum+values.fsum;
+  fSumSquares:=fSumSquares+values.fSumSquares;
+  if values.fmin<fmin then fmin:=values.fmin;
+  if values.fmax>fmax then fmax:=values.fmax;
+  Raise Exception.Create('T1Dstats.append: stdDev value under construction (have to do later)');
+end;
+
+function T1Dstats.get_ave: Real;
+begin
+  if fcount=0 then Raise Exception.Create('T1Dstats.ave: empty list');
+  Result:=fsum/fcount;
+end;
+
+function T1Dstats.getRMS: Real;
+begin
+  result:=sqrt(fSumSquares/fcount);
+end;
+
+function T1DStats.get_std_dev: Real;
+begin
+  result:=sqrt(fSumDiff/fcount);
+end;
+
+function T1Dstats.get_sample_std_dev: Real;
+begin
+  result:=sqrt(fSumDiff/(fcount-1));
 end;
 
 (*
