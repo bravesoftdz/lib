@@ -15,9 +15,9 @@ TstreamingClass=class(TComponent)
     function    GetChildOwner: TComponent; override;
     procedure myGetPropInfo(propPath: string; out instance: TPersistent; out fPropInfo: PPropInfo);
     function OwnedBy(Component, Owner: TComponent): Boolean;
-    function GetComponentValue(Component,LookUpRoot: TComponent): string;
   public
     saveFormat: StreamingClassSaveFormat;
+    function GetComponentValue(Component,LookUpRoot: TComponent): string;
     constructor LoadFromFile(filename: string); virtual;  //неужели до меня дошло?
     constructor LoadFromString(text: string);
     constructor Clone(source: TStreamingClass;owner: TComponent=nil);

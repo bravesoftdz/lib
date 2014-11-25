@@ -16,11 +16,14 @@ end;
 TVariableForEqArray=array of TVariableForEq;
 
 IKirhgofSLEQ=interface
+  procedure SetRootComponent(comp: TComponent);
   procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
   procedure SetTolerance(value: real);
   function GetVariable(p: Pointer): Variant;
   function GetStatus: TSLEQStatus;
   procedure Solve;
+  function GetEquationsAsString: string;
+  function GetSolutionAsString: string;
 end;
 
 IAbstractSLEQ=interface
@@ -111,14 +114,18 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
   private
     fSolver: TSimpleGaussLEQ;
     fList: TList;
+    fRootComponent: TComponent;
   public
     constructor Create;
     destructor Destroy; override;
+    procedure SetRootComponent(c: TComponent);
     procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
     procedure SetTolerance(value: real);
     function GetVariable(p: Pointer): Variant;
     function GetStatus: TSLEQStatus;
     procedure Solve;
+    function GetEquationsAsString: string;
+    function GetSolutionAsString: string;
   end;
 
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
@@ -285,6 +292,7 @@ begin
   for j:=fNumOfEqs to fNumOfVars-1 do begin
     val:=TManySolutionsDataType.Create;
     SetLength(val.Vars,fNumOfVars-fNumOfEqs);
+    SetLength(val.VarNames,fNumOfVars-fNumOfEqs);
     val.Vars[j-fNumOfEqs]:=1;
     for i:=fNumOfEqs to fNumOfVars-1 do
       if fvariableNames[i]<>'' then val.VarNames[i-fNumOfEqs]:=fvariableNames[i];
@@ -331,6 +339,7 @@ begin
     else
       Result:=Result+varNames[i];
   end;
+  if Result='' then Result:='0';
 end;
 
 function TManySolutionsDataType.IsPlainNumber: Boolean;
@@ -544,12 +553,27 @@ end;
 procedure TSimpleGaussLEQForKirhgof.AddEquation(vars: TVariableForEqArray; equals: Variant);
 var i,j: Integer;
 begin
+  if Length(vars)=0 then begin
+    if abs(equals)>fsolver.ftolerance then
+      //0=1 - сразу нет решений
+      Raise Exception.Create('AddEquation: 0=1 type adding, it''s absurd')
+    else
+      //0=0 - игнорируем
+      Exit;
+  end;
   fSolver.SetDimensions(fSolver.fNumOfVars,fSolver.fNumOfEqs+1);
   for i:=0 to Length(vars)-1 do begin
     j:=fList.IndexOf(vars[i].reference);
     if j=-1 then begin
       j:=fList.Add(vars[i].reference);
       fSolver.SetDimensions(fSolver.fNumOfVars+1,fSolver.fNumOfEqs);
+      if TComponent(vars[i].reference).Name<>'' then
+        if TComponent(vars[i].reference) is TStreamingClass then
+          fSolver.fVariableNames[j]:=TStreamingClass(vars[i].reference).GetComponentValue(TComponent(vars[i].reference),fRootComponent)
+        else
+          fSolver.fVariableNames[j]:=TComponent(vars[i].reference).Name
+      else
+        fSolver.fVariableNames[j]:='x'+IntToStr(j);
     end;
     fSolver.SetMatrix(j,fSolver.fNumOfEqs-1,vars[i].coeff);
   end;
@@ -566,6 +590,56 @@ begin
   Result:=fSolver.GetStatus;
 end;
 
+function TSimpleGaussLEQForKirhgof.GetEquationsAsString: string;
+var i,j: Integer;
+    notfirst: boolean;
+begin
+  Result:='';
+  for j:=0 to fsolver.fNumOfEqs-1 do begin
+    notfirst:=false;
+    for i:=0 to fsolver.fNumOfVars-1 do
+      if abs(fsolver.GetMatrix(i,j))>fsolver.ftolerance then begin
+        if (fsolver.GetMatrix(i,j)>0) and notfirst then
+          Result:=Result+'+'
+        else if fsolver.GetMatrix(i,j)<0 then
+          Result:=Result+'-';
+        notfirst:=true;
+        Result:=Result+fsolver.GetVariableName(i);
+        if abs(abs(fsolver.GetMatrix(i,j))-1)>fsolver.ftolerance then
+          Result:=Result+'*'+FloatToStr(abs(fsolver.GetMatrix(i,j)));
+      end;
+    Result:=Result+'='+FloatToStr(fsolver.GetMatrix(fsolver.fNumOfVars,j))+';'+#13#10;
+  end;
+end;
+
+function TSimpleGaussLEQForKirhgof.GetSolutionAsString: string;
+var i: Integer;
+    s: string;
+begin
+  if fsolver.GetStatus=slNoSolution then
+    result:='No solution'
+  else begin
+  (*
+    Result:='(';
+    for i:=0 to fsolver.fNumOfVars-1 do begin
+      s:=fsolver.GetVariable(i);
+      Result:=Result+s;
+      if i<fsolver.fNumOfVars-1 then Result:=Result+';';
+    end;
+    Result:=Result+')';
+    *)
+    for i:=0 to fsolver.fNumOfVars-1 do begin
+      s:=fsolver.GetVariable(i);
+      Result:=Result+fsolver.GetVariableName(i)+'='+s;
+      if i<fsolver.fNumOfVars-1 then Result:=Result+#13#10;
+    end;
+  end;
+end;
+
+procedure TSimpleGaussLEQForKirhgof.SetRootComponent(c: TComponent);
+begin
+  fRootComponent:=c;
+end;
 
 (*
     ‘абрики рабочим!
