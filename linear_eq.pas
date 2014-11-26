@@ -87,6 +87,7 @@ TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
   private
     fmatrix: array of array of Real;
     fIndexes: array of Integer;
+    fInvIndexes: array of Integer;
     fVariables: array of Variant;
     fVariableNames: array of string;
     fNumOfVars,fNumOfEqs: Integer;
@@ -145,6 +146,7 @@ var i: Integer;
 begin
   SetLength(fmatrix,NumOfVars+1,NumOfEqs);
   SetLength(findexes,NumOfVars);
+  SetLength(fInvIndexes,NumOfVars);
   SetLength(fvariables,NumOfVars);
   SetLength(fVariableNames,NumOfVars);
   if NumOfVars>fNumOfVars then
@@ -154,8 +156,10 @@ begin
     end;
   fNumOfVars:=NumOfVars;
   fNumOfEqs:=NumOfEqs;
-  for i:=0 to fNumOfVars-1 do
+  for i:=0 to fNumOfVars-1 do begin
     findexes[i]:=i;
+    fInvIndexes[i]:=i;
+  end;
 
 end;
 
@@ -266,7 +270,8 @@ procedure TSimpleGaussLEQ.SwitchCols(col1,col2: Integer);
 var i: Integer;
 begin
   if col1<>col2 then begin
-    SwapIntegers(findexes[col1],findexes[col2]);
+    SwapIntegers(fInvIndexes[col1],fInvIndexes[col2]);
+    SwapIntegers(findexes[fInvIndexes[col1]],findexes[fInvIndexes[col2]]);
     for i:=0 to fNumOfEqs-1 do
       SwapFloats(fmatrix[col1,i],fmatrix[col2,i]);
   end;
