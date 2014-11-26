@@ -8,8 +8,15 @@ type
 
 TSLEQStatus = (slOneSolution,slNoSolution,slManySolutions);
 
+IEquationNode=interface //отобразить красиво свое значение, чтоб не заморачивать
+//интерфейс решения лин. уравнений
+  function ShowNodeName: string;
+  procedure SetValue(value: Variant);
+  function ShowValue(value: Variant): string;
+end;
+
 TVariableForEq=record
-  reference: Pointer;
+  reference: IEquationNode;
   coeff: Variant; //могут быть комплексные числа
 end;
 
@@ -19,7 +26,7 @@ IKirhgofSLEQ=interface
   procedure SetRootComponent(comp: TComponent);
   procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
   procedure SetTolerance(value: real);
-  function GetVariable(p: Pointer): Variant;
+  function GetVariable(p: IEquationNode): Variant;
   function GetStatus: TSLEQStatus;
   procedure Solve;
   function GetEquationsAsString: string;
@@ -114,7 +121,7 @@ end;
 TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
   private
     fSolver: TSimpleGaussLEQ;
-    fList: TList;
+    fList: TInterfaceList;
     fRootComponent: TComponent;
   public
     constructor Create;
@@ -122,7 +129,7 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
     procedure SetRootComponent(c: TComponent);
     procedure AddEquation(vars: TVariableForEqArray; equals: Variant);
     procedure SetTolerance(value: real);
-    function GetVariable(p: Pointer): Variant;
+    function GetVariable(p: IEquationNode): Variant;
     function GetStatus: TSLEQStatus;
     procedure Solve;
     function GetEquationsAsString: string;
@@ -535,7 +542,7 @@ constructor TSimpleGaussLEQForKirhgof.Create;
 begin
   inherited Create;
   fSolver:=TSimpleGaussLEQ.Create;
-  fList:=TList.Create;
+  fList:=TInterfaceList.Create;
 end;
 
 destructor TSimpleGaussLEQForKirhgof.Destroy;
@@ -546,8 +553,11 @@ begin
 end;
 
 procedure TSimpleGaussLEQForKirhgof.Solve;
+var i: Integer;
 begin
   fSolver.Solve;
+  for i:=0 to flist.Count-1 do
+    IEquationNode(flist[i]).SetValue(fSolver.GetVariable(i));
 end;
 
 procedure TSimpleGaussLEQForKirhgof.SetTolerance(value: Real);
@@ -572,20 +582,14 @@ begin
     if j=-1 then begin
       j:=fList.Add(vars[i].reference);
       fSolver.SetDimensions(fSolver.fNumOfVars+1,fSolver.fNumOfEqs);
-      if TComponent(vars[i].reference).Name<>'' then
-        if TComponent(vars[i].reference) is TStreamingClass then
-          fSolver.fVariableNames[j]:=TStreamingClass(vars[i].reference).GetComponentValue(TComponent(vars[i].reference),fRootComponent)
-        else
-          fSolver.fVariableNames[j]:=TComponent(vars[i].reference).Name
-      else
-        fSolver.fVariableNames[j]:='x'+IntToStr(j);
+      fSolver.fVariableNames[j]:=vars[i].reference.ShowNodeName;
     end;
     fSolver.SetMatrix(j,fSolver.fNumOfEqs-1,vars[i].coeff);
   end;
   fSolver.SetMatrix(fSolver.fNumOfVars,fSolver.fNumOfEqs-1,equals);
 end;
 
-function TSimpleGaussLEQForKirhgof.GetVariable(p: Pointer): Variant;
+function TSimpleGaussLEQForKirhgof.GetVariable(p: IEquationNode): Variant;
 begin
   Result:=fSolver.GetVariable(fList.IndexOf(p));
 end;
@@ -633,9 +637,10 @@ begin
     end;
     Result:=Result+')';
     *)
+    Result:='';
     for i:=0 to fsolver.fNumOfVars-1 do begin
       s:=fsolver.GetVariable(i);
-      Result:=Result+fsolver.GetVariableName(i)+'='+s;
+      Result:=Result+IEquationNode(flist[i]).ShowValue(fsolver.GetVariable(i));
       if i<fsolver.fNumOfVars-1 then Result:=Result+#13#10;
     end;
   end;

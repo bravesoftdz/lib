@@ -24,6 +24,7 @@ TstreamingClass=class(TComponent)
     //конструктор это конечно хорошо, однако нужно знать, какой класс имеет созд. объект
     //опробуем классовые функции
     class function LoadComponentFromString(text: string): TComponent;
+    class function LoadComponentFromFile(FileName: string): TComponent;
     procedure Clear; virtual;
     //будет вызываться перед Assign, чтобы инициализировать объект нач. значениями
     procedure SaveToFile(filename: string);
@@ -326,6 +327,33 @@ begin
   Result:=BinStream.ReadComponent(nil);
   BinStream.Free;
   StrStream.Free;
+end;
+
+class function TStreamingClass.LoadComponentFromFile(FileName: string): TComponent;
+var
+  FileStream: TFileStream;
+  BinStream: TMemoryStream;
+  s: array [0..5] of char;
+begin
+  FileStream := TFileStream.Create(filename, fmOpenRead	);
+  try
+    FileStream.Read(s,6);
+    FileStream.Seek(0,soFromBeginning);
+    if uppercase(s)='OBJECT' then begin
+      BinStream := TMemoryStream.Create;
+      try
+        ObjectTextToBinary(FileStream, BinStream);
+        BinStream.Seek(0, soFromBeginning);
+        Result:=BinStream.ReadComponent(nil);
+      finally
+        BinStream.Free;
+      end;
+    end
+    else
+      Result:=FileStream.ReadComponent(nil);
+  finally
+    FileStream.Free;
+  end;
 end;
 
 function TstreamingClass.CreateFromString(text: string): TComponent;
