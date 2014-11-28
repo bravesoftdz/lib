@@ -4,11 +4,12 @@ interface
 
 uses ConvUtils;
 
-var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate: TConvFamily;
+var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
     iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
     vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
+    powWatt,powkW,powmW,powuW,powMegaW: TConvType;
 implementation
 
 uses classes;
@@ -49,7 +50,7 @@ begin
   vuMegaV:=RegisterConversionType(cbVoltage,'Megavolts',1e6);
   vumV:=RegisterConversionType(cbVoltage,'mV',1e-3);
   vuuV:=RegisterConversionType(cbVoltage,'uV',1e-6);
-  
+
   cbCurrent:=RegisterConversionFamily('Current');
   iuAmps:=RegisterConversionType(cbCurrent,'A',1);
   iukA:=RegisterConversionType(cbCurrent,'kA',1000);
@@ -71,6 +72,13 @@ begin
   vcuLPerSec:=RegisterConversionType(cbVolumetricFlowRate,'L/sec',1e-3);
   vcuLPerMin:=RegisterConversionType(cbVolumetricFlowRate,'L/min',60e-3);
   vcuLPerH:=RegisterConversionType(cbVolumetricFlowRate,'L/h',3600e-3);
+
+  cbPower:=RegisterConversionFamily('Power');
+  powWatt:=RegisterConversionType(cbPower,'W',1);
+  powmW:=RegisterConversionType(cbPower,'mW',1e-3);
+  powuW:=RegisterConversionType(cbPower,'uW',1e-6);
+  powkW:=RegisterConversionType(cbPower,'kW',1000);
+  powMegaW:=RegisterConversionType(cbPower,'Megawatt',1e6);
 end;
 
 
