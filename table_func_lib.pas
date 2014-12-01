@@ -81,6 +81,7 @@ type
       protected
 
     procedure DefineProperties(Filer: TFiler); override;
+    function IsNonZeroTolerance: boolean;
 
       public
     X,Y: array of Real;
@@ -100,6 +101,8 @@ type
     constructor Create(owner: TComponent); overload; override;
     constructor Create; reintroduce; overload;
     constructor Create(filename: string); reintroduce; overload;
+
+    function GetInverse: table_func;  //на свой страх и риск!
     procedure draw;
     procedure Add(c: Real); overload;
     procedure Add(term: table_func); overload;
@@ -134,7 +137,7 @@ type
     property zero_out_of_bounds: boolean read _oub write _oub default true; //поведение за границами обл. опред
     property Cyclic: boolean read fCyclic write fCyclic default false;
     property count: Integer read _length stored false;
-    property Tolerance: Real read fTolerance write fTolerance;
+    property Tolerance: Real read fTolerance write fTolerance stored IsNonZeroTolerance;
 //    property LineColor: TColor read fLineColor write fLineColor default clBlack;
 
     end;
@@ -207,6 +210,11 @@ begin
   Reader.ReadListEnd;
   p.Free;
   changed:=true;
+end;
+
+function table_func.IsNonZeroTolerance: Boolean;
+begin
+  Result:=(fTolerance<>0);
 end;
 
 procedure table_func.plus_one;
@@ -981,7 +989,6 @@ begin
     changed:=true; //значит, потом пройдет интерполяция кубическими сплайнами
   end;
 
-
 end;
 
 procedure Table_func.Add(c: Real);
@@ -1143,6 +1150,16 @@ begin
     for i:=0 to clen do c[i]:=(c[i]-cur_val*cos(alpha*(i+1))/2)*scale;
     for i:=0 to slen do s[i]:=(s[i]-cur_val*sin(alpha*(i+1))/2)*scale;
   end;
+end;
+
+function table_func.GetInverse: table_func;
+var i: Integer;
+begin
+  Result:=table_func.Create;
+  Result.zero_out_of_bounds:=zero_out_of_bounds;
+  Result.order:=order;
+  for i:=0 to count-1 do
+    Result.addpoint(Y[i],X[i]);
 end;
 
 
