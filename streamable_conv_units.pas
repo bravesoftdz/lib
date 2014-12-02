@@ -2,7 +2,23 @@ unit streamable_conv_units;
 
 interface
 
-uses ConvUtils;
+uses classes,ConvUtils,streaming_class_lib;
+
+type
+  TPreferredUnits=class(TStreamingClass)
+  //содержит в себе пары (семейство;предпочитаемая величина)
+  private
+    fFamily: array of TConvFamily;
+    fUnit: array of TConvType;
+    procedure WriteData(Writer: TWriter);
+    procedure ReadData(Reader: TReader);
+  protected
+    procedure DefineProperties(Filer: TFiler); override;
+  public
+    procedure Add(aFamily: TConvFamily; aUnit: TConvType);
+    function ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
+end;
+
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
@@ -10,9 +26,10 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower: TConvFamily
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
     vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
     powWatt,powkW,powmW,powuW,powMegaW: TConvType;
+    PreferredUnits: TPreferredUnits;
 implementation
 
-uses classes;
+uses SysUtils,stdConvs;
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 var id: string;
@@ -67,11 +84,11 @@ begin
 
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
   vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
-  vcuM3PerMin:=RegisterConversionType(cbVolumetricFlowRate,'m3/min',60);
-  vcuM3PerH:=RegisterConversionType(cbVolumetricFlowRate,'m3/h',3600);
+  vcuM3PerMin:=RegisterConversionType(cbVolumetricFlowRate,'m3/min',1/60);
+  vcuM3PerH:=RegisterConversionType(cbVolumetricFlowRate,'m3/h',1/3600);
   vcuLPerSec:=RegisterConversionType(cbVolumetricFlowRate,'L/sec',1e-3);
-  vcuLPerMin:=RegisterConversionType(cbVolumetricFlowRate,'L/min',60e-3);
-  vcuLPerH:=RegisterConversionType(cbVolumetricFlowRate,'L/h',3600e-3);
+  vcuLPerMin:=RegisterConversionType(cbVolumetricFlowRate,'L/min',1e-3/60);
+  vcuLPerH:=RegisterConversionType(cbVolumetricFlowRate,'L/h',1e-3/3600);
 
   cbPower:=RegisterConversionFamily('Power');
   powWatt:=RegisterConversionType(cbPower,'W',1);
@@ -81,11 +98,86 @@ begin
   powMegaW:=RegisterConversionType(cbPower,'Megawatt',1e6);
 end;
 
+(*
+    TPreferredUnits
+                        *)
+procedure TPreferredUnits.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineProperty('data',ReadData,WriteData,Length(fFamily)>0);
+end;
+
+procedure TPreferredUnits.WriteData(Writer: TWriter);
+var i: Integer;
+    sFamily,sUnit: string;
+begin
+  Writer.WriteListBegin;
+  for i:=0 to Length(fFamily)-1 do
+    if FamilyToName(fFamily[i],sFamily) and ConvToName(fUnit[i],sUnit) then begin
+      Writer.WriteString(sFamily);
+      Writer.WriteString(sUnit);
+    end;
+  Writer.WriteListEnd;
+end;
+
+procedure TPreferredUnits.Add(aFamily: TConvFamily; aUnit: TConvType);
+begin
+  SetLength(fFamily,Length(fFamily)+1);
+  fFamily[Length(fFamily)-1]:=aFamily;
+  SetLength(fUnit,Length(fUnit)+1);
+  fUnit[Length(fUnit)-1]:=aUnit;
+end;
+
+procedure TPreferredUnits.ReadData(Reader: TReader);
+var sFamily,sUnit: string;
+    aFamily: TConvFamily;
+    aFamInt: Integer absolute aFamily;
+    aUnit: TConvType;
+begin
+  Reader.ReadListBegin;
+  While not Reader.EndOfList do begin
+    sFamily:=Reader.ReadString;
+    sUnit:=Reader.ReadString;
+    if NameToFamily(sFamily,aFamInt) and DescriptionToConvType(aFamily,sUnit,aUnit) then
+      Add(aFamily,aUnit);
+  end;
+  Reader.ReadListEnd;
+end;
+
+function TPreferredUnits.ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
+var i: Integer;
+    uValue: Real;
+    fname: string;
+begin
+  for i:=0 to Length(fFamily)-1 do
+    if aFamily=fFamily[i] then begin
+      uValue:=ConvertTo(value,fUnit[i]);
+      Result:=ConvUnitToStr(uValue,fUnit[i]);
+      Exit;
+    end;
+  FamilyToName(aFamily,fname);
+  Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
+end;
 
 
 initialization
   NewConvFamilies;
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
+  RegisterClass(TPreferredUnits);
+(*
+  PreferredUnits:=TPreferredUnits.Create(nil);
+  PreferredUnits.Add(cbVoltage,vuVolts);
+  PreferredUnits.Add(cbCurrent,iuAmps);
+  PreferredUnits.Add(cbPressure,puBar);
+  PreferredUnits.Add(cbVolumetricFlowRate,vcuLPerMin);
+  PreferredUnits.Add(cbTemperature,tuCelsius);
+  PreferredUnits.Add(cbPower,powkW);
+  PreferredUnits.saveFormat:=fCyr;
+  PreferredUnits.SaveToFile('PreferredUnits.txt');
+*)
+  PreferredUnits:=TPreferredUnits.LoadFromFile('PreferredUnits.txt');
+
+finalization
+  FreeAndNil(PreferredUnits);
 
 end.
