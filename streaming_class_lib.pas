@@ -54,6 +54,7 @@ TStreamingClassClass=class of TStreamingClass;
 
 procedure SwapIntegers(var i1,i2: Integer);
 procedure SwapFloats(var f1,f2: Real);
+procedure SwapVariants(var v1,v2: Variant);
 
 implementation
 
@@ -72,6 +73,13 @@ var t: Real;
 begin
   t:=f1; f1:=f2; f2:=t;
 end;
+
+procedure SwapVariants(var v1,v2: Variant);
+var t: Variant;
+begin
+  t:=v1; v1:=v2; v2:=t;
+end;
+
 
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;

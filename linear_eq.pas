@@ -35,15 +35,15 @@ end;
 
 IAbstractSLEQ=interface
   procedure SetDimensions(NumOfVars,NumOfEqs: Integer);
-  procedure SetMatrix(i,j: Integer; value: Real);
+  procedure SetMatrix(i,j: Integer; value: Variant);
   procedure SetTolerance(value: real);
-  function GetMatrix(i,j: Integer): Real;
+  function GetMatrix(i,j: Integer): Variant;
   function GetVariable(i: Integer): Variant;
   procedure SetVariableName(i: Integer; value: string);
   function GetVariableName(i: Integer): string;
   function GetStatus: TSLEQStatus;
   procedure Solve;
-  property Matrix[i,j: Integer]: Real read GetMatrix write SetMatrix;
+  property Matrix[i,j: Integer]: Variant read GetMatrix write SetMatrix;
   property VariableName[i: Integer]: string read GetVariableName write SetVariableName;
 end;
 
@@ -92,7 +92,7 @@ end;
 
 TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
   private
-    fmatrix: array of array of Real;
+    fmatrix: array of array of Variant;
     fIndexes: array of Integer;
     fInvIndexes: array of Integer;
     fVariables: array of Variant;
@@ -107,9 +107,9 @@ TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
     procedure SolveManySolutions;
   public
     procedure SetDimensions(NumOfVars,NumOfEqs: Integer);
-    procedure SetMatrix(i,j: Integer; value: Real);
+    procedure SetMatrix(i,j: Integer; value: Variant);
     procedure SetTolerance(value: real);
-    function GetMatrix(i,j: Integer): Real;
+    function GetMatrix(i,j: Integer): Variant;
     function GetVariable(i: Integer): Variant;
     function GetStatus: TSLEQStatus;
     procedure SetVariableName(i: Integer; value: string);
@@ -138,18 +138,19 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
 
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
 
+function GetLengthSquared(value: Variant): Real;
+
 implementation
 
-uses streaming_class_lib,sysUtils; //ради SwapFloats
+uses streaming_class_lib,sysUtils,varCmplx; //ради SwapFloats
 
 var ManySolutionsVariantType: TManySolutionsVariantType;
 
 (*
       TSimpleGaussLEQ
                               *)
-
 procedure TSimpleGaussLEQ.SetDimensions(NumOfVars,NumOfEqs: Integer);
-var i: Integer;
+var i,j: Integer;
 begin
   SetLength(fmatrix,NumOfVars+1,NumOfEqs);
   SetLength(findexes,NumOfVars);
@@ -157,10 +158,15 @@ begin
   SetLength(fvariables,NumOfVars);
   SetLength(fVariableNames,NumOfVars);
   if NumOfVars>fNumOfVars then
-    for i:=0 to NumOfEqs-1 do begin
+    for i:=0 to fNumOfEqs-1 do begin
       fmatrix[NumOfVars,i]:=fmatrix[fNumOfVars,i];
-      fmatrix[fNumOfVars,i]:=0;
-    end;
+      for j:=fNumOfVars to fNumOfVars-1 do
+        fmatrix[j,i]:=0;
+    end;  //очистили место справа от исх. матрицы
+  if NumOfEqs>fNumOfEqs then
+    for i:=0 to NumOfVars do
+      for j:=fNumOfEqs to NumOfEqs-1 do
+        fmatrix[i,j]:=0;
   fNumOfVars:=NumOfVars;
   fNumOfEqs:=NumOfEqs;
   for i:=0 to fNumOfVars-1 do begin
@@ -170,7 +176,7 @@ begin
 
 end;
 
-procedure TSimpleGaussLEQ.SetMatrix(i,j: Integer; value: Real);
+procedure TSimpleGaussLEQ.SetMatrix(i,j: Integer; value: Variant);
 begin
   fmatrix[i,j]:=value;
 end;
@@ -180,7 +186,7 @@ begin
   ftolerance:=value;
 end;
 
-function TSimpleGaussLEQ.GetMatrix(i,j: Integer): Real;
+function TSimpleGaussLEQ.GetMatrix(i,j: Integer): Variant;
 begin
   Result:=fmatrix[i,j];
 end;
@@ -209,7 +215,7 @@ procedure TSimpleGaussLEQ.Solve;
 var i,j,k: Integer;
   max_elem: Real;
   row_num,col_num: Integer;
-  ratio: Real;
+  ratio: Variant;
 begin
   //обеспечиваем нули в нижнем треугольнике
   for j:=0 to fNumOfEqs-1 do begin
@@ -219,14 +225,14 @@ begin
     col_num:=-1;
     for i:=j to fNumOfVars-1 do
       for k:=j to fNumOfEqs-1 do
-        if abs(fmatrix[i,k])>max_elem then begin
-          max_elem:=abs(fmatrix[i,k]);
+        if GetLengthSquared(fmatrix[i,k])>max_elem then begin
+          max_elem:=GetLengthSquared(fmatrix[i,k]);
           row_num:=k;
           col_num:=i;
         end;
     if max_elem<=ftolerance then begin  //сплошь одни нули, не можем новый диаг. элем найти
       for i:=j to fNumOfEqs-1 do
-        if abs(fmatrix[fNumOfVars,i])>ftolerance then begin
+        if GetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
           fstatus:=slNoSolution;  //получилось уравнение вида 0=1 - все тлен
           Exit;
         end;
@@ -237,7 +243,7 @@ begin
     SwitchCols(j,col_num);
     //элем (j,j) - лучший из лучших!
     max_elem:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
-    if abs(max_elem-1)>ftolerance then begin
+    if GetLengthSquared(max_elem-1)>ftolerance then begin
       ratio:=1/max_elem;
       fmatrix[j,j]:=1;
       for i:=j+1 to fNumOfVars do
@@ -246,7 +252,7 @@ begin
 
     //вычитаем строку из нижних, чтобы получить нули в столбце j
     for i:=j+1 to fNumOfEqs-1 do begin
-      if abs(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
+      if GetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
       ratio:=fmatrix[j,i];
       fmatrix[j,i]:=0;
       for k:=j+1 to fNumOfVars do
@@ -270,7 +276,7 @@ var i: Integer;
 begin
   if row1<>row2 then
     for i:=0 to fNumOfVars do
-      SwapFloats(fmatrix[i,row1],fmatrix[i,row2]);
+      SwapVariants(fmatrix[i,row1],fmatrix[i,row2]);
 end;
 
 procedure TSimpleGaussLEQ.SwitchCols(col1,col2: Integer);
@@ -280,7 +286,7 @@ begin
     SwapIntegers(fInvIndexes[col1],fInvIndexes[col2]);
     SwapIntegers(findexes[fInvIndexes[col1]],findexes[fInvIndexes[col2]]);
     for i:=0 to fNumOfEqs-1 do
-      SwapFloats(fmatrix[col1,i],fmatrix[col2,i]);
+      SwapVariants(fmatrix[col1,i],fmatrix[col2,i]);
   end;
 end;
 
@@ -569,7 +575,7 @@ procedure TSimpleGaussLEQForKirhgof.AddEquation(vars: TVariableForEqArray; equal
 var i,j: Integer;
 begin
   if Length(vars)=0 then begin
-    if abs(equals)>fsolver.ftolerance then
+    if GetLengthSquared(equals)>fsolver.ftolerance then
       //0=1 - сразу нет решений
       Raise Exception.Create('AddEquation: 0=1 type adding, it''s absurd')
     else
@@ -607,17 +613,19 @@ begin
   for j:=0 to fsolver.fNumOfEqs-1 do begin
     notfirst:=false;
     for i:=0 to fsolver.fNumOfVars-1 do
-      if abs(fsolver.GetMatrix(i,j))>fsolver.ftolerance then begin
-        if (fsolver.GetMatrix(i,j)>0) and notfirst then
+      if GetLengthSquared(fsolver.GetMatrix(i,j))>fsolver.ftolerance then begin
+        if (not VarIsNumeric(fsolver.GetMatrix(i,j))) or ((fsolver.GetMatrix(i,j)>0) and notfirst) then
           Result:=Result+'+'
-        else if fsolver.GetMatrix(i,j)<0 then
+        else if  VarIsNumeric(fsolver.GetMatrix(i,j)) and (fsolver.GetMatrix(i,j)<0) then
           Result:=Result+'-';
         notfirst:=true;
         Result:=Result+fsolver.GetVariableName(i);
-        if abs(abs(fsolver.GetMatrix(i,j))-1)>fsolver.ftolerance then
-          Result:=Result+'*'+FloatToStr(abs(fsolver.GetMatrix(i,j)));
+        if VarIsNumeric(fsolver.GetMatrix(i,j)) and ((abs(fsolver.GetMatrix(i,j))-1)>fsolver.ftolerance) then
+          Result:=Result+'*'+FloatToStr(abs(fsolver.GetMatrix(i,j)))
+        else if not VarIsNumeric(fsolver.GetMatrix(i,j)) then
+          Result:=Result+'*'+fsolver.GetMatrix(i,j);
       end;
-    Result:=Result+'='+FloatToStr(fsolver.GetMatrix(fsolver.fNumOfVars,j))+';'+#13#10;
+    Result:=Result+'='+VarToStr(fsolver.GetMatrix(fsolver.fNumOfVars,j))+';'+#13#10;
   end;
 end;
 
@@ -659,6 +667,16 @@ begin
   VarClear(Result);
   TManySolutionsVarData(Result).VType:=ManySolutionsVariantType.VarType;
   TManySolutionsVarData(Result).Ref:=data;
+end;
+
+function GetLengthSquared(value: Variant): Real;
+begin
+  if VarIsNumeric(value) then
+   result:=Sqr(value)
+  else if VarIsComplex(value) then
+    result:=VarComplexAbsSqr(value)
+  else
+    result:=0;
 end;
 
 initialization
