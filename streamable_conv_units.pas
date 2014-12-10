@@ -17,6 +17,7 @@ type
   public
     procedure Add(aFamily: TConvFamily; aUnit: TConvType);
     function ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
+    function ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
 end;
 
 
@@ -29,7 +30,7 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower: TConvFamily
     PreferredUnits: TPreferredUnits;
 implementation
 
-uses SysUtils,stdConvs;
+uses SysUtils,stdConvs,variants,VarCmplx;
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 var id: string;
@@ -156,6 +157,31 @@ begin
     end;
   FamilyToName(aFamily,fname);
   Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
+end;
+
+function TPreferredUnits.ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
+var i: Integer;
+    uReal,uImg: Real;
+    fname: string;
+begin
+  value:=VarComplexSimplify(value);
+  if VarIsNumeric(value) then Result:=ConvertToPreferredType(value,aFamily)
+  else begin
+//а ведь даже температура может быть комплексной, когда рассм. темп. волны
+//кроме того, возможно введение лог. величин типа dbV
+    for i:=0 to Length(fFamily)-1 do
+      if aFamily=fFamily[i] then
+        if VarIsComplex(value) then begin
+          uReal:=ConvertTo(value.Real,fUnit[i]);
+          uImg:=ConvertTo(value.Imaginary,fUnit[i]);
+          Result:=Format('%s %s',[VarComplexCreate(uReal,uImg), ConvTypeToDescription(fUnit[i])]);
+          Exit;
+        end
+        else
+          Raise Exception.Create('ConvertVariantToPreferredType: unsupported variant type');
+  FamilyToName(aFamily,fname);
+  Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
+  end;
 end;
 
 

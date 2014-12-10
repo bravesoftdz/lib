@@ -242,9 +242,9 @@ begin
     SwitchRows(j,row_num);
     SwitchCols(j,col_num);
     //элем (j,j) - лучший из лучших!
-    max_elem:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
-    if GetLengthSquared(max_elem-1)>ftolerance then begin
-      ratio:=1/max_elem;
+    ratio:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
+    if GetLengthSquared(ratio-1)>ftolerance then begin
+      ratio:=1/ratio;
       fmatrix[j,j]:=1;
       for i:=j+1 to fNumOfVars do
         fmatrix[i,j]:=fmatrix[i,j]*ratio;
