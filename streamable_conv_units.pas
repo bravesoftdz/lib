@@ -178,7 +178,7 @@ begin
           Exit;
         end
         else
-          Raise Exception.Create('ConvertVariantToPreferredType: unsupported variant type');
+          Raise Exception.CreateFMT('ConvertVariantToPreferredType: variable "%s" of unsupported variant type',[value]);
   FamilyToName(aFamily,fname);
   Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
   end;

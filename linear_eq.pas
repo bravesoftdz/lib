@@ -160,7 +160,7 @@ begin
   if NumOfVars>fNumOfVars then
     for i:=0 to fNumOfEqs-1 do begin
       fmatrix[NumOfVars,i]:=fmatrix[fNumOfVars,i];
-      for j:=fNumOfVars to fNumOfVars-1 do
+      for j:=fNumOfVars to NumOfVars-1 do
         fmatrix[j,i]:=0;
     end;  //очистили место справа от исх. матрицы
   if NumOfEqs>fNumOfEqs then
