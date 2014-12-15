@@ -99,12 +99,9 @@ TFloatExpression=class(TComponent)
     fchanged: boolean;
 //    fOnChange: TNotifyEvent;
 //    procedure SetOnChange(value: TNotifyEvent);
-    procedure ReadString(reader: TReader);
-    procedure WriteString(writer: TWriter);
     function fIsIndependent: boolean;
     function getCorrect: boolean;
   protected
-    procedure DefineProperties(Filer: TFiler); override;
     procedure MakeEvaluationTree;
     procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode);
     procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode);
@@ -126,6 +123,8 @@ TFloatExpression=class(TComponent)
     property errorMsg: string read fLastErrorMsg;
     property isIndependent: boolean read fIsIndependent;
 //    property onChange: TNotifyEvent read fOnChange write SetOnChange;
+  published
+    property Data: string read getString write SetString;
   end;
 
 implementation
@@ -354,21 +353,6 @@ begin
   inherited Destroy;
 end;
 
-procedure TFloatExpression.DefineProperties(Filer: TFiler);
-begin
-  filer.DefineProperty('value',ReadString,WriteString,fstring<>'');
-end;
-
-procedure TFloatExpression.ReadString(reader: TReader);
-begin
-  SetString(reader.ReadString);
-end;
-
-procedure TFloatExpression.WriteString(writer: TWriter);
-begin
-  writer.WriteString(fString); //это как string, но без кавычек, мне больше нравитс€
-end;
-
 procedure TFloatExpression.SetString(value: string);
 begin
   if value<>fstring then begin
@@ -427,7 +411,7 @@ begin
   temp:=nil;
   for i:=1 to Length(s) do begin
     if brCount=0 then begin
-      if ((s[i]='+') or (s[i]='-')) and ((i<1) or (uppercase(s[i-1])<>'E')) then begin
+      if ((s[i]='+') or (s[i]='-')) and ((i<=1) or (uppercase(s[i-1])<>'E')) then begin
         if i>1 then begin
           SetLength(children,Length(children)+1);
           MulDiv(MidStr(s,last_plus,i-last_plus),temp);
@@ -583,6 +567,7 @@ end;
 procedure TFloatExpression.ConstsAndVars(s: String; var treeNode: TEvaluationTreeNode);
 var val: Extended;
     fComponent: TComponent;
+    buRoot: TComponent;
     i: Integer;
 resourcestring
   WrongExpressionStr = '¬ыражение "%s" не €вл€етс€ числом или переменной';
@@ -599,9 +584,20 @@ begin
     else begin
       i:=Length(s);
       while (i>0) and (s[i]<>'.') do dec(i);
-      fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
-      if fComponent=nil then
-        Raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
+      if uppercase(leftstr(s,i-1))='SELF' then begin
+        buRoot:=fRootComponent;
+        fRootComponent:=Owner;
+        ConstsAndVars(rightstr(s,Length(s)-i),treeNode);
+        fRootComponent:=buRoot;
+        Exit;
+      end;
+      if i>0 then begin
+        fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
+        if fComponent=nil then
+          Raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
+      end
+      else
+        fComponent:=fRootComponent;
       treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
     end;
   end
@@ -643,4 +639,6 @@ begin
   Result:=fCorrect;
 end;
 
+initialization
+  RegisterClasses([TFloatExpression]);
 end.
