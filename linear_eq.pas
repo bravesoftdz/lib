@@ -2,7 +2,7 @@ unit linear_eq;
 
 interface
 
-uses Variants,classes;
+uses Variants,classes,streamable_component_list;
 
 type
 
@@ -136,15 +136,50 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
     function GetSolutionAsString: string;
   end;
 
+TSimulationType = -$7FFFFFFF-1..$7FFFFFFF;
+
+TSweep = class (TComponent)
+  private
+    fEnabled,fIsLog: Boolean;
+    fVariable: TComponent;
+    fMinVal,fMaxVal,fIncr: Real;
+  published
+    property Enabled: Boolean read fEnabled write fEnabled default false;
+    property Variable: TComponent read fVariable write fVariable;
+    property MinVal: Real read fMinVal write fMinVal;
+    property MaxVal: Real read fMaxVal write fMaxVal;
+    property Incr: Real read fIncr write fIncr;
+    property isLog: Boolean read fIsLog write fIsLog default false;
+end;
+
+TAnalysis = class (TComponent)
+  private
+    fSimulationType: TSimulationType;
+    fVarsOfInterest: TStreamableComponentList;
+    fPrimary, fSecondary: TSweep;
+  public
+    constructor Create(Owner: TComponent); override;
+  published
+    property SimulationType: TSimulationType read fSimulationType write fSimulationType;
+    property VarsOfInterest: TStreamableComponentList read fVarsOfInterest write fVarsOfInterest;
+    property PrimarySweep: TSweep read fPrimary write fPrimary;
+    property SecondarySweep: TSweep read fSecondary write fSecondary;
+end;
+
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
 
 function GetLengthSquared(value: Variant): Real;
 
+function RegisterSimulationType(description: string): TSimulationType;
+
+var stTransient,stAC,stDC, stUndefined : TSimulationType;
+
 implementation
 
-uses streaming_class_lib,sysUtils,varCmplx; //ради SwapFloats
+uses streaming_class_lib,sysUtils,varCmplx;
 
 var ManySolutionsVariantType: TManySolutionsVariantType;
+    AnalysisTypes: TStrings;
 
 (*
       TSimpleGaussLEQ
@@ -660,6 +695,22 @@ begin
 end;
 
 (*
+      TAnalysis
+                    *)
+constructor TAnalysis.Create(Owner: TComponent);
+begin
+  inherited Create(Owner);
+  fVarsOfInterest:=TStreamableComponentList.Create(self);
+  fVarsOfInterest.SetSubComponent(true);
+  fPrimary:=TSweep.Create(self);
+  fPrimary.SetSubComponent(true);
+  fSecondary:=TSweep.Create(self);
+  fSecondary.SetSubComponent(true);
+end;
+
+
+
+(*
     Фабрики рабочим!
                           *)
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
@@ -679,8 +730,35 @@ begin
     result:=0;
 end;
 
+function RegisterSimulationType(description: string): TSimulationType;
+var L: Integer;
+begin
+  Result:=AnalysisTypes.Add(description);
+end;
+
+function AnalysisTypeToName(Int: LongInt; var Ident: string): Boolean;
+begin
+  Result:=(Int>=0) and (Int<AnalysisTypes.Count);
+  if Result then Ident:=AnalysisTypes[Int];
+end;
+
+function NameToAnalysisType(const Ident: string; var Int: LongInt): Boolean;
+begin
+  Int:=AnalysisTypes.IndexOf(ident);
+  Result:=(Int>0);
+end;
+
 initialization
   ManySolutionsVariantType:=TManySolutionsVariantType.Create;
+  RegisterClasses([TAnalysis]);
+  AnalysisTypes:=TStringList.Create;
+  RegisterIntegerConsts(TypeInfo(TSimulationType),NameToAnalysisType,AnalysisTypeToName);
+  stUndefined:=RegisterSimulationType('Undefined');
+  stTransient:=RegisterSimulationType('Transient');
+  stAC:=RegisterSimulationType('AC');
+  stDC:=RegisterSimulationType('DC');
+
 finalization
   FreeAndNil(ManySolutionsVariantType);
+  FreeAndNil(AnalysisTypes);
 end.

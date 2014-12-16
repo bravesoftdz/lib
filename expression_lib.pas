@@ -116,16 +116,24 @@ TFloatExpression=class(TComponent)
     procedure SetString(value: string);
 //    procedure DoChange;
     function getString: string;
+//    function NonTrivial: Boolean;
+//    function IsTrivial: Boolean;
     procedure SetRootComponent(value: TComponent);
     function getValue: Real;
+//    procedure SetValue(val: Real);
     function getIntegerValue: Integer;
     property isCorrect: Boolean read GetCorrect;
     property errorMsg: string read fLastErrorMsg;
     property isIndependent: boolean read fIsIndependent;
 //    property onChange: TNotifyEvent read fOnChange write SetOnChange;
   published
-    property Data: string read getString write SetString;
+    property data: string read getString write SetString;
   end;
+
+TStandAloneFloatExpression = class (TFloatExpression)
+  public
+    constructor Create(Owner: TComponent); override;
+end;
 
 implementation
 
@@ -584,10 +592,10 @@ begin
     else begin
       i:=Length(s);
       while (i>0) and (s[i]<>'.') do dec(i);
-      if uppercase(leftstr(s,i-1))='SELF' then begin
+      if uppercase(leftstr(s,4))='SELF' then begin
         buRoot:=fRootComponent;
         fRootComponent:=Owner;
-        ConstsAndVars(rightstr(s,Length(s)-i),treeNode);
+        ConstsAndVars(rightstr(s,Length(s)-5),treeNode);
         fRootComponent:=buRoot;
         Exit;
       end;
@@ -639,6 +647,15 @@ begin
   Result:=fCorrect;
 end;
 
+(*
+    TStandAloneFloatExpression
+                                  *)
+constructor TStandAloneFloatExpression.Create(Owner: TComponent);
+begin
+  inherited Create(Owner);
+  SetSubComponent(false);
+end;
+
 initialization
-  RegisterClasses([TFloatExpression]);
+  RegisterClasses([TFloatExpression, TStandAloneFloatExpression]);
 end.

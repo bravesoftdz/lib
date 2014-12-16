@@ -131,17 +131,25 @@ end;
 procedure TPreferredUnits.ReadData(Reader: TReader);
 var sFamily,sUnit: string;
     aFamily: TConvFamily;
-    aFamInt: Integer absolute aFamily;
+//    aFamInt: Integer absolute aFamily;
+//странно, чем ему эта строка не понравилась?
+//длина разная, вот чем.
+    aFamInt: Integer;
     aUnit: TConvType;
 begin
+
   Reader.ReadListBegin;
   While not Reader.EndOfList do begin
     sFamily:=Reader.ReadString;
     sUnit:=Reader.ReadString;
-    if NameToFamily(sFamily,aFamInt) and DescriptionToConvType(aFamily,sUnit,aUnit) then
-      Add(aFamily,aUnit);
+    if NameToFamily(sFamily,aFamInt) then begin
+      aFamily:=aFamInt;
+      if DescriptionToConvType(aFamily,sUnit,aUnit) then
+        Add(aFamily,aUnit);
+    end;
   end;
   Reader.ReadListEnd;
+
 end;
 
 function TPreferredUnits.ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
