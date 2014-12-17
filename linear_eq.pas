@@ -2,7 +2,7 @@ unit linear_eq;
 
 interface
 
-uses Variants,classes,streamable_component_list;
+uses Variants,classes,streamable_component_list,streaming_class_lib;
 
 type
 
@@ -21,6 +21,8 @@ TVariableForEq=record
 end;
 
 TVariableForEqArray=array of TVariableForEq;
+
+TSimulationType = -$7FFFFFFF-1..$7FFFFFFF;
 
 IKirhgofSLEQ=interface
   procedure SetRootComponent(comp: TComponent);
@@ -47,6 +49,13 @@ IAbstractSLEQ=interface
   property VariableName[i: Integer]: string read GetVariableName write SetVariableName;
 end;
 
+IObjectForAnalysis=interface
+  ['{303E2364-6CBD-4AAB-BFE1-7C728F0BAF6A}']
+  procedure RunSimulation(SimulationType: TSimulationType);
+  function isSeparationEnabledBy(variable: IEquationNode): Boolean;
+  //да, время и частота тоже должны быть IEquationNode, чтобы единица изм. своя была и пр.
+  function Implementor: TStreamingClass;
+end;
 
 TManySolutionsDataType = class(TPersistent)
 protected
@@ -136,19 +145,21 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
     function GetSolutionAsString: string;
   end;
 
-TSimulationType = -$7FFFFFFF-1..$7FFFFFFF;
-
 TSweep = class (TComponent)
   private
     fEnabled,fIsLog: Boolean;
     fVariable: TComponent;
     fMinVal,fMaxVal,fIncr: Real;
+  public
+    function NumberOfPoints: Integer;
+    function GetPoint(index: Integer): Real;
   published
     property Enabled: Boolean read fEnabled write fEnabled default false;
     property Variable: TComponent read fVariable write fVariable;
     property MinVal: Real read fMinVal write fMinVal;
     property MaxVal: Real read fMaxVal write fMaxVal;
     property Incr: Real read fIncr write fIncr;
+    //если лог., то Incr имеет смысл точек на декаду или точек на октаву (тогда еще и отрицат)
     property isLog: Boolean read fIsLog write fIsLog default false;
 end;
 
@@ -156,14 +167,16 @@ TAnalysis = class (TComponent)
   private
     fSimulationType: TSimulationType;
     fVarsOfInterest: TStreamableComponentList;
-    fPrimary, fSecondary: TSweep;
+    fSweeps: array [0..1] of TSweep;
+    procedure RunThread;
   public
     constructor Create(Owner: TComponent); override;
+    procedure Run;  //создает клоны схемы, разбивает интервалы sweep для каждого и запускает в них потоки
   published
     property SimulationType: TSimulationType read fSimulationType write fSimulationType;
     property VarsOfInterest: TStreamableComponentList read fVarsOfInterest write fVarsOfInterest;
-    property PrimarySweep: TSweep read fPrimary write fPrimary;
-    property SecondarySweep: TSweep read fSecondary write fSecondary;
+    property PrimarySweep: TSweep read fSweeps[0] write fSweeps[0];
+    property SecondarySweep: TSweep read fSweeps[1] write fSweeps[1];
 end;
 
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
@@ -173,10 +186,11 @@ function GetLengthSquared(value: Variant): Real;
 function RegisterSimulationType(description: string): TSimulationType;
 
 var stTransient,stAC,stDC, stUndefined : TSimulationType;
+    NumberOfAnalysisThreads: Integer;
 
 implementation
 
-uses streaming_class_lib,sysUtils,varCmplx;
+uses sysUtils,varCmplx,math;
 
 var ManySolutionsVariantType: TManySolutionsVariantType;
     AnalysisTypes: TStrings;
@@ -694,21 +708,97 @@ begin
   fRootComponent:=c;
 end;
 
+function GetObjectForAnalysis(obj: TComponent): IObjectForAnalysis;
+begin
+  while assigned(obj) do begin
+    if obj.GetInterface(IObjectForAnalysis,Result) then Exit;
+    obj:=obj.Owner;
+  end;
+  Raise Exception.Create('GetObjectForAnalysis: didn''t find IObjectForAnalysis');
+end;
+
+(*
+      TSweep
+                    *)
+function TSweep.NumberOfPoints: Integer;
+begin
+  if enabled then
+    if isLog then
+      if Incr>0 then  //точек на декаду
+        Result:=Ceil(log10(MaxVal/MinVal)*incr)
+      else
+        Result:=Ceil(log2(MaxVal/MinVal)*(-incr))
+    else Result:=Ceil((MaxVal-MinVal)/Incr+1)
+  else Result:=0;
+end;
+
+function TSweep.GetPoint(index: Integer): Real;
+begin
+  if enabled then
+    if isLog then
+      if Incr>0 then
+        Result:=MinVal*power(10,index/incr)
+      else
+        Result:=MinVal*power(2,index/(-incr))
+    else
+      Result:=MinVal+index*Incr
+  else Raise Exception.Create('TSweep.GetPoint: can''t return value when disabled');
+end;
+
 (*
       TAnalysis
                     *)
 constructor TAnalysis.Create(Owner: TComponent);
+var i: Integer;
 begin
   inherited Create(Owner);
   fVarsOfInterest:=TStreamableComponentList.Create(self);
   fVarsOfInterest.SetSubComponent(true);
-  fPrimary:=TSweep.Create(self);
-  fPrimary.SetSubComponent(true);
-  fSecondary:=TSweep.Create(self);
-  fSecondary.SetSubComponent(true);
+  for i:=0 to 1 do begin
+    fSweeps[i]:=TSweep.Create(self);
+    fSweeps[i].SetSubComponent(true);
+  end;
+end;
+
+procedure TAnalysis.Run;
+var clones: array of TStreamingClass;
+    source: TStreamingClass;
+    sweepIndex: Integer;
+    numOfPoints: Integer;
+    i,count,pointsPerThread: Integer;
+    our_copy: TAnalysis;
+begin
+  //а удастся ли вообще их сколько надо склонировать?
+  if SecondarySweep.Enabled then sweepIndex:=1 else sweepIndex:=0;
+  //простейшее поведение - расщепляем на потоки по самому последнему sweep
+  numOfPoints:=fSweeps[sweepIndex].NumberOfPoints;
+  count:=min(NumberOfAnalysisThreads,numOfPoints);
+  SetLength(clones,count);
+  pointsPerThread:=Round(NumOfPoints/NumberOfAnalysisThreads);
+  source:=GetObjectForAnalysis(self).Implementor;
+  for i:=0 to count-1 do begin
+    clones[i]:=TStreamingClass.Clone(source);
+    //теперь ищем в нем себя и меняем интервалы
+    our_copy:=clones[i].FindComponent(Name) as TAnalysis;
+    our_copy.fSweeps[sweepIndex].MinVal:=fSweeps[sweepIndex].GetPoint(i*pointsPerThread);
+    our_copy.fSweeps[sweepIndex].MaxVal:=fSweeps[sweepIndex].GetPoint(min((i+1)*pointsPerThread-1,NumOfPoints-1));
+    clones[i].saveFormat:=fCyr; //отладка
+    clones[i].SaveToFile('clones'+IntToStr(i)+'.txt');
+  end;
+
+
+
+  for i:=0 to count-1 do
+    clones[i].Free;
 end;
 
 
+procedure TAnalysis.RunThread;
+begin
+
+
+end;
+    
 
 (*
     Фабрики рабочим!
@@ -731,7 +821,6 @@ begin
 end;
 
 function RegisterSimulationType(description: string): TSimulationType;
-var L: Integer;
 begin
   Result:=AnalysisTypes.Add(description);
 end;
@@ -757,7 +846,7 @@ initialization
   stTransient:=RegisterSimulationType('Transient');
   stAC:=RegisterSimulationType('AC');
   stDC:=RegisterSimulationType('DC');
-
+  NumberOfAnalysisThreads:=4;
 finalization
   FreeAndNil(ManySolutionsVariantType);
   FreeAndNil(AnalysisTypes);

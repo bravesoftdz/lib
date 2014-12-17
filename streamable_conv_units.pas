@@ -21,12 +21,13 @@ type
 end;
 
 
-var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower: TConvFamily;
+var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower, cbFrequency: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
     iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
     vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
     powWatt,powkW,powmW,powuW,powMegaW: TConvType;
+    fuHz,fukHz,fuMHz,fuGHz: TConvType;
     PreferredUnits: TPreferredUnits;
 implementation
 
@@ -97,6 +98,12 @@ begin
   powuW:=RegisterConversionType(cbPower,'uW',1e-6);
   powkW:=RegisterConversionType(cbPower,'kW',1000);
   powMegaW:=RegisterConversionType(cbPower,'Megawatt',1e6);
+
+  cbFrequency:=RegisterConversionFamily('Frequency');
+  fuHz:=RegisterConversionType(cbFrequency,'Hz',1);
+  fukHz:=RegisterConversionType(cbFrequency,'kHz',1000);
+  fuMHz:=RegisterConversionType(cbFrequency,'MHz',1e6);
+  fuGHz:=RegisterConversionType(cbFrequency,'GHz',1e9);
 end;
 
 (*
