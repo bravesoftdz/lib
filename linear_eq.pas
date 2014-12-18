@@ -148,14 +148,14 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
 TSweep = class (TComponent)
   private
     fEnabled,fIsLog: Boolean;
-    fVariable: TComponent;
+    fVariable: IEquationNode;
     fMinVal,fMaxVal,fIncr: Real;
   public
     function NumberOfPoints: Integer;
     function GetPoint(index: Integer): Real;
   published
     property Enabled: Boolean read fEnabled write fEnabled default false;
-    property Variable: TComponent read fVariable write fVariable;
+    property Variable: IEquationNode read fVariable write fVariable;
     property MinVal: Real read fMinVal write fMinVal;
     property MaxVal: Real read fMaxVal write fMaxVal;
     property Incr: Real read fIncr write fIncr;
@@ -168,15 +168,35 @@ TAnalysis = class (TComponent)
     fSimulationType: TSimulationType;
     fVarsOfInterest: TStreamableComponentList;
     fSweeps: array [0..1] of TSweep;
-    procedure RunThread;
+    fOrigin: TAnalysis; //он создал свои копии
+    fThread: TThread; //поток, к нам привязанный
+    fIndex: Integer; //номер клона
+
+    procedure RunThread(Origin: TAnalysis; index: Integer);
+    procedure AppendThreadResults(clone: TAnalysis);
+  protected
+    procedure OnThreadTerminate(Sender: TObject); //достаточно иметь одну ссылочку на процесс
+    procedure StopThread;
   public
     constructor Create(Owner: TComponent); override;
+    destructor Destroy; override;
     procedure Run;  //создает клоны схемы, разбивает интервалы sweep для каждого и запускает в них потоки
   published
     property SimulationType: TSimulationType read fSimulationType write fSimulationType;
     property VarsOfInterest: TStreamableComponentList read fVarsOfInterest write fVarsOfInterest;
     property PrimarySweep: TSweep read fSweeps[0] write fSweeps[0];
     property SecondarySweep: TSweep read fSweeps[1] write fSweeps[1];
+end;
+
+TAnalysisThread = class (TThread)
+  private
+    fAnalysis: TAnalysis;
+    fObject: IObjectForAnalysis;
+    fProgress: Integer;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(aAnalysis: TAnalysis);
 end;
 
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
@@ -708,6 +728,8 @@ begin
   fRootComponent:=c;
 end;
 
+
+
 function GetObjectForAnalysis(obj: TComponent): IObjectForAnalysis;
 begin
   while assigned(obj) do begin
@@ -760,6 +782,12 @@ begin
   end;
 end;
 
+destructor TAnalysis.Destroy;
+begin
+  StopThread;
+  inherited Destroy;
+end;
+
 procedure TAnalysis.Run;
 var clones: array of TStreamingClass;
     source: TStreamingClass;
@@ -777,27 +805,67 @@ begin
   pointsPerThread:=Round(NumOfPoints/NumberOfAnalysisThreads);
   source:=GetObjectForAnalysis(self).Implementor;
   for i:=0 to count-1 do begin
-    clones[i]:=TStreamingClass.Clone(source);
+    clones[i]:=TStreamingClass.CloneComponent(source) as TStreamingClass;
     //теперь ищем в нем себя и меняем интервалы
     our_copy:=clones[i].FindComponent(Name) as TAnalysis;
     our_copy.fSweeps[sweepIndex].MinVal:=fSweeps[sweepIndex].GetPoint(i*pointsPerThread);
     our_copy.fSweeps[sweepIndex].MaxVal:=fSweeps[sweepIndex].GetPoint(min((i+1)*pointsPerThread-1,NumOfPoints-1));
-    clones[i].saveFormat:=fCyr; //отладка
-    clones[i].SaveToFile('clones'+IntToStr(i)+'.txt');
+//
+//    clones[i].saveFormat:=fCyr; //отладка
+//    clones[i].SaveToFile('clones'+IntToStr(i)+'.txt');
+//
+    our_copy.RunThread(self,i); //запускается, а потом вызовет нас назад, когда завершится
   end;
-
-
-
-  for i:=0 to count-1 do
-    clones[i].Free;
 end;
 
 
-procedure TAnalysis.RunThread;
+procedure TAnalysis.RunThread(origin: TAnalysis; index: Integer);
+begin
+  fOrigin:=origin;
+  fIndex:=index;
+  fThread:=TAnalysisThread.Create(self);
+end;
+
+procedure TAnalysis.OnThreadTerminate(Sender: TObject);
+begin
+  fThread:=nil;
+  fOrigin.AppendThreadResults(self);
+end;
+
+procedure TAnalysis.StopThread;
+begin
+  FreeAndNil(fThread);
+end;
+
+procedure TAnalysis.AppendThreadResults(clone: TAnalysis);
+begin
+
+  GetObjectForAnalysis(clone).Implementor.Free;
+end;
+
+
+(*
+        TAnalysisThread
+                            *)
+constructor TAnalysisThread.Create(aAnalysis: TAnalysis);
+begin
+  inherited Create(true);
+  fAnalysis:=aAnalysis;
+  fObject:=GetObjectForAnalysis(fAnalysis);
+  FreeOnTerminate:=true;
+  onTerminate:=fAnalysis.OnThreadTerminate;
+//  Priority:=tpIdle;
+  Resume;
+end;
+
+procedure TAnalysisThread.Execute;
 begin
 
 
+
 end;
+
+
     
 
 (*

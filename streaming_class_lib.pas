@@ -25,6 +25,7 @@ TstreamingClass=class(TComponent)
     //опробуем классовые функции
     class function LoadComponentFromString(text: string): TComponent;
     class function LoadComponentFromFile(FileName: string): TComponent;
+    class function CloneComponent(source: TStreamingClass; owner: TComponent=nil): TComponent; 
     procedure Clear; virtual;
     //будет вызываться перед Assign, чтобы инициализировать объект нач. значениями
     procedure SaveToFile(filename: string);
@@ -328,13 +329,32 @@ var
   StrStream: TStringStream;
   BinStream: TMemoryStream;
 begin
-  BinStream:=TMemoryStream.Create;
   StrStream:=TStringStream.Create(text);
-  ObjectTextToBinary(StrStream,BinStream);
-  BinStream.Seek(0, soFromBeginning);
-  Result:=BinStream.ReadComponent(nil);
-  BinStream.Free;
-  StrStream.Free;
+  try
+    BinStream:=TMemoryStream.Create;
+    try
+      ObjectTextToBinary(StrStream,BinStream);
+      BinStream.Seek(0, soFromBeginning);
+      Result:=BinStream.ReadComponent(nil);
+    finally
+      BinStream.Free;
+    end;
+  finally
+    StrStream.Free;
+  end;
+end;
+
+class function TStreamingClass.CloneComponent(source: TStreamingClass; owner: TComponent=nil): TComponent;
+var BinStream: TMemoryStream;
+begin
+  BinStream:=TMemoryStream.Create;
+  try
+    BinStream.WriteComponent(source);
+    BinStream.Seek(0,soFromBeginning);
+    Result:=BinStream.ReadComponent(owner);
+  finally
+    BinStream.Free;
+  end;
 end;
 
 class function TStreamingClass.LoadComponentFromFile(FileName: string): TComponent;
