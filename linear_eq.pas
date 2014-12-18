@@ -163,7 +163,7 @@ TSweep = class (TComponent)
     property isLog: Boolean read fIsLog write fIsLog default false;
 end;
 
-TAnalysis = class (TComponent)
+TAnalysis = class (TStreamingClass)
   private
     fSimulationType: TSimulationType;
     fVarsOfInterest: TStreamableComponentList;
@@ -171,12 +171,15 @@ TAnalysis = class (TComponent)
     fOrigin: TAnalysis; //он создал свои копии
     fThread: TThread; //поток, к нам привязанный
     fIndex: Integer; //номер клона
+    fProgress: array of Integer;  //проценты выполнения в потоках
+    fClones: array of TAnalysis;
 
+    fData: array of array of Variant; //возможны комплексные числа, а также недоопред.
     procedure RunThread(Origin: TAnalysis; index: Integer);
-    procedure AppendThreadResults(clone: TAnalysis);
+    procedure AppendThreadResults(clone: TAnalysis; isFail: boolean=false);
   protected
     procedure OnThreadTerminate(Sender: TObject); //достаточно иметь одну ссылочку на процесс
-    procedure StopThread;
+    procedure ShowProgress(index,value: Integer);
   public
     constructor Create(Owner: TComponent); override;
     destructor Destroy; override;
@@ -195,6 +198,7 @@ TAnalysisThread = class (TThread)
     fProgress: Integer;
   protected
     procedure Execute; override;
+    procedure Progress;
   public
     constructor Create(aAnalysis: TAnalysis);
 end;
@@ -210,10 +214,11 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 
 implementation
 
-uses sysUtils,varCmplx,math;
+uses sysUtils,varCmplx,math,command_class_lib;
 
 var ManySolutionsVariantType: TManySolutionsVariantType;
     AnalysisTypes: TStrings;
+//    AllThreadsStopped: TEvent;
 
 (*
       TSimpleGaussLEQ
@@ -751,7 +756,7 @@ begin
       else
         Result:=Ceil(log2(MaxVal/MinVal)*(-incr))
     else Result:=Ceil((MaxVal-MinVal)/Incr+1)
-  else Result:=0;
+  else Result:=1; //чтобы не убить внутренние циклы
 end;
 
 function TSweep.GetPoint(index: Integer): Real;
@@ -783,37 +788,44 @@ begin
 end;
 
 destructor TAnalysis.Destroy;
+var i: Integer;
 begin
-  StopThread;
+  FreeAndNil(fThread);
+  for i:=0 to Length(fclones)-1 do
+    if Assigned(fclones[i]) and Assigned(fclones[i].fThread) then
+      fclones[i].fThread.Terminate;
+
+  //но тут мы их должны дождаться!
   inherited Destroy;
 end;
 
 procedure TAnalysis.Run;
-var clones: array of TStreamingClass;
+var clone: TStreamingClass;
     source: TStreamingClass;
     sweepIndex: Integer;
     numOfPoints: Integer;
     i,count,pointsPerThread: Integer;
     our_copy: TAnalysis;
 begin
+  SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints);
   //а удастся ли вообще их сколько надо склонировать?
   if SecondarySweep.Enabled then sweepIndex:=1 else sweepIndex:=0;
   //простейшее поведение - расщепляем на потоки по самому последнему sweep
   numOfPoints:=fSweeps[sweepIndex].NumberOfPoints;
   count:=min(NumberOfAnalysisThreads,numOfPoints);
-  SetLength(clones,count);
+  SetLength(fProgress,count);
+  SetLength(fClones,count);
   pointsPerThread:=Round(NumOfPoints/NumberOfAnalysisThreads);
   source:=GetObjectForAnalysis(self).Implementor;
+
   for i:=0 to count-1 do begin
-    clones[i]:=TStreamingClass.CloneComponent(source) as TStreamingClass;
+    clone:=TStreamingClass.CloneComponent(source) as TStreamingClass;
     //теперь ищем в нем себя и меняем интервалы
-    our_copy:=clones[i].FindComponent(Name) as TAnalysis;
+    our_copy:=clone.FindComponent(Name) as TAnalysis;
     our_copy.fSweeps[sweepIndex].MinVal:=fSweeps[sweepIndex].GetPoint(i*pointsPerThread);
     our_copy.fSweeps[sweepIndex].MaxVal:=fSweeps[sweepIndex].GetPoint(min((i+1)*pointsPerThread-1,NumOfPoints-1));
-//
-//    clones[i].saveFormat:=fCyr; //отладка
-//    clones[i].SaveToFile('clones'+IntToStr(i)+'.txt');
-//
+
+    fClones[i]:=our_copy;
     our_copy.RunThread(self,i); //запускается, а потом вызовет нас назад, когда завершится
   end;
 end;
@@ -832,15 +844,33 @@ begin
   fOrigin.AppendThreadResults(self);
 end;
 
-procedure TAnalysis.StopThread;
+procedure TAnalysis.ShowProgress(index,value: Integer);
+var i: Integer;
+    s: string;
 begin
-  FreeAndNil(fThread);
+  fProgress[index]:=value;
+  for i:=0 to Length(fProgress)-1 do begin
+    s:=s+IntToStr(fProgress[i])+'%';
+    if i<Length(fProgress)-1 then
+      s:=s+'  ';
+  end;
+
+  if FindOwner is TAbstractDocument then
+    TAbstractDocument(FindOwner).DoneStatusPanel.Text:=s;
 end;
 
-procedure TAnalysis.AppendThreadResults(clone: TAnalysis);
+procedure TAnalysis.AppendThreadResults(clone: TAnalysis; isFail: boolean = false);
+var i: Integer;
 begin
+  if not isFail then begin
+    //присоединение данных
 
+
+  end;
   GetObjectForAnalysis(clone).Implementor.Free;
+  for i:=0 to Length(fclones)-1 do
+    if clone=fclones[i] then
+      fclones[i]:=nil;
 end;
 
 
@@ -859,10 +889,48 @@ begin
 end;
 
 procedure TAnalysisThread.Execute;
+var i,j,k: Integer;
+    node: IEquationNode;
 begin
+//внешний цикл - по secondarySweep, если он есть
+  with fAnalysis do begin
+    SetLength(fData,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints);
+    for j:=0 to SecondarySweep.NumberOfPoints-1 do begin
+    if SecondarySweep.Enabled then
+      SecondarySweep.Variable.SetValue(SecondarySweep.GetPoint(j));
+    for i:=0 to fAnalysis.PrimarySweep.NumberOfPoints-1 do begin
+      if PrimarySweep.Enabled then
+        PrimarySweep.Variable.SetValue(PrimarySweep.GetPoint(i));
+      fObject.RunSimulation(SimulationType);
+      for k:=0 to VarsOfInterest.Count-1 do
+        if VarsOfInterest[k].GetInterface(IEquationNode,node) then
+          fData[i,j,k]:=node.
 
 
 
+
+
+
+
+
+
+    end;
+  end;
+(*
+  for i:=0 to 100 do begin
+    for j:=0 to 100000000 do
+      if Terminated then begin
+        onTerminate:=nil;
+        Exit;
+      end;
+    fProgress:=i;
+    Synchronize(Progress);
+  end;*)
+end;
+
+procedure TAnalysisThread.Progress;
+begin
+  fAnalysis.fOrigin.ShowProgress(fAnalysis.fIndex,fProgress);
 end;
 
 
