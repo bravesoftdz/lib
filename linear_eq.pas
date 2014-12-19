@@ -9,10 +9,13 @@ type
 TSLEQStatus = (slOneSolution,slNoSolution,slManySolutions);
 
 IEquationNode=interface //отобразить красиво свое значение, чтоб не заморачивать
+['{5E7FBCDD-61C6-4860-8AFC-F8B2F47B439E}']
 //интерфейс решения лин. уравнений
   function ShowNodeName: string;
   procedure SetValue(value: Variant);
+  function GetValue: Variant;
   function ShowValue(value: Variant): string;
+  property value: Variant read GetValue write SetValue;
 end;
 
 TVariableForEq=record
@@ -174,7 +177,7 @@ TAnalysis = class (TStreamingClass)
     fProgress: array of Integer;  //проценты выполнения в потоках
     fClones: array of TAnalysis;
 
-    fData: array of array of Variant; //возможны комплексные числа, а также недоопред.
+    fData: array of array of array of Variant; //возможны комплексные числа, а также недоопред.
     procedure RunThread(Origin: TAnalysis; index: Integer);
     procedure AppendThreadResults(clone: TAnalysis; isFail: boolean=false);
   protected
@@ -195,7 +198,7 @@ TAnalysisThread = class (TThread)
   private
     fAnalysis: TAnalysis;
     fObject: IObjectForAnalysis;
-    fProgress: Integer;
+    fPercentDone: Integer;
   protected
     procedure Execute; override;
     procedure Progress;
@@ -781,6 +784,7 @@ begin
   inherited Create(Owner);
   fVarsOfInterest:=TStreamableComponentList.Create(self);
   fVarsOfInterest.SetSubComponent(true);
+  fVarsOfInterest.Name:='VarsOfInterest';
   for i:=0 to 1 do begin
     fSweeps[i]:=TSweep.Create(self);
     fSweeps[i].SetSubComponent(true);
@@ -807,7 +811,7 @@ var clone: TStreamingClass;
     i,count,pointsPerThread: Integer;
     our_copy: TAnalysis;
 begin
-  SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints);
+  SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,VarsOfInterest.Count);
   //а удастся ли вообще их сколько надо склонировать?
   if SecondarySweep.Enabled then sweepIndex:=1 else sweepIndex:=0;
   //простейшее поведение - расщепляем на потоки по самому последнему sweep
@@ -896,41 +900,25 @@ begin
   with fAnalysis do begin
     SetLength(fData,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints);
     for j:=0 to SecondarySweep.NumberOfPoints-1 do begin
-    if SecondarySweep.Enabled then
-      SecondarySweep.Variable.SetValue(SecondarySweep.GetPoint(j));
-    for i:=0 to fAnalysis.PrimarySweep.NumberOfPoints-1 do begin
-      if PrimarySweep.Enabled then
-        PrimarySweep.Variable.SetValue(PrimarySweep.GetPoint(i));
-      fObject.RunSimulation(SimulationType);
-      for k:=0 to VarsOfInterest.Count-1 do
-        if VarsOfInterest[k].GetInterface(IEquationNode,node) then
-          fData[i,j,k]:=node.
-
-
-
-
-
-
-
-
-
+      if SecondarySweep.Enabled then
+        SecondarySweep.Variable.SetValue(SecondarySweep.GetPoint(j));
+      for i:=0 to fAnalysis.PrimarySweep.NumberOfPoints-1 do begin
+        if PrimarySweep.Enabled then
+          PrimarySweep.Variable.SetValue(PrimarySweep.GetPoint(i));
+        fObject.RunSimulation(SimulationType);
+        for k:=0 to VarsOfInterest.Count-1 do
+          if VarsOfInterest[k].GetInterface(IEquationNode,node) then
+            fData[i,j,k]:=node.value;
+      end;
+      fPercentDone:=Round((j+i/PrimarySweep.NumberOfPoints)/SecondarySweep.NumberOfPoints);
+      Synchronize(Progress);
     end;
   end;
-(*
-  for i:=0 to 100 do begin
-    for j:=0 to 100000000 do
-      if Terminated then begin
-        onTerminate:=nil;
-        Exit;
-      end;
-    fProgress:=i;
-    Synchronize(Progress);
-  end;*)
 end;
 
 procedure TAnalysisThread.Progress;
 begin
-  fAnalysis.fOrigin.ShowProgress(fAnalysis.fIndex,fProgress);
+  fAnalysis.fOrigin.ShowProgress(fAnalysis.fIndex,fPercentDone);
 end;
 
 

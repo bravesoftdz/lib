@@ -143,7 +143,7 @@ function TStreamableComponentList.GetItem(index: Integer): TStreamingClass;
 begin
   if not fResolved then ResolveNames;
   Result:=fList.Objects[index] as TStreamingClass;
-  Assert(Result<>nil, 'wtf nil item');
+  if Result=nil then Raise Exception.CreateFmt('%s.GetItem: incorrect index %d (length %d)',[name,index,count]);
 end;
 
 function TStreamableComponentList.GetCount: Integer;
