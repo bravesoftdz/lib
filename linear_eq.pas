@@ -794,31 +794,13 @@ end;
       TSweep
                     *)
 function TSweep.NumberOfPoints: Integer;
-var numberOfDecades: Integer;
-    pow,range: Real;
 begin
   if enabled then
     if isLog then
-      if Incr>0 then begin  //точек на декаду
-        numberOfDecades:=1;
-        pow:=10;
-        range:=MaxVal/MinVal;
-        while range>=pow do begin
-          inc(numberOfDecades);
-          pow:=pow*10;
-        end;
-        Result:=numberOfDecades*Round(incr)+1;
-      end
-      else begin
-        numberOfDecades:=1;
-        pow:=2;
-        range:=MaxVal/MinVal;
-        while range>pow do begin
-          inc(numberOfDecades);
-          pow:=pow*2;
-        end;
-        Result:=numberOfDecades*Round(-incr)+1;
-      end
+      if Incr>0 then  //точек на декаду
+        Result:=Ceil(log10(MaxVal/MinVal)*incr+1-1e-7)
+      else
+        Result:=Ceil(log2(MaxVal/MinVal)*(-incr)+1-1e-7)
     else Result:=Ceil((MaxVal-MinVal)/Incr+1)
   else Result:=1; //чтобы не убить внутренние циклы
 end;
