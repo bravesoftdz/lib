@@ -116,7 +116,7 @@ var i: Integer;
 
 begin
   if not fResolved then ResolveNames;
-  LookupRoot:=FindOwner;
+  LookupRoot:=writer.LookupRoot;
   if fList.Count>1 then writer.WriteListBegin;
   for i:=0 to fList.Count-1 do begin
     Component:=flist.objects[i] as TComponent;
