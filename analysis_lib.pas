@@ -289,6 +289,7 @@ procedure TAnalysis.SaveToTextFile(FileName: string);
 var F: TextFile;
     s,v,strType: string;
     i,j,k: Integer;
+    IEqNode: IEquationNode;
 begin
   AssignFile(F,FileName);
   try
@@ -312,6 +313,14 @@ begin
   for i:=0 to SecondarySweep.NumberOfPoints-1 do begin
     if SecondarySweep.Enabled then
       WriteLn(F,SecondarySweep.variable.ShowValue(SecondarySweep.GetPoint(i)));
+    //и напоминаем названия переменных
+    s:=PrimarySweep.Variable.ShowNodeName+#9;
+    for k:=0 to VarsOfInterest.Count-1 do
+      if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
+        s:=s+IEqNode.ShowNodeName+#9
+      else
+        s:=s+VarsOfInterest[k].Name;
+    WriteLn(F,s);
     for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
       s:=FloatToStr(PrimarySweep.GetPoint(j))+#9;
       for k:=0 to VarsOfInterest.Count-1 do begin
@@ -331,9 +340,10 @@ procedure TAnalysis.ExportToExcel;
 var ExcelApp: Variant; //само приложение excel
     ExcelDoc: Variant; //новый документ
     ExcelSht: Variant; //новый лист
-    i,j: Integer;
-    cellname: string;
-    val: Extended;
+    i,j,k: Integer;
+    strType,s: string;
+    rowCount: Integer;
+    IEqNode: IEquationNode;
 begin
   try
     ExcelApp:=CreateOleObject('Excel.Application');
@@ -341,21 +351,65 @@ begin
     ExcelDoc:=ExcelApp.Workbooks.Add;
     ExcelSht:=ExcelDoc.Worksheets.Add;
     ExcelSht.name:=name;
-(*
-    for j:=0 to RowCount-1 do
-      for i:=0 to ColCount-1 do begin
-        cellname:=Chr(Integer('A')+i)+IntToStr(j+1);
-//        ExcelSht.Range[cellname,cellname]:=Cells[i,j];
-//очень странно он обращается с числами с плав. точкой - убивает в них запятую
-          if Cells[i,j]<>'' then begin
-            if TryStrToFloat(Cells[i,j],val) then
-              ExcelSht.Cells.Item[j+1,i+1]:=val
-            else
-              ExcelSht.Cells.Item[j+1,i+1]:=Cells[i,j];
-          end;
-
+    rowCount:=1;
+    if AnalysisTypeToName(fSimulationType,strType) then begin
+      ExcelSht.Cells.Item[rowCount,1]:=strType;
+      inc(rowCount);
+    end;
+    if SecondarySweep.Enabled then begin
+      ExcelSht.Cells.Item[rowCount,1]:='Secondary sweep: enabled';
+      inc(rowCount);
+      ExcelSht.Cells.Item[rowCount,1]:='Variable:';
+      ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.ShowNodeName;
+      inc(rowCount);
+      ExcelSht.Cells.Item[rowCount,1]:='Values:';
+      ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(SecondarySweep.fMinVal);
+      ExcelSht.Cells.Item[rowCount,3]:='..';
+      ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(SecondarySweep.fMaxVal);
+      ExcelSht.Cells.Item[rowCount,5]:='Step:';
+      ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(SecondarySweep.Incr);
+      if SecondarySweep.isLog then
+        ExcelSht.Cells.Item[rowCount,7]:=', log.scale';
+    end;
+    ExcelSht.Cells.Item[rowCount,1]:='Primary sweep:';
+    inc(rowCount);
+    ExcelSht.Cells.Item[rowCount,1]:='Variable:';
+    ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.ShowNodeName;
+    inc(rowCount);
+    ExcelSht.Cells.Item[rowCount,1]:='Values:';
+    ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(PrimarySweep.fMinVal);
+    ExcelSht.Cells.Item[rowCount,3]:='..';
+    ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(PrimarySweep.fMaxVal);
+    ExcelSht.Cells.Item[rowCount,5]:='Step:';
+    ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(PrimarySweep.Incr);
+    if PrimarySweep.isLog then
+      ExcelSht.Cells.Item[rowCount,7]:=', log.scale';
+  //заголовок готов
+    inc(rowCount);
+    for i:=0 to SecondarySweep.NumberOfPoints-1 do begin
+      if SecondarySweep.Enabled then begin
+        ExcelSht.Cells.Item[rowCount,1]:=SecondarySweep.Variable.ShowValue(SecondarySweep.GetPoint(i));
+        inc(rowCount);
       end;
-      *)
+      //и напоминаем названия переменных
+      ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.Variable.ShowNodeName;
+      for k:=0 to VarsOfInterest.Count-1 do
+        if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
+          ExcelSht.Cells.Item[rowCount,k+2]:=IEqNode.ShowNodeName
+        else
+          ExcelSht.Cells.Item[rowCount,k+2]:=VarsOfInterest[k].Name;
+      inc(rowCount);
+      for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
+//        ExcelSht.Cells.Item[rowCount,1]:=FloatToStr(PrimarySweep.GetPoint(j));
+        ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.GetPoint(j);
+        for k:=0 to VarsOfInterest.Count-1 do begin
+          s:=fdata[j,i,k];
+          ExcelSht.Cells.Item[rowCount,k+2]:=s;
+        end;
+        inc(rowCount);
+      end;
+    end;
+
   finally
     if not VarIsEmpty(ExcelApp) then ExcelApp.visible:=true;
     ExcelApp:=UnAssigned;
