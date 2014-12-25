@@ -18,16 +18,18 @@ type
     procedure Add(aFamily: TConvFamily; aUnit: TConvType);
     function ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
     function ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
+    function GetPreferredUnitName(aFamily: TConvFamily): string;
 end;
 
-
-var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower, cbFrequency: TConvFamily;
+var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
+    cbFrequency, cbDimensionless: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
     iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
     vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
     powWatt,powkW,powmW,powuW,powMegaW: TConvType;
     fuHz,fukHz,fuMHz,fuGHz: TConvType;
+    duUnity: TConvType;
     PreferredUnits: TPreferredUnits;
 implementation
 
@@ -104,6 +106,9 @@ begin
   fukHz:=RegisterConversionType(cbFrequency,'kHz',1000);
   fuMHz:=RegisterConversionType(cbFrequency,'MHz',1e6);
   fuGHz:=RegisterConversionType(cbFrequency,'GHz',1e9);
+
+  cbDimensionless:=RegisterConversionFamily('Dimensionless');
+  duUnity:=RegisterConversionType(cbDimensionless,'',1);
 end;
 
 (*
@@ -197,6 +202,16 @@ begin
   FamilyToName(aFamily,fname);
   Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
   end;
+end;
+
+function TPreferredUnits.getPreferredUnitName(aFamily: TConvFamily): string;
+var i: Integer;
+begin
+  for i:=0 to Length(fFamily)-1 do
+    if aFamily=fFamily[i] then begin
+      Result:=ConvTypeToDescription(fUnit[i]);
+      Exit;
+    end;
 end;
 
 
