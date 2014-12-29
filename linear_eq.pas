@@ -2,7 +2,7 @@ unit linear_eq;
 
 interface
 
-uses classes,variants;
+uses classes,variants,VariantWrapper;
 
 type
 
@@ -12,6 +12,7 @@ IEquationNode=interface //отобразить красиво свое значение, чтоб не заморачивать
 ['{5E7FBCDD-61C6-4860-8AFC-F8B2F47B439E}']
 //интерфейс решения лин. уравнений
   function ShowNodeName: string;
+  function ShowNodeUnit: string;
   procedure SetValue(value: Variant);
   function GetValue: Variant;
   function ShowValue(value: Variant): string;
@@ -50,7 +51,7 @@ IAbstractSLEQ=interface
   property VariableName[i: Integer]: string read GetVariableName write SetVariableName;
 end;
 
-TManySolutionsDataType = class(TPersistent)
+TManySolutionsDataType = class(TAbstractWrapperData)
 protected
   function Multiplier(value: Real): string;
 public
@@ -59,36 +60,23 @@ public
   tolerance: Real;
   VarNames: array of string;
   procedure Assign(Source: TPersistent); override;
-  procedure Add(value: TManySolutionsDataType);
-  procedure Sub(value: TManySolutionsDataType);
-  procedure Mul(value: Real); overload;
-  procedure Mul(value: TManySolutionsDataType); overload;
-  procedure Divide(value: Real); overload;
-  procedure Divide(value: TManySolutionsDataType); overload;
+  procedure DoAdd(value: TAbstractWrapperData); override;
+  procedure DoSubtract(right: TAbstractWrapperData); override;
+  procedure Mul(value: Real);
+  procedure DoMultiply(right: TAbstractWrapperData); override;
+  procedure Divide(value: Real);
+  procedure DoDivide(right: TAbstractWrapperData); override;
+  procedure Negate; override;
   function IsPlainNumber: boolean;
 //  function AreProportional(other: TManySolutionsDataType): boolean;
 //  procedure SetString(value: string);
-  function GetString: string;
+  function AsString: string; override;
 end;
 
-TManySolutionsVarData = packed record
-  VType: TVarType;
-  Reserved1, Reserved2, Reserved3: Word;
-  Ref: TManySolutionsDataType;  //много свободного места, но неудобно
-  Reserved4: LongInt; //удобнее все в классе хранить.
-end;
-
-TManySolutionsVariantType=class(TCustomVariantType)
-protected
-  function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
-  function LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
+TManySolutionsVariantType=class(TAbstractWrapperVariantType)
 public
-  procedure Clear(var V: TVarData); override;
-  procedure Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean); override;
   procedure Cast(var Dest: TVarData; const Source: TVarData); override;
   procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
-  procedure UnaryOp(var Right: TVarData; const Operator: Integer); override;
-  procedure BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp); override;
 end;
 
 TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
@@ -155,8 +143,8 @@ var ManySolutionsVariantType: TManySolutionsVariantType;
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
 begin
   VarClear(Result);
-  TManySolutionsVarData(Result).VType:=ManySolutionsVariantType.VarType;
-  TManySolutionsVarData(Result).Ref:=data;
+  TWrapperVarData(Result).VType:=ManySolutionsVariantType.VarType;
+  TWrapperVarData(Result).data:=data;
 end;
 
 function GetLengthSquared(value: Variant): Real;
@@ -364,7 +352,7 @@ begin
     Result:=FloatToStr(value)+'*';
 end;
 
-function TManySolutionsDataType.GetString: string;
+function TManySolutionsDataType.AsString: string;
 var i: Integer;
 begin
   if abs(InitValue)<=tolerance then Result:=''
@@ -400,24 +388,32 @@ begin
 
 end;
 *)
-procedure TManySolutionsDataType.Add(value: TManySolutionsDataType);
+procedure TManySolutionsDataType.DoAdd(value: TAbstractWrapperData);
 var i: Integer;
+    v: TManySolutionsDataType absolute value;
 begin
-  InitValue:=InitValue+value.InitValue;
-  if Length(value.Vars)>Length(vars) then
-    SetLength(vars,Length(value.Vars));
-  for i:=0 to Length(value.Vars)-1 do
-    Vars[i]:=Vars[i]+value.vars[i];
+  if value is TManySolutionsDataType then begin
+    InitValue:=InitValue+v.InitValue;
+    if Length(v.Vars)>Length(vars) then
+      SetLength(vars,Length(v.Vars));
+    for i:=0 to Length(v.Vars)-1 do
+      Vars[i]:=Vars[i]+v.vars[i];
+  end
+  else inherited;
 end;
 
-procedure TManySolutionsDataType.Sub(value: TManySolutionsDataType);
+procedure TManySolutionsDataType.DoSubtract(right: TAbstractWrapperData);
 var i: Integer;
+    v: TManySolutionsDataType absolute right;
 begin
-  InitValue:=InitValue-value.InitValue;
-  if Length(value.Vars)>Length(vars) then
-    SetLength(vars,Length(value.Vars));
-  for i:=0 to Length(value.Vars)-1 do
-    Vars[i]:=Vars[i]-value.vars[i];
+  if right is TManySolutionsDataType then begin
+    InitValue:=InitValue-v.InitValue;
+    if Length(v.Vars)>Length(vars) then
+      SetLength(vars,Length(v.Vars));
+    for i:=0 to Length(v.Vars)-1 do
+      Vars[i]:=Vars[i]-v.vars[i];
+  end
+  else inherited;
 end;
 
 procedure TManySolutionsDataType.Mul(value: Real);
@@ -428,10 +424,19 @@ begin
     Vars[i]:=Vars[i]*value;
 end;
 
-procedure TManySolutionsDataType.Mul(value: TManySolutionsDataType);
+procedure TManySolutionsDataType.Negate;
 begin
-  if value.IsPlainNumber then Mul(value.InitValue)
-  else raise Exception.Create('ManySolutionsDataType: multiplication of 2 fundamental solutions is unacceptable!');
+  Mul(-1);
+end;
+
+procedure TManySolutionsDataType.DoMultiply(right: TAbstractWrapperData);
+var v: TManySolutionsDataType absolute right;
+begin
+  if right is TManySolutionsDataType then begin
+    if v.IsPlainNumber then Mul(v.InitValue)
+    else raise Exception.Create('ManySolutionsDataType: multiplication of 2 fundamental solutions is unacceptable!');
+  end
+  else inherited;
 end;
 
 procedure TManySolutionsDataType.Divide(value: Real);
@@ -442,10 +447,14 @@ begin
     Vars[i]:=Vars[i]/value;
 end;
 
-procedure TManySolutionsDataType.Divide(value: TManySolutionsDataType);
+procedure TManySolutionsDataType.DoDivide(right: TAbstractWrapperData);
+var v: TManySolutionsDataType absolute right;
 begin
-  if value.IsPlainNumber then Divide(value.InitValue)
-  else raise Exception.Create('ManySolutionsDataType: division of 2 fundamental solutions is unacceptable!');
+  if right is TManySolutionsDataType then begin
+    if v.IsPlainNumber then Divide(v.InitValue)
+    else raise Exception.Create('ManySolutionsDataType: division of 2 fundamental solutions is unacceptable!');
+  end
+  else inherited;
 end;
 
 
@@ -453,44 +462,46 @@ end;
       TManySolutionsVariantType
                                     *)
 procedure TManySolutionsVariantType.Cast(var Dest: TVarData; const Source: TVarData);
+var d: TManySolutionsDataType;
 begin
-  with TManySolutionsVarData(Dest) do begin
+  with TWrapperVarData(Dest) do begin
     dest.VType:=VarType;
-    ref:=TManySolutionsDataType.Create;
+    d:=TManySolutionsDataType.Create;
     //либо строка, либо целое, либо с плавающей точкой.
     case Source.VType of
-      varSmallInt: Ref.InitValue:=Source.VSmallInt;
-      varInteger: Ref.InitValue:=Source.VInteger;
-      varSingle: Ref.InitValue:=Source.VSingle;
-      varDouble: Ref.InitValue:=Source.VDouble;
-      varCurrency: Ref.InitValue:=Source.VCurrency;
-      varShortInt: Ref.InitValue:=Source.VShortInt;
-      varByte: Ref.InitValue:=Source.VByte;
-      varWord: Ref.InitValue:=Source.VWord;
-      varLongWord: Ref.InitValue:=Source.VLongWord;
-      varInt64: Ref.InitValue:=Source.VInt64;
+      varSmallInt: d.InitValue:=Source.VSmallInt;
+      varInteger: d.InitValue:=Source.VInteger;
+      varSingle: d.InitValue:=Source.VSingle;
+      varDouble: d.InitValue:=Source.VDouble;
+      varCurrency: d.InitValue:=Source.VCurrency;
+      varShortInt: d.InitValue:=Source.VShortInt;
+      varByte: d.InitValue:=Source.VByte;
+      varWord: d.InitValue:=Source.VWord;
+      varLongWord: d.InitValue:=Source.VLongWord;
+      varInt64: d.InitValue:=Source.VInt64;
 //      varstring:  //а так ли уж нужно? или строго его и сделать?
       else
-        ref.Free;
+        d.Free;
         RaiseCastError;
     end;
+    data:=d;
   end;
 end;
 
 procedure TManySolutionsVariantType.CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType);
 var LTemp: TVarData;
 begin
-  with TManySolutionsVarData(Source) do begin
+  with TWrapperVarData(Source) do begin
     if Source.VType = VarType then //бывает еще не определенный Variant
       case AVarType of
         varOleStr:
-          VarDataFromOleStr(Dest, Ref.GetString);
+          VarDataFromOleStr(Dest, data.AsString);
         varString:
-          VarDataFromStr(Dest, Ref.GetString);
+          VarDataFromStr(Dest, data.AsString);
       else
         VarDataInit(LTemp);
         try
-          VarDataFromStr(Ltemp,Ref.GetString);
+          VarDataFromStr(Ltemp,data.AsString);
           VarDataCastTo(Dest, LTemp, AVarType);
         finally
           VarDataClear(LTemp);
@@ -499,69 +510,6 @@ begin
     else
       inherited;
   end;
-end;
-
-procedure TManySolutionsVariantType.BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp);
-begin
-if Right.VType=VarType then
-  if Left.VType=varString then
-    if operator=opAdd then
-      Variant(Left):=Variant(Left)+TManySolutionsVarData(Right).Ref.GetString
-    else RaiseInvalidOp
-  else if Left.VType=varType then
-    case operator of
-      opAdd: TManySolutionsVarData(Left).Ref.Add(TManySolutionsVarData(Right).Ref);
-      opSubtract: TManySolutionsVarData(Left).Ref.Sub(TManySolutionsVarData(Right).Ref);
-      opMultiply: TManySolutionsVarData(Left).Ref.Mul(TManySolutionsVarData(Right).Ref);
-      opDivide: TManySolutionsVarData(Left).Ref.Divide(TManySolutionsVarData(Right).Ref);
-      else RaiseInvalidOp;
-    end
-    else RaiseInvalidOp
-else
-  RaiseInvalidOp;
-end;
-
-function TManySolutionsVariantType.RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
-begin
-  RequiredVarType := VarType;
-  Result := True;
-end;
-
-function TManySolutionsVariantType.LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
-begin
-  if (Operator = opAdd) and VarDataIsStr(V) then
-    RequiredVarType := varString
-  else
-    RequiredVarType := VarType;
-  Result := True;
-end;
-
-procedure TManySolutionsVariantType.UnaryOp(var Right: TVarData; const Operator: TVarOp);
-begin
-//имеет смысл только для '-'
-  if (Right.VType=VarType) and (Operator=opNegate) then
-    TManySolutionsVarData(Right).Ref.Mul(-1)
-  else
-    RaiseInvalidOp;
-end;
-
-procedure TManySolutionsVariantType.Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean);
-begin
-  if Indirect and VarDataIsByRef(Source) then
-    VarDataCopyNoInd(Dest, Source)
-  else
-    with TManySolutionsVarData(Dest) do
-    begin
-      VType := VarType;
-      Ref:=TManySolutionsDataType.Create;
-      Ref.Assign(TManySolutionsVarData(Source).Ref);
-    end;
-end;
-
-procedure TManySolutionsVariantType.Clear(var V: TVarData);
-begin
-  V.VType:=varEmpty;
-  TManySolutionsVarData(V).Ref.free;
 end;
 
 (*

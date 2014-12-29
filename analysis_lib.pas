@@ -300,13 +300,15 @@ begin
     if SecondarySweep.Enabled then begin
       WriteLn(F,'Secondary sweep: enabled');
       WriteLn(F,'Variable: '+SecondarySweep.variable.ShowNodeName);
-      s:='Values: '+FloatToStr(SecondarySweep.fMinVal)+' .. '+FloatToStr(SecondarySweep.fMaxVal)+', step '+FloatToStr(SecondarySweep.fIncr);
+      s:='Values: '+SecondarySweep.Variable.ShowValue(SecondarySweep.fMinVal)+'..'+SecondarySweep.Variable.ShowValue(SecondarySweep.MaxVal)+', step '+PrimarySweep.Variable.ShowValue(SecondarySweep.fIncr);
+//      s:='Values: '+FloatToStr(SecondarySweep.fMinVal)+' .. '+FloatToStr(SecondarySweep.fMaxVal)+', step '+FloatToStr(SecondarySweep.fIncr);
       if SecondarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
     end;
       WriteLn(F,'Primary sweep:');
       WriteLn(F,'Variable: '+PrimarySweep.variable.ShowNodeName);
-      s:='Values: '+FloatToStr(PrimarySweep.fMinVal)+' .. '+FloatToStr(PrimarySweep.fMaxVal)+', step '+FloatToStr(PrimarySweep.fIncr);
+      s:='Values: '+PrimarySweep.Variable.ShowValue(PrimarySweep.fMinVal)+'..'+PrimarySweep.Variable.ShowValue(PrimarySweep.MaxVal)+', step '+PrimarySweep.Variable.ShowValue(PrimarySweep.fIncr);
+//      s:='Values: '+FloatToStr(PrimarySweep.fMinVal)+' .. '+FloatToStr(PrimarySweep.fMaxVal)+', step '+FloatToStr(PrimarySweep.fIncr);
       if PrimarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
   //заголовок готов
@@ -314,18 +316,22 @@ begin
     if SecondarySweep.Enabled then
       WriteLn(F,SecondarySweep.variable.ShowValue(SecondarySweep.GetPoint(i)));
     //и напоминаем названия переменных
-    s:=PrimarySweep.Variable.ShowNodeName+#9;
+    s:=PrimarySweep.Variable.ShowNodeName+','+PrimarySweep.Variable.ShowNodeUnit+#9;
     for k:=0 to VarsOfInterest.Count-1 do
       if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
-        s:=s+IEqNode.ShowNodeName+#9
+        s:=s+IEqNode.ShowNodeName+','+IEqNode.ShowNodeUnit+#9
       else
         s:=s+VarsOfInterest[k].Name;
     WriteLn(F,s);
     for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
       s:=FloatToStr(PrimarySweep.GetPoint(j))+#9;
       for k:=0 to VarsOfInterest.Count-1 do begin
-        v:=fdata[j,i,k];
-        s:=s+v+#9;
+        if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
+          s:=s+IEqNode.ShowValue(fdata[j,i,k])+#9
+        else begin
+          v:=fdata[j,i,k];
+          s:=s+v+#9;
+        end;
       end;
       WriteLn(F,s);
     end;

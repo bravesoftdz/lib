@@ -22,12 +22,14 @@ type
 end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
+    cbCyrVoltage, cbCyrCurrent, cbCyrPressure, cbCyrVolumetricFlowRate, cbCyrPower,
     cbFrequency, cbDimensionless: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
     iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
     vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
     powWatt,powkW,powmW,powuW,powMegaW: TConvType;
+    powCyrWatt,powCyrkW,powCyrmW,powCyruW,powCyrMegaW: TConvType;
     fuHz,fukHz,fuMHz,fuGHz: TConvType;
     duUnity: TConvType;
     PreferredUnits: TPreferredUnits;
@@ -66,6 +68,7 @@ end;
 procedure NewConvFamilies;
 begin
   cbVoltage:=RegisterConversionFamily('Voltage');
+  cbCyrVoltage:=RegisterConversionFamily('Ќапр€жение');
   vuVolts:=RegisterConversionType(cbVoltage,'V',1);
   vukV:=RegisterConversionType(cbVoltage,'kV',1000);
   vuMegaV:=RegisterConversionType(cbVoltage,'Megavolts',1e6);
@@ -95,11 +98,17 @@ begin
   vcuLPerH:=RegisterConversionType(cbVolumetricFlowRate,'L/h',1e-3/3600);
 
   cbPower:=RegisterConversionFamily('Power');
+  cbCyrPower:=RegisterConversionFamily('ћощность');
   powWatt:=RegisterConversionType(cbPower,'W',1);
+  powCyrWatt:=RegisterConversionType(cbPower,'¬т',1);
   powmW:=RegisterConversionType(cbPower,'mW',1e-3);
+  powCyrmW:=RegisterConversionType(cbPower,'м¬т',1e-3);
   powuW:=RegisterConversionType(cbPower,'uW',1e-6);
+  powCyruW:=RegisterConversionType(cbPower,'мк¬т',1e-6);
   powkW:=RegisterConversionType(cbPower,'kW',1000);
+  powCyrkW:=RegisterConversionType(cbPower,'к¬т',1000);
   powMegaW:=RegisterConversionType(cbPower,'Megawatt',1e6);
+  powCyrMegaW:=RegisterConversionType(cbPower,'ћегаватт',1e6);
 
   cbFrequency:=RegisterConversionFamily('Frequency');
   fuHz:=RegisterConversionType(cbFrequency,'Hz',1);
@@ -232,6 +241,7 @@ initialization
   PreferredUnits.SaveToFile('PreferredUnits.txt');
 *)
   PreferredUnits:=TPreferredUnits.LoadFromFile('PreferredUnits.txt');
+  GConvUnitToStrFmt:='%g %s';
 
 finalization
   FreeAndNil(PreferredUnits);
