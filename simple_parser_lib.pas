@@ -14,6 +14,7 @@ TSimpleParser=class
 //    procedure find_next_space;
     function isSpace(ch: char): boolean;
     function isDelimiter(ch: char): boolean;
+    function isIdentSymbol(ch: char): boolean;
   public
     spaces: string;
     delimiter: string;
@@ -27,6 +28,7 @@ TSimpleParser=class
     function getInt: Integer;
     function getInt64: Int64;
     function getString: string;   //считать остаток строки
+    function getIdent: string; //считать символы, пока они укладываются в диап. A..Z, a..z, 0..9, _, А..Я, а..я
     function getHex: Integer;
     function getBinary: LongWord;
   end;
@@ -83,6 +85,12 @@ begin
   result:=false;
 end;
 
+function TSimpleParser.isIdentSymbol(ch: Char): Boolean;
+begin
+  result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
+    ((ch>='0') and (ch<='9')) or ((ch>='А') and (ch<='Я')) or
+    ((ch>='а') and (ch<='я')) or (ch='_');
+end;
 
 procedure TSimpleParser.skip_spaces;
 begin
@@ -195,6 +203,15 @@ begin
     inc(_pos);
   end;
   Result:=x;
+end;
+
+function TSimpleParser.getIdent: string;
+var initPos: Integer;
+begin
+  skip_spaces;
+  initPos:=_pos;
+  while (_pos<=Length(_str)) and IsIdentSymbol(_str[_pos]) do inc(_pos);
+  Result:=MidStr(_str,initPos,_pos-initPos);
 end;
 
 end.
