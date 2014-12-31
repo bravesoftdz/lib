@@ -86,7 +86,7 @@ begin
   puPa:=RegisterConversionType(cbPressure,'Pa',1);
   pukPa:=RegisterConversionType(cbPressure,'kPa',1000);
   puMegaPa:=RegisterConversionType(cbPressure,'MPa',1e6);
-  puMeters:=RegisterConversionType(cbPressure,'m',9800);
+  puMeters:=RegisterConversionType(cbPressure,'m_water',9800);
   puBar:=RegisterConversionType(cbPressure,'bar',101000);
 
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
@@ -118,6 +118,29 @@ begin
 
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
+
+  RegisterConversionType(cbDistance,'ì',1);
+  RegisterConversionType(cbDistance,'m',1);
+  RegisterConversionType(cbDistance,'ìì',1e-3);
+  RegisterConversionType(cbDistance,'mm',1e-3);
+  RegisterConversionType(cbDistance,'ìêì',1e-6);
+  RegisterConversionType(cbDistance,'um',1e-6);
+  RegisterConversionType(cbDistance,'íì',1e-9);
+  RegisterConversionType(cbDistance,'nm',1e-9);
+  RegisterConversionType(cbDistance,'ïì',1e-12);
+  RegisterConversionType(cbDistance,'pm',1e-12);
+
+  RegisterConversionType(cbTime,'ñ',1 / SecsPerDay);
+  RegisterConversionType(cbTime,'s',1 / SecsPerDay);
+  RegisterConversionType(cbTime,'ìñ',1e-3 / SecsPerDay);
+  RegisterConversionType(cbTime,'ms',1e-3 / SecsPerDay);
+  RegisterConversionType(cbTime,'ìêñ',1e-6 / SecsPerDay);
+  RegisterConversionType(cbTime,'us',1e-6 / SecsPerDay);
+  RegisterConversionType(cbTime,'íñ',1e-9 / SecsPerDay);
+  RegisterConversionType(cbTime,'ns',1e-9 / SecsPerDay);
+  RegisterConversionType(cbTime,'ïñ',1e-12 / SecsPerDay);
+  RegisterConversionType(cbTime,'ps',1e-12 / SecsPerDay);
+          
 end;
 
 (*

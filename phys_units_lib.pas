@@ -33,12 +33,16 @@ end;  //неужели больше ничего не нужно?
     private
       UnitTypes: TUnitTypes;
       Exponents: TExponents;
+      fCount: Integer;
       fMultiplier: Real;
       procedure Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
       function MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
       function ShowSomething(proc: TShowName): string;
+    protected
+      procedure AddBaseUnit(ConvType: TConvType; Exponent: Real);
     public
+      procedure Clear;
       procedure Assign(formula: string); reintroduce; overload;
       procedure Assign(source: TPersistent); overload; override;
       function SameFamily(value: TUnitsWithExponent): Boolean;
@@ -55,14 +59,17 @@ end;  //неужели больше ничего не нужно?
     protected
       instance: Variant; //та переменная, которую мы оборачиваем
     public
-      constructor Create;
+      constructor Create; overload;
+      constructor Create(text: string); overload;
       destructor Destroy; override;
-      procedure Assign(source: TPersistent); override;
+      procedure Assign(source: TPersistent); overload; override;
+      procedure Assign(str: string); reintroduce; overload;
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
       procedure DoSubtract(Right: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
       procedure DoDivide(Right: TAbstractWrapperData); override;
+      function AsString: string; override;
   end;
 
   TDerivedFamilyEntry=class
@@ -71,6 +78,12 @@ end;  //неужели больше ничего не нужно?
     formula: TUnitsWithExponent;
     constructor Create;
     destructor Destroy; override;
+  end;
+
+  TVariantWithUnitType = class (TAbstractWrapperVariantType)
+  public
+    procedure Cast(var Dest: TVarData; const Source: TVarData); override;
+    procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
   end;
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; letter: string);
@@ -82,12 +95,22 @@ procedure RegisterDerivedConversionFamily(formula: TUnitsWithExponent); overload
 
 function ConvTypeToBaseFamilyLetter(const value: TConvType): string;
 
+//тип VariantWithUnit
+function VariantWithUnit: TVarType;
+
+//конструкторы
+procedure VarWithUnitCreateInto(var ADest: Variant; const AData: TVariantWithUnit);
+function VarWithUnitCreate(text: string): Variant;
+
+
+
 implementation
 
-uses StdConvs,streamable_conv_units,sysUtils,math,simple_parser_lib;
+uses StdConvs,streamable_conv_units,sysUtils,math,simple_parser_lib,VarCmplx,strUtils;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
+    VarWithUnitType: TVariantWithUnitType;
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; letter: string);
 var L: Integer;
@@ -168,36 +191,45 @@ end;
 (*
       TUnitsWithExponent
                         *)
+procedure TUnitsWithExponent.Clear;
+begin
+  fCount:=0;
+  SetLength(UnitTypes,0);
+  SetLength(Exponents,0);
+end;
+
+procedure TUnitsWithExponent.AddBaseUnit(ConvType: TConvType; Exponent: Real);
+begin
+  inc(fCount);
+  if Length(UnitTypes)<fCount then begin
+    SetLength(UnitTypes,Length(UnitTypes)*2+1);
+    SetLength(Exponents,Length(Exponents)*2+1);
+  end;
+  UnitTypes[fCount-1]:=ConvType;
+  Exponents[fCount-1]:=Exponent;
+end;
+
 procedure TUnitsWithExponent.Assign(formula: string);
 var p: TSimpleParser;
-    i: Integer;
     s: string;
     ch: char;
-    pow: Integer;
+    pow: Real;
 begin
+  Clear;
   p:=TSimpleParser.Create(formula);
   try
-    i:=0;
     while not p.eof do begin
       s:=p.getIdent;
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
         if ch='^' then begin
-          pow:=p.getInt;
+          pow:=p.getFloat;
           if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in dimension formula %s',[formula]);
         end;
       end;
-      inc(i);
-      if Length(Exponents)<i then begin
-        SetLength(Exponents,Length(Exponents)*2+1);
-        SetLength(UnitTypes,Length(UnitTypes)*2+1);
-      end;
-      UnitTypes[i-1]:=BaseFamilyLetterToConvFamily(s);
-      Exponents[i-1]:=pow;
+      AddBaseUnit(BaseFamilyLetterToConvFamily(s),pow);
     end;
-    SetLength(UnitTypes,i);
-    SetLength(Exponents,i);
   finally
     p.Free;
   end;
@@ -209,6 +241,7 @@ begin
   if source is TUnitsWithExponent then begin
     Exponents:=Copy(s.Exponents);
     UnitTypes:=Copy(s.UnitTypes);
+    fCount:=s.fCount;
   end
   else inherited Assign(source);
 end;
@@ -216,9 +249,9 @@ end;
 function TUnitsWithExponent.SameFamily(value: TUnitsWithExponent): Boolean;
 var i: Integer;
 begin
-  if Length(Exponents)=Length(value.Exponents) then begin
+  if fcount=value.fCount then begin
     Result:=true;
-    for i:=0 to Length(Exponents)-1 do
+    for i:=0 to fCount-1 do
       if (ConvTypeToFamily(UnitTypes[i])<>ConvTypeToFamily(value.UnitTypes[i])) or (Exponents[i]<>value.Exponents[i]) then begin
         Result:=false;
         Exit;
@@ -232,7 +265,7 @@ var i: Integer;
 begin
   //мы уже знаем, что семейство одно и то же
   Result:=1;
-  for i:=0 to Length(Exponents)-1 do
+  for i:=0 to fCount-1 do
     if (UnitTypes[i]<>value.UnitTypes[i]) then
       Result:=Result*Convert(1,value.UnitTypes[i],UnitTypes[i]);
 end;
@@ -250,10 +283,10 @@ begin
   i:=0;
   j:=0;
   k:=0;
-  L1:=Length(Exponents);
-  L2:=Length(value.Exponents);
+  L1:=fcount;
+  L2:=value.fCount;
   SetLength(ResultUnits,L1+L2); //наихудший сценарий
-  while (i<Length(Exponents)) and (j<Length(value.Exponents)) do begin
+  while (i<L1) and (j<L2) do begin
     first:=ConvTypeToFamily(UnitTypes[i]);
     second:=ConvTypeToFamily(value.UnitTypes[j]);
     if first=second then begin
@@ -281,6 +314,7 @@ begin
   SetLength(ResultExponents,k);
   UnitTypes:=Copy(ResultUnits);
   Exponents:=Copy(ResultExponents);
+  fCount:=k;
 end;
 
 function TUnitsWithExponent.MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
@@ -315,7 +349,7 @@ function TUnitsWithExponent.ShowSomething(proc: TShowName): string;
 var i: Integer;
 begin
   Result:='';
-  for i:=0 to Length(Exponents)-1 do begin
+  for i:=0 to fCount-1 do begin
     if Exponents[i]=1 then
       Result:=Result+proc(UnitTypes[i])
     else begin
@@ -325,7 +359,7 @@ begin
       else
         Result:=Result+FloatToStr(Exponents[i]);
     end;
-    if i<Length(Exponents)-1 then Result:=Result+'*';
+    if i<fCount-1 then Result:=Result+'*';
   end;
 end;
 
@@ -345,6 +379,12 @@ end;
 constructor TVariantWithUnit.Create;
 begin
   units:=TUnitsWithExponent.Create;
+end;
+
+constructor TVariantWithUnit.Create(text: string);
+begin
+  Create;
+  Assign(text);
 end;
 
 destructor TVariantWithUnit.Destroy;
@@ -411,7 +451,92 @@ begin
   else inherited;
 end;
 
+procedure TVariantWithUnit.Assign(str: string);
+var unitStr,term: string;
+    convType: TConvType;
+    i: Integer;
+    p: TSimpleParser;
+    ch: char;
+    pow: Real;
+begin
+  i:=Length(str);
+  while (i>=1) and (str[i]<>' ') do dec(i);
+  if i=0 then begin
+    //либо только ед. измерения, без числа,
+    //либо тот или иной Variant, но мы заранее не знаем, какой.
+    //в этом проблема всех этих произволов. Попробуем в комплексную вел. преобразовать что ль
+    instance:=VarComplexCreate(str);
+    instance:=VarComplexSimplify(instance);
+    Units.Clear;
+  end
+  else begin
+    //посерединке пробел, делим напополам
+    instance:=VarComplexCreate(LeftStr(str,i-1));
+    instance:=VarComplexSimplify(instance);
+    unitStr:=RightStr(str,Length(str)-i);
+    p:=TSimpleParser.Create(unitStr);
+    try
+      while not p.eof do begin
+        term:=p.getIdent;
+        if not DescriptionToConvType(term,convType) then
+          Raise Exception.CreateFmt('%s is not correct unit',[term]);
+        pow:=1;
+        if not p.eof then begin
+          ch:=p.getChar;
+          if ch='^' then begin
+            pow:=p.getFloat;
+            if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in unit %s',[str]);
+          end;          
+        end;
+        Units.AddBaseUnit(ConvType,pow);
+      end;
+    finally
+      p.Free;
+    end;
+  end;
+end;
 
+function TVariantWithUnit.AsString: string;
+begin
+  Result:=instance;
+  Result:=Result+' '+Units.AsString;
+end;
+(*
+    TVariantWithUnitType
+                            *)
+procedure TVariantWithUnitType.Cast(var Dest: TVarData; const Source: TVarData);
+begin
+  //строку преобразуем по всем правилам, а любые другие Variant'ы "оборачиваем" безразм.
+  VarDataClear(Dest);
+  if VarDataIsStr(Source) then
+    TWrapperVarData(Dest).Data:=TVariantWithUnit.Create(VarDataToStr(Source))
+  else begin
+    with TWrapperVarData(Dest).Data as TVariantWithUnit do begin
+      Create;
+      instance:=Variant(source);
+      Units.Clear;  //безразм. величина
+    end;
+  end;
+  Dest.VType:=VariantWithUnit;
+end;
+
+procedure TVariantWithUnitType.CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType);
+begin
+  if Source.VType = VarType then begin
+    case AVarType of
+      varOleStr:
+        VarDataFromOleStr(Dest, TWrapperVarData(Source).data.AsString);
+      varString:
+        VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
+      else
+        with TWrapperVarData(Source).Data as TVariantWithUnit do begin
+          if Units.fCount>0 then Raise Exception.CreateFmt('%s: can''t convert value with unit to non-string type',[AsString]);
+          VarDataCastTo(Dest,TVarData(instance),AVarType);
+        end;
+    end;
+  end
+  else inherited; //нам дали пустой variant скорее всего
+end;
 
 (*
     Initialization
@@ -438,11 +563,33 @@ begin
     DerivedFamilyEntries[i].Free;
 end;
 
+function VariantWithUnit: TVarType;
+begin
+  Result:=VarWithUnitType.VarType;
+end;
+
+(*
+    конструкторы
+                  *)
+procedure VarWithUnitCreateInto(var ADest: Variant; const Adata: TVariantWithUnit);
+begin
+  VarClear(ADest);
+  TWrapperVarData(ADest).VType:=VariantWithUnit;
+  TWrapperVarData(ADest).Data:=Adata;
+end;
+
+function VarWithUnitCreate(text: string): Variant;
+begin
+  VarWithUnitCreateInto(Result,TVariantWithUnit.Create(text));
+end;
+
 
 initialization
   RegisterStandartUnits;
+  VarWithUnitType:=TVariantWithUnitType.Create;
 
 finalization
+  FreeAndNil(VarWithUnitType);
   FreeUnits;
 
 
