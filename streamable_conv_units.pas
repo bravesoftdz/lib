@@ -140,7 +140,9 @@ begin
   RegisterConversionType(cbTime,'ns',1e-9 / SecsPerDay);
   RegisterConversionType(cbTime,'ορ',1e-12 / SecsPerDay);
   RegisterConversionType(cbTime,'ps',1e-12 / SecsPerDay);
-          
+
+  RegisterConversionType(cbMass,'g',1);
+  RegisterConversionType(cbMass,'kg',1000);
 end;
 
 (*

@@ -41,6 +41,7 @@ end;  //неужели больше ничего не нужно?
       function ShowSomething(proc: TShowName): string;
     protected
       procedure AddBaseUnit(ConvType: TConvType; Exponent: Real);
+      function AddArbitraryUnit(ConvType: TConvType; Exponent: Real): Real;
     public
       procedure Clear;
       procedure Assign(formula: string); reintroduce; overload;
@@ -173,6 +174,19 @@ begin
   DerivedFamilyEntries[L].formula.Assign(formula);
 end;
 
+function IndexOfDerivedFamily(Family: TConvFamily): Integer;
+var i: Integer;
+begin
+  for i:=0 to Length(DerivedFamilyEntries)-1 do
+    if DerivedFamilyEntries[i].ConvFamily=Family then begin
+      Result:=i;
+      Exit;
+    end;
+  Result:=-1;
+end;
+
+
+
 
 (*
   TDerivedFamilyEntry
@@ -209,6 +223,31 @@ begin
   Exponents[fCount-1]:=Exponent;
 end;
 
+function TUnitsWithExponent.AddArbitraryUnit(ConvType: TConvType; Exponent: Real): Real;
+var f: TConvFamily;
+    i: Integer;
+    u: TUnitsWithExponent;
+begin
+  f:=ConvTypeToFamily(ConvType);
+  if IndexOfBaseFamily(f)>=0 then begin
+    AddBaseUnit(ConvType, Exponent);
+    Result:=1;
+  end
+  else begin
+    //скребем по derived, находим и помножаем на его unit
+    i:=IndexOfDerivedFamily(f);
+    if i=-1 then Raise Exception.CreateFmt('Family %s is neither base nor derived',[ConvFamilyToDescription(f)]);
+    u:=TUnitsWithExponent.Create;
+    try
+      u.Assign(DerivedFamilyEntries[i].formula);
+  //  u.Power(Exponent); //возвести в нужную степень
+      Result:=Multiply(u);
+    finally
+      u.Free;
+    end;
+  end;
+end;
+(*
 procedure TUnitsWithExponent.Assign(formula: string);
 var p: TSimpleParser;
     s: string;
@@ -234,6 +273,39 @@ begin
     p.Free;
   end;
 end;
+*)
+
+procedure TUnitsWithExponent.Assign(formula: string);
+var p: TSimpleParser;
+    term: string;
+    convType: TConvType;
+    ch: char;
+    pow: Real;
+begin
+  Clear;
+  p:=TSimpleParser.Create(formula);
+
+  try
+    while not p.eof do begin
+      term:=p.getIdent;
+      if not DescriptionToConvType(term,convType) then
+        Raise Exception.CreateFmt('%s is not correct unit',[term]);
+      pow:=1;
+      if not p.eof then begin
+        ch:=p.getChar;
+        if ch='^' then begin
+          pow:=p.getFloat;
+          if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in unit %s',[formula]);
+        end;
+      end;
+      AddArbitraryUnit(ConvType,pow);
+//      чтобы он к примеру Джоули преобр. в кг*м^2/с^2
+    end;
+  finally
+    p.Free;
+  end;
+end;
+
 
 procedure TUnitsWithExponent.Assign(source: TPersistent);
 var s: TUnitsWithExponent absolute source;
@@ -286,6 +358,7 @@ begin
   L1:=fcount;
   L2:=value.fCount;
   SetLength(ResultUnits,L1+L2); //наихудший сценарий
+  SetLength(ResultExponents,L1+L2);
   while (i<L1) and (j<L2) do begin
     first:=ConvTypeToFamily(UnitTypes[i]);
     second:=ConvTypeToFamily(value.UnitTypes[j]);
@@ -296,7 +369,7 @@ begin
       inc(j);
       inc(k);
     end
-    else if UnitTypes[i]>value.UnitTypes[j] then begin
+    else if first>second then begin
       //UnitTypes[j] не было в исх. списке - надо добавить на подх. место
       ResultUnits[k]:=value.UnitTypes[j];
       ResultExponents[k]:=value.Exponents[j];
@@ -309,6 +382,18 @@ begin
       inc(i);
       inc(k);
     end;
+  end;
+  while i<L1 do begin //хвосты доделываем
+    ResultUnits[k]:=UnitTypes[i];
+    ResultExponents[k]:=Exponents[i];
+    inc(i);
+    inc(k);
+  end;
+  while j<L2 do begin //и еще один хвост
+    ResultUnits[k]:=value.UnitTypes[j];
+    ResultExponents[k]:=value.Exponents[j];
+    inc(j);
+    inc(k);
   end;
   SetLength(ResultUnits,k);
   SetLength(ResultExponents,k);
@@ -475,24 +560,8 @@ begin
     instance:=VarComplexSimplify(instance);
     unitStr:=RightStr(str,Length(str)-i);
     p:=TSimpleParser.Create(unitStr);
-    try
-      while not p.eof do begin
-        term:=p.getIdent;
-        if not DescriptionToConvType(term,convType) then
-          Raise Exception.CreateFmt('%s is not correct unit',[term]);
-        pow:=1;
-        if not p.eof then begin
-          ch:=p.getChar;
-          if ch='^' then begin
-            pow:=p.getFloat;
-            if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in unit %s',[str]);
-          end;          
-        end;
-        Units.AddBaseUnit(ConvType,pow);
-      end;
-    finally
-      p.Free;
-    end;
+    Units.Assign(unitStr);
+
   end;
 end;
 
@@ -547,12 +616,18 @@ begin
   RegisterBaseConversionFamily(cbDistance,'L');
   RegisterBaseConversionFamily(cbMass,'M');
   RegisterBaseConversionFamily(cbTime,'T');
-  RegisterDerivedConversionFamily(cbArea,'L^2');
-  RegisterDerivedConversionFamily(cbVolume,'L^3');
-  RegisterDerivedConversionFamily(cbPressure,'M*L^-1*T^-2');
-  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'L^3*T^-1');
-  RegisterDerivedConversionFamily(cbFrequency,'T^-1');
-  RegisterDerivedConversionFamily(cbPower,'M*L^2*T^-3');
+//  RegisterDerivedConversionFamily(cbArea,'L^2');
+//  RegisterDerivedConversionFamily(cbVolume,'L^3');
+//  RegisterDerivedConversionFamily(cbPressure,'M*L^-1*T^-2');
+//  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'L^3*T^-1');
+//  RegisterDerivedConversionFamily(cbFrequency,'T^-1');
+//  RegisterDerivedConversionFamily(cbPower,'M*L^2*T^-3');
+  RegisterDerivedConversionFamily(cbArea,'m^2');
+  RegisterDerivedConversionFamily(cbVolume,'m^3');
+  RegisterDerivedConversionFamily(cbPressure,'kg*m^-1*s^-2');
+  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'m^3*s^-1');
+  RegisterDerivedConversionFamily(cbFrequency,'s^-1');
+  RegisterDerivedConversionFamily(cbPower,'kg*m^2*s^-3');
   //напряжения и токи сюда же
 end;
 
