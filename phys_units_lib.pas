@@ -18,6 +18,8 @@ type
 
 TBaseFamilyEntry=record
   ConvFamily: TConvFamily;  //ссылка на description здесь же
+  BaseConvType: TConvType;  //а все из-за базовой ед. изм времени 1 сутки в StdConvs
+  isAffine: boolean;  //false: векторная величина, true: афинная
   letter: string;
 end;  //неужели больше ничего не нужно?
 
@@ -35,6 +37,7 @@ end;  //неужели больше ничего не нужно?
       Exponents: TExponents;
       fCount: Integer;
       fMultiplier: Real;
+      fIsAffine: Boolean;
       procedure Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
       function MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
@@ -44,25 +47,25 @@ end;  //неужели больше ничего не нужно?
       function AddArbitraryUnit(ConvType: TConvType; Exponent: Real): Real;
     public
       procedure Clear;
-      procedure Assign(formula: string); reintroduce; overload;
-      procedure Assign(source: TPersistent); overload; override;
+      procedure Assign(source: TPersistent); override;
+      
+      function TakeFromString(formula: string): Real;
       function SameFamily(value: TUnitsWithExponent): Boolean;
       function FindMultiplier(value: TUnitsWithExponent): Real;
       function Multiply(value: TUnitsWithExponent): Real;
       function Divide(right: TUnitsWithExponent): Real;
       function AsString: string;
       function ShowFormula: string;
+      property isAffine: Boolean read fIsAffine;
   end;
 //пока что здесь - конкретный тип, для представления размерности данных
   TVariantWithUnit=class(TAbstractWrapperData)
     private
-      Units: TUnitsWithExponent;
+      ConvType: TConvType;
     protected
       instance: Variant; //та переменная, которую мы оборачиваем
     public
-      constructor Create; overload;
       constructor Create(text: string); overload;
-      destructor Destroy; override;
       procedure Assign(source: TPersistent); overload; override;
       procedure Assign(str: string); reintroduce; overload;
       procedure Negate; override; //взять обратный знак
@@ -87,7 +90,7 @@ end;  //неужели больше ничего не нужно?
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
   end;
 
-procedure RegisterBaseConversionFamily(Family: TConvFamily; letter: string);
+procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
 //procedure RegisterBaseConversionFamily(
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; formula: string); overload;
@@ -113,13 +116,15 @@ var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
     VarWithUnitType: TVariantWithUnitType;
 
-procedure RegisterBaseConversionFamily(Family: TConvFamily; letter: string);
+procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 var L: Integer;
 begin
   L:=Length(BaseFamilyEntries);
   SetLength(BaseFamilyEntries,L+1);
   BaseFamilyEntries[L].ConvFamily:=Family;
+  BaseFamilyEntries[L].BaseConvType:=BaseType;
   BaseFamilyEntries[L].letter:=letter;
+  BaseFamilyEntries[L].isAffine:=isAffine;
 end;
 
 function IndexOfBaseFamily(Family: TConvFamily): Integer;
@@ -160,7 +165,7 @@ begin
   L:=Length(DerivedFamilyEntries);
   SetLength(DerivedFamilyEntries,L+1);
   DerivedFamilyEntries[L]:=TDerivedFamilyEntry.Create;
-  DerivedFamilyEntries[L].formula.Assign(formula);
+  DerivedFamilyEntries[L].formula.TakeFromString(formula);
   DerivedFamilyEntries[L].ConvFamily:=Family;
 end;
 
@@ -185,8 +190,10 @@ begin
   Result:=-1;
 end;
 
-
-
+function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
+begin
+  Raise Exception.Create('Sorry, FindPhysUnit not ready');
+end;
 
 (*
   TDerivedFamilyEntry
@@ -229,9 +236,13 @@ var f: TConvFamily;
     u: TUnitsWithExponent;
 begin
   f:=ConvTypeToFamily(ConvType);
-  if IndexOfBaseFamily(f)>=0 then begin
-    AddBaseUnit(ConvType, Exponent);
-    Result:=1;
+  i:=IndexOfBaseFamily(f);
+  if i>=0 then begin
+    AddBaseUnit(BaseFamilyEntries[i].BaseConvType, Exponent);
+      if ConvType=BaseFamilyEntries[i].BaseConvType then
+        Result:=1
+      else
+        Result:=Power(Convert(1,ConvType,BaseFamilyEntries[i].BaseConvType),Exponent);
   end
   else begin
     //скребем по derived, находим и помножаем на его unit
@@ -275,7 +286,7 @@ begin
 end;
 *)
 
-procedure TUnitsWithExponent.Assign(formula: string);
+function TUnitsWithExponent.TakeFromString(formula: string): Real;
 var p: TSimpleParser;
     term: string;
     convType: TConvType;
@@ -284,7 +295,7 @@ var p: TSimpleParser;
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
-
+  Result:=1;
   try
     while not p.eof do begin
       term:=p.getIdent;
@@ -298,7 +309,7 @@ begin
           if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in unit %s',[formula]);
         end;
       end;
-      AddArbitraryUnit(ConvType,pow);
+      Result:=Result*AddArbitraryUnit(ConvType,pow);
 //      чтобы он к примеру Джоули преобр. в кг*м^2/с^2
     end;
   finally
@@ -461,21 +472,10 @@ end;
 (*
       TVariantWithUnit
                           *)
-constructor TVariantWithUnit.Create;
-begin
-  units:=TUnitsWithExponent.Create;
-end;
-
 constructor TVariantWithUnit.Create(text: string);
 begin
   Create;
   Assign(text);
-end;
-
-destructor TVariantWithUnit.Destroy;
-begin
-  units.Free;
-  inherited Destroy;
 end;
 
 procedure TVariantWithUnit.Assign(source: TPersistent);
@@ -483,7 +483,7 @@ var s: TVariantWithUnit absolute source;
 begin
   if source is TVariantWithUnit then begin
     instance:=s.instance; //variant'ы - они умные, скопируются
-    units.Assign(s.Units);
+    ConvType:=s.ConvType;
   end
   else inherited Assign(source);
 end;
@@ -496,27 +496,44 @@ end;
 
 procedure TVariantWithUnit.DoAdd(value: TAbstractWrapperData);
 var v: TVariantWithUnit absolute value;
+    uR,uL: TUnitsWithExponent;
 begin
-  if value is TVariantWithUnit then begin
-    //размерности должны строго совпадать
-    //видимо, самое простое - держать массивы отсортированными по TConvType
-    if units.SameFamily(v.Units) then
-      instance:=instance+v.instance*units.FindMultiplier(v.Units)
-    else
-      Raise Exception.CreateFMT('TVariantWithUnit.DoAdd: units don''t match, %s and %s',[units.AsString,v.Units.AsString]);
-  end
+  if value is TVariantWithUnit then
+    if ConvType=v.ConvType then
+      instance:=instance+v.instance
+    else begin
+      uL:=FindPhysUnit(ConvType);
+      uR:=FindPhysUnit(v.ConvType);
+      if CompatibleConversionTypes(v.ConvType,ConvType) then
+        if uR.isAffine and uL.isAffine then
+          Raise Exception.Create('Operations with affine units under construction')
+        else
+          instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
+      else
+        Raise Exception.Create('Sorry, implicit unit conversion is also under construction');
+    end
   else inherited; //не знаю пока, пригодится ли эта строчка хоть раз?
 end;
 
 procedure TVariantWithUnit.DoSubtract(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
+    uR,uL: TUnitsWithExponent;
 begin
-  if Right is TVariantWithUnit then begin
-    if units.SameFamily(v.Units) then
-      instance:=instance-v.instance*units.FindMultiplier(v.Units)
-    else
-      Raise Exception.CreateFmt('TVariantWithUnit.DoSub: units don''t match, %s and %s',[units.AsString,v.Units.AsString]);
-  end
+  if Right is TVariantWithUnit then
+    if ConvType=v.ConvType then //самое частое все-таки)
+      instance:=instance-v.instance
+    else begin
+      //ищем соотв. запись
+      uL:=FindPhysUnit(ConvType);
+      uR:=FindPhysUnit(v.ConvType);
+      if CompatibleConversionTypes(v.ConvType,ConvType) then
+        if uR.isAffine and uL.isAffine then
+          Raise Exception.Create('Operations with affine units under construction')
+        else
+          instance:=instance-v.instance*Convert(1,v.ConvType,ConvType)
+      else
+        Raise Exception.Create('Sorry, implicit unit conversion is also under construction');
+    end
   else inherited;
 end;
 
@@ -524,7 +541,7 @@ procedure TVariantWithUnit.DoMultiply(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
 begin
   if Right is TVariantWithUnit then
-    instance:=instance*v.instance*units.Multiply(v.Units)
+//    instance:=instance*v.instance*units.Multiply(v.Units)
   else inherited;
 end;
 
@@ -532,17 +549,14 @@ procedure TVariantWithUnit.DoDivide(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
 begin
   if Right is TVariantWithUnit then
-    instance:=instance/v.instance*units.Divide(v.Units)
+//    instance:=instance/v.instance*units.Divide(v.Units)
   else inherited;
 end;
 
 procedure TVariantWithUnit.Assign(str: string);
-var unitStr,term: string;
-    convType: TConvType;
+var unitStr: string;
     i: Integer;
-    p: TSimpleParser;
-    ch: char;
-    pow: Real;
+    dimension: TUnitsWithExponent;
 begin
   i:=Length(str);
   while (i>=1) and (str[i]<>' ') do dec(i);
@@ -552,23 +566,30 @@ begin
     //в этом проблема всех этих произволов. Попробуем в комплексную вел. преобразовать что ль
     instance:=VarComplexCreate(str);
     instance:=VarComplexSimplify(instance);
-    Units.Clear;
+    ConvType:=duUnity;  //безразм.
   end
   else begin
     //посерединке пробел, делим напополам
     instance:=VarComplexCreate(LeftStr(str,i-1));
     instance:=VarComplexSimplify(instance);
     unitStr:=RightStr(str,Length(str)-i);
-    p:=TSimpleParser.Create(unitStr);
-    Units.Assign(unitStr);
-
+    if not DescriptionToConvType(unitStr,ConvType) then begin
+      //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
+      //скормить ему размерность, он "выплюнет" множитель, домножаем на него
+      //а также ConvType - тот, что является базовым для данного семейства
+      //возможно, семейство придется создать на ходу
+      dimension:=TUnitsWithExponent.Create;
+      
+//      p:=TSimpleParser.Create(unitStr);
+//      Units.Assign(unitStr);
+    end;
   end;
 end;
 
 function TVariantWithUnit.AsString: string;
 begin
   Result:=instance;
-  Result:=Result+' '+Units.AsString;
+//  Result:=Result+' '+Units.AsString;
 end;
 (*
     TVariantWithUnitType
@@ -583,7 +604,7 @@ begin
     with TWrapperVarData(Dest).Data as TVariantWithUnit do begin
       Create;
       instance:=Variant(source);
-      Units.Clear;  //безразм. величина
+//      Units.Clear;  //безразм. величина
     end;
   end;
   Dest.VType:=VariantWithUnit;
@@ -599,7 +620,7 @@ begin
         VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
       else
         with TWrapperVarData(Source).Data as TVariantWithUnit do begin
-          if Units.fCount>0 then Raise Exception.CreateFmt('%s: can''t convert value with unit to non-string type',[AsString]);
+//          if Units.fCount>0 then Raise Exception.CreateFmt('%s: can''t convert value with unit to non-string type',[AsString]);
           VarDataCastTo(Dest,TVarData(instance),AVarType);
         end;
     end;
@@ -613,15 +634,17 @@ end;
 
 procedure RegisterStandartUnits;
 begin
-  RegisterBaseConversionFamily(cbDistance,'L');
-  RegisterBaseConversionFamily(cbMass,'M');
-  RegisterBaseConversionFamily(cbTime,'T');
+  RegisterBaseConversionFamily(cbDistance,duShortMeters,'L');
+  RegisterBaseConversionFamily(cbMass,muShortKilograms,'M');
+  RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
+  RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
 //  RegisterDerivedConversionFamily(cbArea,'L^2');
 //  RegisterDerivedConversionFamily(cbVolume,'L^3');
 //  RegisterDerivedConversionFamily(cbPressure,'M*L^-1*T^-2');
 //  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'L^3*T^-1');
 //  RegisterDerivedConversionFamily(cbFrequency,'T^-1');
 //  RegisterDerivedConversionFamily(cbPower,'M*L^2*T^-3');
+  RegisterDerivedConversionFamily(cbDimensionless,'');
   RegisterDerivedConversionFamily(cbArea,'m^2');
   RegisterDerivedConversionFamily(cbVolume,'m^3');
   RegisterDerivedConversionFamily(cbPressure,'kg*m^-1*s^-2');

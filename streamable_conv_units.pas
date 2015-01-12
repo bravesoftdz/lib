@@ -32,6 +32,9 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     powCyrWatt,powCyrkW,powCyrmW,powCyruW,powCyrMegaW: TConvType;
     fuHz,fukHz,fuMHz,fuGHz: TConvType;
     duUnity: TConvType;
+
+    duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
+
     PreferredUnits: TPreferredUnits;
 implementation
 
@@ -63,6 +66,16 @@ function ConvToName(Int: LongInt; var Ident: string): Boolean;
 begin
   Ident:=ConvTypeToDescription(Int);
   Result:=true;
+end;
+
+function KelvinToCelsius(const AValue: Double): Double;
+begin
+  Result := AValue - 273.15;
+end;
+
+function CelsiusToKelvin(const AValue: Double): Double;
+begin
+  Result := AValue + 273.15;
 end;
 
 procedure NewConvFamilies;
@@ -120,7 +133,7 @@ begin
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
 
   RegisterConversionType(cbDistance,'ì',1);
-  RegisterConversionType(cbDistance,'m',1);
+  duShortMeters:=RegisterConversionType(cbDistance,'m',1);
   RegisterConversionType(cbDistance,'ìì',1e-3);
   RegisterConversionType(cbDistance,'mm',1e-3);
   RegisterConversionType(cbDistance,'ìêì',1e-6);
@@ -131,7 +144,7 @@ begin
   RegisterConversionType(cbDistance,'pm',1e-12);
 
   RegisterConversionType(cbTime,'ñ',1 / SecsPerDay);
-  RegisterConversionType(cbTime,'s',1 / SecsPerDay);
+  tuShortSeconds:=RegisterConversionType(cbTime,'s',1 / SecsPerDay);
   RegisterConversionType(cbTime,'ìñ',1e-3 / SecsPerDay);
   RegisterConversionType(cbTime,'ms',1e-3 / SecsPerDay);
   RegisterConversionType(cbTime,'ìêñ',1e-6 / SecsPerDay);
@@ -142,7 +155,9 @@ begin
   RegisterConversionType(cbTime,'ps',1e-12 / SecsPerDay);
 
   RegisterConversionType(cbMass,'g',1);
-  RegisterConversionType(cbMass,'kg',1000);
+  muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);
+
+  tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
 end;
 
 (*
