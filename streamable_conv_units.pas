@@ -136,6 +136,8 @@ begin
   duShortMeters:=RegisterConversionType(cbDistance,'m',1);
   RegisterConversionType(cbDistance,'לל',1e-3);
   RegisterConversionType(cbDistance,'mm',1e-3);
+  RegisterConversionType(cbDistance,'cm',1e-2);
+  RegisterConversionType(cbDistance,'סל',1e-2);
   RegisterConversionType(cbDistance,'לךל',1e-6);
   RegisterConversionType(cbDistance,'um',1e-6);
   RegisterConversionType(cbDistance,'םל',1e-9);

@@ -50,6 +50,7 @@ end;  //неужели больше ничего не нужно?
       procedure Assign(source: TPersistent); override;
       
       function TakeFromString(formula: string): Real;
+      procedure DoPower(Exponent: Real);
       function SameFamily(value: TUnitsWithExponent): Boolean;
       function FindMultiplier(value: TUnitsWithExponent): Real;
       function Multiply(value: TUnitsWithExponent): Real;
@@ -79,6 +80,7 @@ end;  //неужели больше ничего не нужно?
   TDerivedFamilyEntry=class
   public
     ConvFamily: TConvFamily;  //всем нужна семья!
+    BaseConvType: TConvType;  //увы, в библиотеке ConvUtils нельзя из Family сослаться на базовую ед. измерения
     formula: TUnitsWithExponent;
     constructor Create;
     destructor Destroy; override;
@@ -93,7 +95,7 @@ end;  //неужели больше ничего не нужно?
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
 //procedure RegisterBaseConversionFamily(
-procedure RegisterDerivedConversionFamily(Family: TConvFamily; formula: string); overload;
+procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
 //этот вариант для регистрации вручную, formula - что-то вроде 'M*L/T^2'
 procedure RegisterDerivedConversionFamily(formula: TUnitsWithExponent); overload;
 
@@ -159,7 +161,7 @@ begin
   Raise Exception.CreateFmt('BaseFamilyLetterToConvFamily: letter %s not found',[letter]);
 end;
 
-procedure RegisterDerivedConversionFamily(Family: TConvFamily; formula: string);
+procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string);
 var L: Integer;
 begin
   L:=Length(DerivedFamilyEntries);
@@ -167,6 +169,7 @@ begin
   DerivedFamilyEntries[L]:=TDerivedFamilyEntry.Create;
   DerivedFamilyEntries[L].formula.TakeFromString(formula);
   DerivedFamilyEntries[L].ConvFamily:=Family;
+  DerivedFamilyEntries[L].BaseConvType:=BaseType;
 end;
 
 procedure RegisterDerivedConversionFamily(formula: TUnitsWithExponent);
@@ -193,6 +196,25 @@ end;
 function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
 begin
   Raise Exception.Create('Sorry, FindPhysUnit not ready');
+end;
+
+function FormulaToConvType(formula: TUnitsWithExponent): TConvType;
+var i: Integer;
+begin
+  if (formula.fCount=1) and (formula.Exponents[0]=1) then begin  //базовая величина
+    for i:=0 to Length(BaseFamilyEntries) do
+      if BaseFamilyEntries[i].ConvFamily=ConvTypeToFamily(formula.UnitTypes[0]) then begin
+        Result:=BaseFamilyEntries[i].BaseConvType;
+        Exit;
+      end
+  end
+  else
+    for i:=0 to Length(DerivedFamilyEntries)-1 do
+      if DerivedFamilyEntries[i].formula.SameFamily(formula) then begin
+        Result:=DerivedFamilyEntries[i].BaseConvType;
+        Exit;
+      end;
+  Raise Exception.CreateFmt('Unit with formula %s not found',[formula.AsString]);
 end;
 
 (*
@@ -251,12 +273,23 @@ begin
     u:=TUnitsWithExponent.Create;
     try
       u.Assign(DerivedFamilyEntries[i].formula);
-  //  u.Power(Exponent); //возвести в нужную степень
-      Result:=Multiply(u);
+      u.DoPower(Exponent); //возвести в нужную степень
+      Multiply(u);  //в этих формулах не должны появляться новые множители
+      if ConvType=DerivedFamilyEntries[i].BaseConvType then
+        Result:=1
+      else
+        Result:=Power(Convert(1,ConvType,BaseFamilyEntries[i].BaseConvType),Exponent);
     finally
       u.Free;
     end;
   end;
+end;
+
+procedure TUnitsWithExponent.DoPower(Exponent: Real);
+var i: Integer;
+begin
+  for i:=0 to fcount-1 do
+    Exponents[i]:=Exponents[i]*Exponent;
 end;
 (*
 procedure TUnitsWithExponent.Assign(formula: string);
@@ -316,7 +349,6 @@ begin
     p.Free;
   end;
 end;
-
 
 procedure TUnitsWithExponent.Assign(source: TPersistent);
 var s: TUnitsWithExponent absolute source;
@@ -579,7 +611,8 @@ begin
       //а также ConvType - тот, что является базовым для данного семейства
       //возможно, семейство придется создать на ходу
       dimension:=TUnitsWithExponent.Create;
-      
+      instance:=instance*dimension.TakeFromString(unitStr);
+      ConvType:=FormulaToConvType(dimension);
 //      p:=TSimpleParser.Create(unitStr);
 //      Units.Assign(unitStr);
     end;
@@ -589,7 +622,7 @@ end;
 function TVariantWithUnit.AsString: string;
 begin
   Result:=instance;
-//  Result:=Result+' '+Units.AsString;
+  Result:=Result+' '+ConvTypeToDescription(ConvType);
 end;
 (*
     TVariantWithUnitType
@@ -644,13 +677,13 @@ begin
 //  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'L^3*T^-1');
 //  RegisterDerivedConversionFamily(cbFrequency,'T^-1');
 //  RegisterDerivedConversionFamily(cbPower,'M*L^2*T^-3');
-  RegisterDerivedConversionFamily(cbDimensionless,'');
-  RegisterDerivedConversionFamily(cbArea,'m^2');
-  RegisterDerivedConversionFamily(cbVolume,'m^3');
-  RegisterDerivedConversionFamily(cbPressure,'kg*m^-1*s^-2');
-  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'m^3*s^-1');
-  RegisterDerivedConversionFamily(cbFrequency,'s^-1');
-  RegisterDerivedConversionFamily(cbPower,'kg*m^2*s^-3');
+  RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
+  RegisterDerivedConversionFamily(cbArea,auSquareMeters,'m^2');
+  RegisterDerivedConversionFamily(cbVolume,vuCubicMeters,'m^3');
+  RegisterDerivedConversionFamily(cbPressure,puPa,'kg*m^-1*s^-2');
+  RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
+  RegisterDerivedConversionFamily(cbFrequency,fuHz,'s^-1');
+  RegisterDerivedConversionFamily(cbPower,powWatt,'kg*m^2*s^-3');
   //напряжения и токи сюда же
 end;
 
