@@ -12,7 +12,7 @@ unit phys_units_lib;
 
 interface
 
-uses classes,VariantWrapper,ConvUtils;
+uses classes,VariantWrapper,ConvUtils,sysUtils;
 
 type
 
@@ -92,6 +92,8 @@ end;  //неужели больше ничего не нужно?
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
   end;
 
+  EPhysUnitError = class (Exception);
+
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
 //procedure RegisterBaseConversionFamily(
@@ -107,12 +109,13 @@ function VariantWithUnit: TVarType;
 //конструкторы
 procedure VarWithUnitCreateInto(var ADest: Variant; const AData: TVariantWithUnit);
 function VarWithUnitCreate(text: string): Variant;
+function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
 
 
 
 implementation
 
-uses StdConvs,streamable_conv_units,sysUtils,math,simple_parser_lib,VarCmplx,strUtils;
+uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
@@ -147,7 +150,7 @@ begin
   if i>=0 then
     Result:=BaseFamilyEntries[i].letter
   else
-    Raise Exception.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
+    Raise EPhysUnitError.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
 end;
 
 function BaseFamilyLetterToConvFamily(letter: string): TConvFamily;
@@ -158,7 +161,7 @@ begin
       Result:=BaseFamilyEntries[i].ConvFamily;
       Exit;
     end;
-  Raise Exception.CreateFmt('BaseFamilyLetterToConvFamily: letter %s not found',[letter]);
+  Raise EPhysUnitError.CreateFmt('BaseFamilyLetterToConvFamily: letter %s not found',[letter]);
 end;
 
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string);
@@ -196,8 +199,23 @@ begin
 end;
 
 function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
+var i: Integer;
+    ConvFamily: TConvFamily;
 begin
-  Raise Exception.Create('Sorry, FindPhysUnit not ready');
+  Result:=TUnitsWithExponent.Create;
+  ConvFamily:=ConvTypeToFamily(ConvType);
+  for i:=0 to Length(BaseFamilyEntries)-1 do
+    if BaseFamilyEntries[i].ConvFamily=ConvFamily then begin
+      Result.AddBaseUnit(ConvType,1);
+      Exit;
+    end;
+  //среди базовых не нашли, поищем в производных
+  for i:=0 to Length(DerivedFamilyEntries)-1 do
+    if DerivedFamilyEntries[i].ConvFamily=ConvFamily then begin
+      Result.Assign(DerivedFamilyEntries[i].formula);
+      Exit;
+    end;
+  Raise EPhysUnitError.CreateFMT('Couldn''t find unit %s',[ConvTypeToDescription(ConvType)]);
 end;
 
 function FormulaToConvType(formula: TUnitsWithExponent): TConvType;
@@ -218,7 +236,6 @@ begin
       end;
   //если не найдено подх. семейства - мы создадим такое семейство и такой юнит!
   Result:=RegisterDerivedConversionFamily(formula).BaseConvType;
-//  Raise Exception.CreateFmt('Unit with formula %s not found',[formula.AsString]);
 end;
 
 (*
@@ -279,7 +296,7 @@ begin
   else begin
     //скребем по derived, находим и помножаем на его unit
     i:=IndexOfDerivedFamily(f);
-    if i=-1 then Raise Exception.CreateFmt('Family %s is neither base nor derived',[ConvFamilyToDescription(f)]);
+    if i=-1 then Raise EPhysUnitError.CreateFmt('Family %s is neither base nor derived',[ConvFamilyToDescription(f)]);
     u:=TUnitsWithExponent.Create;
     try
       u.Assign(DerivedFamilyEntries[i].formula);
@@ -301,33 +318,6 @@ begin
   for i:=0 to fcount-1 do
     Exponents[i]:=Exponents[i]*Exponent;
 end;
-(*
-procedure TUnitsWithExponent.Assign(formula: string);
-var p: TSimpleParser;
-    s: string;
-    ch: char;
-    pow: Real;
-begin
-  Clear;
-  p:=TSimpleParser.Create(formula);
-  try
-    while not p.eof do begin
-      s:=p.getIdent;
-      pow:=1;
-      if not p.eof then begin
-        ch:=p.getChar;
-        if ch='^' then begin
-          pow:=p.getFloat;
-          if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in dimension formula %s',[formula]);
-        end;
-      end;
-      AddBaseUnit(BaseFamilyLetterToConvFamily(s),pow);
-    end;
-  finally
-    p.Free;
-  end;
-end;
-*)
 
 function TUnitsWithExponent.TakeFromString(formula: string): Real;
 var p: TSimpleParser;
@@ -343,13 +333,13 @@ begin
     while not p.eof do begin
       term:=p.getIdent;
       if not DescriptionToConvType(term,convType) then
-        Raise Exception.CreateFmt('%s is not correct unit',[term]);
+        Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
         if ch='^' then begin
           pow:=p.getFloat;
-          if (not p.eof) and (p.getChar<>'*') then Raise Exception.CreateFmt('Syntax error in unit %s',[formula]);
+          if (not p.eof) and (p.getChar<>'*') then Raise EPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
         end;
       end;
       Result:=Result*AddArbitraryUnit(ConvType,pow);
@@ -548,11 +538,11 @@ begin
       uR:=FindPhysUnit(v.ConvType);
       if CompatibleConversionTypes(v.ConvType,ConvType) then
         if uR.isAffine and uL.isAffine then
-          Raise Exception.Create('Operations with affine units under construction')
+          Raise EPhysUnitError.Create('Operations with affine units under construction')
         else
           instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
       else
-        Raise Exception.Create('Sorry, implicit unit conversion is also under construction');
+        Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
     end
   else inherited; //не знаю пока, пригодится ли эта строчка хоть раз?
 end;
@@ -570,11 +560,11 @@ begin
       uR:=FindPhysUnit(v.ConvType);
       if CompatibleConversionTypes(v.ConvType,ConvType) then
         if uR.isAffine and uL.isAffine then
-          Raise Exception.Create('Operations with affine units under construction')
+          Raise EPhysUnitError.Create('Operations with affine units under construction')
         else
           instance:=instance-v.instance*Convert(1,v.ConvType,ConvType)
       else
-        Raise Exception.Create('Sorry, implicit unit conversion is also under construction');
+        Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
     end
   else inherited;
 end;
@@ -683,8 +673,8 @@ end;
 
 procedure RegisterStandartUnits;
 begin
-  RegisterBaseConversionFamily(cbDistance,duShortMeters,'L');
   RegisterBaseConversionFamily(cbMass,muShortKilograms,'M');
+  RegisterBaseConversionFamily(cbDistance,duShortMeters,'L');
   RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
@@ -722,6 +712,18 @@ end;
 function VarWithUnitCreate(text: string): Variant;
 begin
   VarWithUnitCreateInto(Result,TVariantWithUnit.Create(text));
+end;
+
+function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
+begin
+  Result:=false;
+  try
+    VarWithUnitCreateInto(Res,TVariantWithUnit.Create(text));
+    Result:=true;
+  except
+    on E: Exception do
+      Res:=E.Message;
+  end;
 end;
 
 

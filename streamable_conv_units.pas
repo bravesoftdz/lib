@@ -159,6 +159,10 @@ begin
   RegisterConversionType(cbTime,'ns',1e-9 / SecsPerDay);
   RegisterConversionType(cbTime,'пс',1e-12 / SecsPerDay);
   RegisterConversionType(cbTime,'ps',1e-12 / SecsPerDay);
+  RegisterConversionType(cbTime,'hr',3600 / SecsPerDay);
+  RegisterConversionType(cbTime,'ч',3600 / SecsPerDay);
+  RegisterConversionType(cbTime,'min',60 / SecsPerDay);
+  RegisterConversionType(cbTime,'мин',60 / SecsPerDay);
 
   RegisterConversionType(cbMass,'g',1);
   muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);

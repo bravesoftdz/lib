@@ -41,6 +41,18 @@ type
     property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions;
   end;
 
+  TVariantEdit = class(TCautiousEdit)
+  private
+    function get_value: Variant;
+    procedure set_value(value: Variant);
+  public
+    constructor Create(Owner: TComponent); override;
+    procedure Change; override;
+    function isValid: boolean;
+  published
+    property value: Variant read get_value write set_value;
+  end;
+
   TFloatEdit = class(TCautiousEdit)
   private
     function get_value: Real;
@@ -114,7 +126,7 @@ procedure Register;
 
 implementation
 
-uses expression_lib;
+uses expression_lib,phys_units_lib;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
@@ -251,6 +263,78 @@ procedure TCautiousEdit.LoadZeroFlag(Reader: TReader);
 begin
   if Reader.ReadBoolean then
     text:='';
+end;
+
+(*
+            TVariantEdit
+                                *)
+function TVariantEdit.get_value: Variant;
+var expr: TFloatExpression;
+    E: Exception;
+begin
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then Result:=expr.getValue
+    else begin
+      Result:=0;
+      if not (csDesigning in self.ComponentState) then begin
+        E:=Exception.CreateFMT('TFloatLabel: %s',[expr.errorMsg]);
+        expr.Free;  //не хотим терять память
+        Raise E;
+      end;
+    end;
+    expr.Free;
+  end
+  else
+    Result:=VarWithUnitCreate(text);
+end;
+
+procedure TVariantEdit.Change;
+var res: Variant;
+    expr: TFloatExpression;
+resourcestring
+  FloatEditNotARealNumberMsg = 'Не является действительным числом';
+begin
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    if expr.isCorrect then ReturnToNormal
+    else TurnRed(expr.errorMsg);
+    expr.Free;
+  end
+  else
+    if TryVarWithUnitCreate(text,res) then ReturnToNormal
+    else TurnRed(res);
+  inherited Change;
+end;
+
+procedure TVariantEdit.set_value(value: Variant);
+begin
+  text:=value;
+end;
+
+constructor TVariantEdit.Create(owner: TComponent);
+begin
+  inherited Create(owner);
+  if (csDesigning in ComponentState) then value:=0;
+end;
+
+function TVariantEdit.isValid: Boolean;
+var t: Variant;
+    expr: TFloatExpression;
+begin
+  if AllowExpressions then begin
+    expr:=TFloatExpression.Create(nil);
+    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetString(text);
+    Result:=expr.isCorrect;
+    expr.Free;
+  end
+  else
+    Result:=TryVarWithUnitCreate(text,t);
 end;
 
 (*
@@ -564,7 +648,9 @@ end;
 
 procedure Register;
 begin
-  RegisterComponents('CautiousEdit', [TCautiousEdit,TFloatEdit,TIntegerEdit,TDisablingCheckBox,TDisablingRadioButton,TDisablingGroupBox,TCautiousExtender]);
+  RegisterComponents('CautiousEdit', [TCautiousEdit,TFloatEdit,TIntegerEdit,
+  TDisablingCheckBox,TDisablingRadioButton,TDisablingGroupBox,TCautiousExtender,
+  TVariantEdit]);
 end;
 
 procedure free_em_all(AInfo, AItem, AData: Pointer; out AContinue: Boolean);
