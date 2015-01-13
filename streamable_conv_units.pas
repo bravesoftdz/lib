@@ -19,6 +19,7 @@ type
     function ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
     function ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
     function GetPreferredUnitName(aFamily: TConvFamily): string;
+    function GetPreferredType(aFamily: TConvFamily): TConvType;
 end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
@@ -34,6 +35,7 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     duUnity: TConvType;
 
     duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
+    auShortSqMeters,vuShortCubicMeters: TConvType;
 
     PreferredUnits: TPreferredUnits;
 implementation
@@ -144,6 +146,8 @@ begin
   RegisterConversionType(cbDistance,'nm',1e-9);
   RegisterConversionType(cbDistance,'ομ',1e-12);
   RegisterConversionType(cbDistance,'pm',1e-12);
+  RegisterConversionType(cbDistance,'km',1e3);
+  RegisterConversionType(cbDistance,'κμ',1e3);
 
   RegisterConversionType(cbTime,'ρ',1 / SecsPerDay);
   tuShortSeconds:=RegisterConversionType(cbTime,'s',1 / SecsPerDay);
@@ -158,6 +162,9 @@ begin
 
   RegisterConversionType(cbMass,'g',1);
   muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);
+  auShortSqMeters:=RegisterConversionType(cbArea,'m^2',1);
+  vuShortCubicMeters:=RegisterConversionType(cbVolume,'m^3',1);
+  RegisterConversionType(cbVolume,'L',0.001);
 
   tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
 end;
@@ -265,24 +272,25 @@ begin
     end;
 end;
 
+function TPreferredUnits.GetPreferredType(aFamily: TConvFamily): TConvType;
+var i: Integer;
+begin
+  for i:=0 to Length(fFamily)-1 do
+    if aFamily=fFamily[i] then begin
+      Result:=fUnit[i];
+      Exit;
+    end;
+  Result:=CIllegalConvType;
+end;
+
 
 initialization
   NewConvFamilies;
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
   RegisterClass(TPreferredUnits);
-(*
-  PreferredUnits:=TPreferredUnits.Create(nil);
-  PreferredUnits.Add(cbVoltage,vuVolts);
-  PreferredUnits.Add(cbCurrent,iuAmps);
-  PreferredUnits.Add(cbPressure,puBar);
-  PreferredUnits.Add(cbVolumetricFlowRate,vcuLPerMin);
-  PreferredUnits.Add(cbTemperature,tuCelsius);
-  PreferredUnits.Add(cbPower,powkW);
-  PreferredUnits.saveFormat:=fCyr;
-  PreferredUnits.SaveToFile('PreferredUnits.txt');
-*)
-  PreferredUnits:=TPreferredUnits.LoadFromFile('PreferredUnits.txt');
+  if FileExists('PreferredUnits.txt') then
+    PreferredUnits:=TPreferredUnits.LoadFromFile('PreferredUnits.txt');
   GConvUnitToStrFmt:='%g %s';
 
 finalization

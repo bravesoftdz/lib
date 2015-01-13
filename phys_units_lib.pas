@@ -97,7 +97,7 @@ procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType;
 //procedure RegisterBaseConversionFamily(
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
 //этот вариант для регистрации вручную, formula - что-то вроде 'M*L/T^2'
-procedure RegisterDerivedConversionFamily(formula: TUnitsWithExponent); overload;
+function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedFamilyEntry; overload;
 
 function ConvTypeToBaseFamilyLetter(const value: TConvType): string;
 
@@ -172,14 +172,16 @@ begin
   DerivedFamilyEntries[L].BaseConvType:=BaseType;
 end;
 
-procedure RegisterDerivedConversionFamily(formula: TUnitsWithExponent);
+function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedFamilyEntry;
 var L: Integer;
 begin
   L:=Length(DerivedFamilyEntries);
   SetLength(DerivedFamilyEntries,L+1);
-  DerivedFamilyEntries[L]:=TDerivedFamilyEntry.Create;
-  DerivedFamilyEntries[L].ConvFamily:=RegisterConversionFamily(formula.ShowFormula);
-  DerivedFamilyEntries[L].formula.Assign(formula);
+  Result:=TDerivedFamilyEntry.Create;
+  Result.ConvFamily:=RegisterConversionFamily(formula.ShowFormula);
+  Result.BaseConvType:=RegisterConversionType(Result.ConvFamily,formula.AsString,1);
+  Result.formula.Assign(formula);
+  DerivedFamilyEntries[L]:=Result;
 end;
 
 function IndexOfDerivedFamily(Family: TConvFamily): Integer;
@@ -214,7 +216,9 @@ begin
         Result:=DerivedFamilyEntries[i].BaseConvType;
         Exit;
       end;
-  Raise Exception.CreateFmt('Unit with formula %s not found',[formula.AsString]);
+  //если не найдено подх. семейства - мы создадим такое семейство и такой юнит!
+  Result:=RegisterDerivedConversionFamily(formula).BaseConvType;
+//  Raise Exception.CreateFmt('Unit with formula %s not found',[formula.AsString]);
 end;
 
 (*
@@ -260,11 +264,17 @@ begin
   f:=ConvTypeToFamily(ConvType);
   i:=IndexOfBaseFamily(f);
   if i>=0 then begin
-    AddBaseUnit(BaseFamilyEntries[i].BaseConvType, Exponent);
+    u:=TUnitsWithExponent.Create;
+    try
+      u.AddBaseUnit(BaseFamilyEntries[i].BaseConvType,Exponent);
+      Multiply(u);
       if ConvType=BaseFamilyEntries[i].BaseConvType then
         Result:=1
       else
         Result:=Power(Convert(1,ConvType,BaseFamilyEntries[i].BaseConvType),Exponent);
+    finally
+      u.Free;
+    end;
   end
   else begin
     //скребем по derived, находим и помножаем на его unit
@@ -278,7 +288,7 @@ begin
       if ConvType=DerivedFamilyEntries[i].BaseConvType then
         Result:=1
       else
-        Result:=Power(Convert(1,ConvType,BaseFamilyEntries[i].BaseConvType),Exponent);
+        Result:=Power(Convert(1,ConvType,DerivedFamilyEntries[i].BaseConvType),Exponent);
     finally
       u.Free;
     end;
@@ -589,6 +599,7 @@ procedure TVariantWithUnit.Assign(str: string);
 var unitStr: string;
     i: Integer;
     dimension: TUnitsWithExponent;
+    PrefConvType: TConvType;
 begin
   i:=Length(str);
   while (i>=1) and (str[i]<>' ') do dec(i);
@@ -608,13 +619,18 @@ begin
     if not DescriptionToConvType(unitStr,ConvType) then begin
       //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
       //скормить ему размерность, он "выплюнет" множитель, домножаем на него
-      //а также ConvType - тот, что является базовым для данного семейства
-      //возможно, семейство придется создать на ходу
       dimension:=TUnitsWithExponent.Create;
       instance:=instance*dimension.TakeFromString(unitStr);
+      //а также ConvType - тот, что является базовым для данного семейства
+      //возможно, семейство придется создать на ходу
       ConvType:=FormulaToConvType(dimension);
-//      p:=TSimpleParser.Create(unitStr);
-//      Units.Assign(unitStr);
+    end;
+    if Assigned(preferredUnits) then begin
+      PrefConvType:=preferredUnits.GetPreferredType(ConvTypeToFamily(ConvType));
+      if PrefConvType<>CIllegalConvType then begin
+        Instance:=Instance*Convert(1,ConvType,PrefConvType);
+        ConvType:=PrefConvType;
+      end;
     end;
   end;
 end;
@@ -671,15 +687,9 @@ begin
   RegisterBaseConversionFamily(cbMass,muShortKilograms,'M');
   RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
-//  RegisterDerivedConversionFamily(cbArea,'L^2');
-//  RegisterDerivedConversionFamily(cbVolume,'L^3');
-//  RegisterDerivedConversionFamily(cbPressure,'M*L^-1*T^-2');
-//  RegisterDerivedConversionFamily(cbVolumetricFlowRate,'L^3*T^-1');
-//  RegisterDerivedConversionFamily(cbFrequency,'T^-1');
-//  RegisterDerivedConversionFamily(cbPower,'M*L^2*T^-3');
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
-  RegisterDerivedConversionFamily(cbArea,auSquareMeters,'m^2');
-  RegisterDerivedConversionFamily(cbVolume,vuCubicMeters,'m^3');
+  RegisterDerivedConversionFamily(cbArea,auShortSqMeters,'m^2');
+  RegisterDerivedConversionFamily(cbVolume,vuShortCubicMeters,'m^3');
   RegisterDerivedConversionFamily(cbPressure,puPa,'kg*m^-1*s^-2');
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
   RegisterDerivedConversionFamily(cbFrequency,fuHz,'s^-1');
