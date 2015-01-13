@@ -24,7 +24,7 @@ end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     cbCyrVoltage, cbCyrCurrent, cbCyrPressure, cbCyrVolumetricFlowRate, cbCyrPower,
-    cbFrequency, cbDimensionless: TConvFamily;
+    cbFrequency, cbDimensionless,cbForce,cbEnergy: TConvFamily;
     vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
     iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
     puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
@@ -33,6 +33,8 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     powCyrWatt,powCyrkW,powCyrmW,powCyruW,powCyrMegaW: TConvType;
     fuHz,fukHz,fuMHz,fuGHz: TConvType;
     duUnity: TConvType;
+    fuH: TConvType;
+    euJ: TConvType;
 
     duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     auShortSqMeters,vuShortCubicMeters: TConvType;
@@ -133,6 +135,33 @@ begin
 
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
+
+  cbForce:=RegisterConversionFamily('Force');
+  fuH:=RegisterConversionType(cbForce,'H',1);
+  RegisterConversionType(cbForce,'Í',1);
+  RegisterConversionType(cbForce,'mH',1e-3);
+  RegisterConversionType(cbForce,'uÍ',1e-6);
+  RegisterConversionType(cbForce,'nÍ',1e-9);
+  RegisterConversionType(cbForce,'pÍ',1e-12);
+  RegisterConversionType(cbForce,'kÍ',1e3);
+  RegisterConversionType(cbForce,'MegaÍ',1e6);
+  RegisterConversionType(cbForce,'kgf',9.81);
+
+  cbEnergy:=RegisterConversionFamily('Energy');
+  euJ:=RegisterConversionType(cbEnergy,'J',1);
+  RegisterConversionType(cbEnergy,'Äæ',1);
+  RegisterConversionType(cbEnergy,'kJ',1000);
+  RegisterConversionType(cbEnergy,'êÄæ',1000);
+  RegisterConversionType(cbEnergy,'MegaJ',1e6);
+  RegisterConversionType(cbEnergy,'ÌåãàÄæ',1e6);
+  RegisterConversionType(cbEnergy,'mJ',1e-3);
+  RegisterConversionType(cbEnergy,'ìÄæ',1e-3);
+  RegisterConversionType(cbEnergy,'uJ',1e-6);
+  RegisterConversionType(cbEnergy,'ìêÄæ',1e-6);
+  RegisterConversionType(cbEnergy,'nJ',1e-6);
+  RegisterConversionType(cbEnergy,'íÄæ',1e-6);
+  RegisterConversionType(cbEnergy,'pJ',1e-9);
+  RegisterConversionType(cbEnergy,'ïÄæ',1e-9);
 
   RegisterConversionType(cbDistance,'ì',1);
   duShortMeters:=RegisterConversionType(cbDistance,'m',1);

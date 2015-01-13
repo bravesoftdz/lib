@@ -325,10 +325,14 @@ var p: TSimpleParser;
     convType: TConvType;
     ch: char;
     pow: Real;
+    isDivide: Boolean;
+    nextDivide: Boolean;
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
   Result:=1;
+  isDivide:=false;
+  nextDivide:=false;
   try
     while not p.eof do begin
       term:=p.getIdent;
@@ -339,10 +343,17 @@ begin
         ch:=p.getChar;
         if ch='^' then begin
           pow:=p.getFloat;
-          if (not p.eof) and (p.getChar<>'*') then Raise EPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
-        end;
+          if (not p.eof) then begin
+            if (p.NextChar<>'*') and (p.NextChar<>'/')  then Raise EPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
+            nextDivide:=(p.getChar='/');
+          end;
+        end
+        else nextDivide:=(ch='/');
       end;
+      if IsDivide then pow:=-pow;
       Result:=Result*AddArbitraryUnit(ConvType,pow);
+      IsDivide:=nextDivide;
+
 //      чтобы он к примеру Джоули преобр. в кг*м^2/с^2
     end;
   finally
@@ -412,7 +423,7 @@ begin
       inc(j);
       inc(k);
     end
-    else if first>second then begin
+    else if IndexOfBaseFamily(first)>IndexOfBaseFamily(second) then begin
       //UnitTypes[j] не было в исх. списке - надо добавить на подх. место
       ResultUnits[k]:=value.UnitTypes[j];
       ResultExponents[k]:=value.Exponents[j];
@@ -684,6 +695,8 @@ begin
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
   RegisterDerivedConversionFamily(cbFrequency,fuHz,'s^-1');
   RegisterDerivedConversionFamily(cbPower,powWatt,'kg*m^2*s^-3');
+  RegisterDerivedConversionFamily(cbForce,fuH,'kg*m*s^-2');
+  RegisterDerivedConversionFamily(cbEnergy,euJ,'kg*m^2*s^-2');
   //напряжения и токи сюда же
 end;
 
