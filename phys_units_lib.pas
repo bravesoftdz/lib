@@ -94,6 +94,9 @@ end;  //неужели больше ничего не нужно?
 
   EPhysUnitError = class (Exception);
 
+  PUnitMultipliersArray = ^TUnitMultipliersArray;
+  TUnitMultipliersArray = array [0..255] of Real;
+
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
 //procedure RegisterBaseConversionFamily(
@@ -120,6 +123,7 @@ uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
     VarWithUnitType: TVariantWithUnitType;
+    UnitMultiplier: TUnitMultipliersArray;
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 var L: Integer;
@@ -327,6 +331,7 @@ var p: TSimpleParser;
     pow: Real;
     isDivide: Boolean;
     nextDivide: Boolean;
+    mul: Real;
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
@@ -337,7 +342,15 @@ begin
     while not p.eof do begin
       term:=p.getIdent;
       if not DescriptionToConvType(term,convType) then
-        Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
+        if DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) then begin
+          Mul:=UnitMultiplier[Integer(term[1])];
+          if Mul=0 then Raise EPhysUnitError.CreateFmt('%s is not correct multiplier',[term[1]])
+          else Result:=Result*Mul;
+        end
+        else
+          if DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
+            Result:=Result*1e-6
+          else Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
@@ -421,7 +434,7 @@ begin
       ResultExponents[k]:=proc(value,i,j);
       inc(i);
       inc(j);
-      inc(k);
+      if ResultExponents[k]<>0 then inc(k);
     end
     else if IndexOfBaseFamily(first)>IndexOfBaseFamily(second) then begin
       //UnitTypes[j] не было в исх. списке - надо добавить на подх. место
@@ -681,6 +694,28 @@ end;
 (*
     Initialization
                         *)
+procedure PopulateUnitMultiplier;
+var u: PUnitMultipliersArray;
+begin
+  u:=@UnitMultiplier;
+  u[Integer('m')]:=1e-3;
+  u[Integer('м')]:=1e-3;
+  u[Integer('u')]:=1e-6;
+  u[Integer('n')]:=1e-9;
+  u[Integer('н')]:=1e-9;
+  u[Integer('p')]:=1e-12;
+  u[Integer('п')]:=1e-12;
+  u[Integer('f')]:=1e-15;
+  u[Integer('ф')]:=1e-15;
+  u[Integer('k')]:=1000;
+  u[Integer('к')]:=1000;
+  u[Integer('M')]:=1e6;
+  u[Integer('М')]:=1e6;
+  u[Integer('G')]:=1e9;
+  u[Integer('Г')]:=1e9;
+  u[Integer('T')]:=1e12;
+  u[Integer('Т')]:=1e12;
+end;
 
 procedure RegisterStandartUnits;
 begin
@@ -688,15 +723,21 @@ begin
   RegisterBaseConversionFamily(cbDistance,duShortMeters,'L');
   RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
+  RegisterBaseConversionFamily(cbCurrent,iuAmps,'I');
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
   RegisterDerivedConversionFamily(cbArea,auShortSqMeters,'m^2');
   RegisterDerivedConversionFamily(cbVolume,vuShortCubicMeters,'m^3');
-  RegisterDerivedConversionFamily(cbPressure,puPa,'kg*m^-1*s^-2');
+  RegisterDerivedConversionFamily(cbForce,fuN,'kg*m*s^-2');
+  RegisterDerivedConversionFamily(cbPressure,puPa,'N/m^2');
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
   RegisterDerivedConversionFamily(cbFrequency,fuHz,'s^-1');
-  RegisterDerivedConversionFamily(cbPower,powWatt,'kg*m^2*s^-3');
-  RegisterDerivedConversionFamily(cbForce,fuH,'kg*m*s^-2');
-  RegisterDerivedConversionFamily(cbEnergy,euJ,'kg*m^2*s^-2');
+  RegisterDerivedConversionFamily(cbEnergy,euJ,'N*m');
+  RegisterDerivedConversionFamily(cbPower,powWatt,'J/s');
+  RegisterDerivedConversionFamily(cbCharge,cuC,'A*s');
+  RegisterDerivedConversionFamily(cbVoltage,vuVolts,'J/C');
+  RegisterDerivedConversionFamily(cbResistance,ruOhm,'V/A');
+  RegisterDerivedConversionFamily(cbCapacitance,cuFarade,'C/V');
+  RegisterDerivedConversionFamily(cbInductance,iuHenry,'V*s/A');
   //напряжения и токи сюда же
 end;
 
@@ -741,6 +782,7 @@ end;
 
 
 initialization
+  PopulateUnitMultiplier;
   RegisterStandartUnits;
   VarWithUnitType:=TVariantWithUnitType.Create;
 

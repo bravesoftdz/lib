@@ -23,18 +23,17 @@ type
 end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
-    cbCyrVoltage, cbCyrCurrent, cbCyrPressure, cbCyrVolumetricFlowRate, cbCyrPower,
-    cbFrequency, cbDimensionless,cbForce,cbEnergy: TConvFamily;
-    vuVolts,vumV,vuuV,vukV,vuMegaV: TConvType;
-    iuAmps,iumA,iuuA,iukA,iuMegaA: TConvType;
-    puBar,puPa,pukPa,puMegaPa, puMeters: TConvType;
-    vcuM3PerH,vcuLPerSec,vcuLperMin,vcuLPerH,vcuM3PerSec,vcuM3PerMin: TConvType;
-    powWatt,powkW,powmW,powuW,powMegaW: TConvType;
-    powCyrWatt,powCyrkW,powCyrmW,powCyruW,powCyrMegaW: TConvType;
-    fuHz,fukHz,fuMHz,fuGHz: TConvType;
+    cbFrequency, cbDimensionless,cbForce,cbEnergy,cbCharge,cbResistance,
+    cbCapacitance,cbInductance: TConvFamily;
+    vuVolts,iuAmps,ruOhm,cuFarade,iuHenry: TConvType;
+    puBar,puPa,puMeters: TConvType;
+    vcuM3PerSec: TConvType;
+    powWatt: TConvType;
+    fuHz: TConvType;
     duUnity: TConvType;
-    fuH: TConvType;
+    fuN: TConvType;
     euJ: TConvType;
+    cuC: TConvType;
 
     duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     auShortSqMeters,vuShortCubicMeters: TConvType;
@@ -85,109 +84,66 @@ end;
 procedure NewConvFamilies;
 begin
   cbVoltage:=RegisterConversionFamily('Voltage');
-  cbCyrVoltage:=RegisterConversionFamily('Íàïðÿæåíèå');
   vuVolts:=RegisterConversionType(cbVoltage,'V',1);
-  vukV:=RegisterConversionType(cbVoltage,'kV',1000);
-  vuMegaV:=RegisterConversionType(cbVoltage,'Megavolts',1e6);
-  vumV:=RegisterConversionType(cbVoltage,'mV',1e-3);
-  vuuV:=RegisterConversionType(cbVoltage,'uV',1e-6);
+  RegisterConversionType(cbVoltage,'Â',1);
 
   cbCurrent:=RegisterConversionFamily('Current');
   iuAmps:=RegisterConversionType(cbCurrent,'A',1);
-  iukA:=RegisterConversionType(cbCurrent,'kA',1000);
-  iuMegaA:=RegisterConversionType(cbCurrent,'Megaamperes',1e6);
-  iumA:=RegisterConversionType(cbCurrent,'mA',1e-3);
-  iuuA:=RegisterConversionType(cbCurrent,'uA',1e-6);
+  RegisterConversionType(cbCurrent,'À',1);
 
   cbPressure:=RegisterConversionFamily('Pressure');
   puPa:=RegisterConversionType(cbPressure,'Pa',1);
-  pukPa:=RegisterConversionType(cbPressure,'kPa',1000);
-  puMegaPa:=RegisterConversionType(cbPressure,'MPa',1e6);
-  puMeters:=RegisterConversionType(cbPressure,'m_water',9800);
-  puBar:=RegisterConversionType(cbPressure,'bar',101000);
+  RegisterConversionType(cbPressure,'Ïà',1);
+  RegisterConversionType(cbPressure,'m_water',9800);
+  RegisterConversionType(cbPressure,'ì_âîä_ñò',9800);
+  RegisterConversionType(cbPressure,'bar',101000);
+  RegisterConversionType(cbPressure,'àòì',101000);
 
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
   vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
-  vcuM3PerMin:=RegisterConversionType(cbVolumetricFlowRate,'m3/min',1/60);
-  vcuM3PerH:=RegisterConversionType(cbVolumetricFlowRate,'m3/h',1/3600);
-  vcuLPerSec:=RegisterConversionType(cbVolumetricFlowRate,'L/sec',1e-3);
-  vcuLPerMin:=RegisterConversionType(cbVolumetricFlowRate,'L/min',1e-3/60);
-  vcuLPerH:=RegisterConversionType(cbVolumetricFlowRate,'L/h',1e-3/3600);
 
   cbPower:=RegisterConversionFamily('Power');
-  cbCyrPower:=RegisterConversionFamily('Ìîùíîñòü');
   powWatt:=RegisterConversionType(cbPower,'W',1);
-  powCyrWatt:=RegisterConversionType(cbPower,'Âò',1);
-  powmW:=RegisterConversionType(cbPower,'mW',1e-3);
-  powCyrmW:=RegisterConversionType(cbPower,'ìÂò',1e-3);
-  powuW:=RegisterConversionType(cbPower,'uW',1e-6);
-  powCyruW:=RegisterConversionType(cbPower,'ìêÂò',1e-6);
-  powkW:=RegisterConversionType(cbPower,'kW',1000);
-  powCyrkW:=RegisterConversionType(cbPower,'êÂò',1000);
-  powMegaW:=RegisterConversionType(cbPower,'Megawatt',1e6);
-  powCyrMegaW:=RegisterConversionType(cbPower,'Ìåãàâàòò',1e6);
+  RegisterConversionType(cbPower,'Âò',1);
 
   cbFrequency:=RegisterConversionFamily('Frequency');
   fuHz:=RegisterConversionType(cbFrequency,'Hz',1);
-  fukHz:=RegisterConversionType(cbFrequency,'kHz',1000);
-  fuMHz:=RegisterConversionType(cbFrequency,'MHz',1e6);
-  fuGHz:=RegisterConversionType(cbFrequency,'GHz',1e9);
+  RegisterConversionType(cbFrequency,'Ãö',1);
 
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
 
   cbForce:=RegisterConversionFamily('Force');
-  fuH:=RegisterConversionType(cbForce,'H',1);
+  fuN:=RegisterConversionType(cbForce,'N',1);
   RegisterConversionType(cbForce,'Í',1);
-  RegisterConversionType(cbForce,'mH',1e-3);
-  RegisterConversionType(cbForce,'uÍ',1e-6);
-  RegisterConversionType(cbForce,'nÍ',1e-9);
-  RegisterConversionType(cbForce,'pÍ',1e-12);
-  RegisterConversionType(cbForce,'kÍ',1e3);
-  RegisterConversionType(cbForce,'MegaÍ',1e6);
   RegisterConversionType(cbForce,'kgf',9.81);
+  RegisterConversionType(cbForce,'êãñ',9.81);
 
   cbEnergy:=RegisterConversionFamily('Energy');
   euJ:=RegisterConversionType(cbEnergy,'J',1);
   RegisterConversionType(cbEnergy,'Äæ',1);
-  RegisterConversionType(cbEnergy,'kJ',1000);
-  RegisterConversionType(cbEnergy,'êÄæ',1000);
-  RegisterConversionType(cbEnergy,'MegaJ',1e6);
-  RegisterConversionType(cbEnergy,'ÌåãàÄæ',1e6);
-  RegisterConversionType(cbEnergy,'mJ',1e-3);
-  RegisterConversionType(cbEnergy,'ìÄæ',1e-3);
-  RegisterConversionType(cbEnergy,'uJ',1e-6);
-  RegisterConversionType(cbEnergy,'ìêÄæ',1e-6);
-  RegisterConversionType(cbEnergy,'nJ',1e-6);
-  RegisterConversionType(cbEnergy,'íÄæ',1e-6);
-  RegisterConversionType(cbEnergy,'pJ',1e-9);
-  RegisterConversionType(cbEnergy,'ïÄæ',1e-9);
 
   RegisterConversionType(cbDistance,'ì',1);
   duShortMeters:=RegisterConversionType(cbDistance,'m',1);
-  RegisterConversionType(cbDistance,'ìì',1e-3);
-  RegisterConversionType(cbDistance,'mm',1e-3);
-  RegisterConversionType(cbDistance,'cm',1e-2);
-  RegisterConversionType(cbDistance,'ñì',1e-2);
-  RegisterConversionType(cbDistance,'ìêì',1e-6);
-  RegisterConversionType(cbDistance,'um',1e-6);
-  RegisterConversionType(cbDistance,'íì',1e-9);
-  RegisterConversionType(cbDistance,'nm',1e-9);
-  RegisterConversionType(cbDistance,'ïì',1e-12);
-  RegisterConversionType(cbDistance,'pm',1e-12);
-  RegisterConversionType(cbDistance,'km',1e3);
-  RegisterConversionType(cbDistance,'êì',1e3);
+
+  cbCharge:=RegisterConversionFamily('Charge');
+  cuC:=RegisterConversionType(cbCharge,'C',1);
+  RegisterConversionType(cbCharge,'Êë',1);
+
+  cbResistance:=RegisterConversionFamily('Resistance');
+  ruOhm:=RegisterConversionType(cbResistance,'Ohm',1);
+  RegisterConversionType(cbResistance,'Îì',1);
+
+  cbCapacitance:=RegisterConversionFamily('Capacitance');
+  cuFarade:=RegisterConversionType(cbCapacitance,'F',1);
+  RegisterConversionType(cbCapacitance,'Ô',1);
+
+  cbInductance:=RegisterConversionFamily('Inductance');
+  iuHenry:=RegisterConversionType(cbInductance,'H',1);
+  RegisterConversionType(cbInductance,'Ãí',1);
 
   RegisterConversionType(cbTime,'ñ',1 / SecsPerDay);
   tuShortSeconds:=RegisterConversionType(cbTime,'s',1 / SecsPerDay);
-  RegisterConversionType(cbTime,'ìñ',1e-3 / SecsPerDay);
-  RegisterConversionType(cbTime,'ms',1e-3 / SecsPerDay);
-  RegisterConversionType(cbTime,'ìêñ',1e-6 / SecsPerDay);
-  RegisterConversionType(cbTime,'us',1e-6 / SecsPerDay);
-  RegisterConversionType(cbTime,'íñ',1e-9 / SecsPerDay);
-  RegisterConversionType(cbTime,'ns',1e-9 / SecsPerDay);
-  RegisterConversionType(cbTime,'ïñ',1e-12 / SecsPerDay);
-  RegisterConversionType(cbTime,'ps',1e-12 / SecsPerDay);
   RegisterConversionType(cbTime,'hr',3600 / SecsPerDay);
   RegisterConversionType(cbTime,'÷',3600 / SecsPerDay);
   RegisterConversionType(cbTime,'min',60 / SecsPerDay);
