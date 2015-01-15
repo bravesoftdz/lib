@@ -346,15 +346,15 @@ begin
   try
     while not p.eof do begin
       term:=p.getIdent;
+      mul:=1;
       if not DescriptionToConvType(term,convType) then
         if DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) then begin
           Mul:=UnitMultiplier[Integer(term[1])];
           if Mul=0 then Raise EPhysUnitError.CreateFmt('%s is not correct multiplier',[term[1]])
-          else Result:=Result*Mul;
         end
         else
           if DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
-            Result:=Result*1e-6
+            Mul:=1e-6
           else Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
       pow:=1;
       if not p.eof then begin
@@ -369,7 +369,7 @@ begin
         else nextDivide:=(ch='/');
       end;
       if IsDivide then pow:=-pow;
-      Result:=Result*AddArbitraryUnit(ConvType,pow);
+      Result:=Result*AddArbitraryUnit(ConvType,pow)*Power(mul,pow);
       IsDivide:=nextDivide;
 
 //      чтобы он к примеру Джоули преобр. в кг*м^2/с^2
@@ -444,7 +444,7 @@ begin
     else if IndexOfBaseFamily(first)>IndexOfBaseFamily(second) then begin
       //UnitTypes[j] не было в исх. списке - надо добавить на подх. место
       ResultUnits[k]:=value.UnitTypes[j];
-      ResultExponents[k]:=value.Exponents[j];
+      ResultExponents[k]:=proc(value,-1,j);
       inc(j);
       inc(k);
     end
@@ -463,7 +463,7 @@ begin
   end;
   while j<L2 do begin //и еще один хвост
     ResultUnits[k]:=value.UnitTypes[j];
-    ResultExponents[k]:=value.Exponents[j];
+    ResultExponents[k]:=proc(value,-1,j);
     inc(j);
     inc(k);
   end;
@@ -476,16 +476,22 @@ end;
 
 function TUnitsWithExponent.MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
 begin
-  if UnitTypes[i]<>value.UnitTypes[j] then
-    fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),value.Exponents[j]);
-  Result:=Exponents[i]+value.exponents[j];
+  if i=-1 then Result:=value.exponents[j]
+  else begin
+    if UnitTypes[i]<>value.UnitTypes[j] then
+      fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),value.Exponents[j]);
+    Result:=Exponents[i]+value.exponents[j];
+  end;
 end;
 
 function TUnitsWithExponent.MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
 begin
-  if UnitTypes[i]<>value.UnitTypes[j] then
-    fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),-value.Exponents[j]);
-  Result:=Exponents[i]-value.exponents[j];
+  if i=-1 then Result:=-value.exponents[j]
+  else begin
+    if UnitTypes[i]<>value.UnitTypes[j] then
+      fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),-value.Exponents[j]);
+    Result:=Exponents[i]-value.exponents[j];
+  end;
 end;
 
 function TUnitsWithExponent.Multiply(value: TUnitsWithExponent): Real;
@@ -571,14 +577,22 @@ begin
       instance:=instance+v.instance
     else begin
       uL:=FindPhysUnit(ConvType);
-      uR:=FindPhysUnit(v.ConvType);
-      if CompatibleConversionTypes(v.ConvType,ConvType) then
-        if uR.isAffine and uL.isAffine then
-          Raise EPhysUnitError.Create('Operations with affine units under construction')
-        else
-          instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
-      else
-        Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
+      try
+        uR:=FindPhysUnit(v.ConvType);
+        try
+          if CompatibleConversionTypes(v.ConvType,ConvType) then
+            if uR.isAffine and uL.isAffine then
+              Raise EPhysUnitError.Create('Operations with affine units under construction')
+            else
+              instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
+          else
+            Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
+        finally
+          uR.Free;
+        end;
+      finally
+        uL.Free;
+      end;
     end
   else inherited; //не знаю пока, пригодится ли эта строчка хоть раз?
 end;
@@ -593,31 +607,65 @@ begin
     else begin
       //ищем соотв. запись
       uL:=FindPhysUnit(ConvType);
-      uR:=FindPhysUnit(v.ConvType);
-      if CompatibleConversionTypes(v.ConvType,ConvType) then
-        if uR.isAffine and uL.isAffine then
-          Raise EPhysUnitError.Create('Operations with affine units under construction')
-        else
-          instance:=instance-v.instance*Convert(1,v.ConvType,ConvType)
-      else
-        Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
+      try
+        uR:=FindPhysUnit(v.ConvType);
+        try
+          if CompatibleConversionTypes(v.ConvType,ConvType) then
+            if uR.isAffine and uL.isAffine then
+              Raise EPhysUnitError.Create('Operations with affine units under construction')
+            else
+              instance:=instance-v.instance*Convert(1,v.ConvType,ConvType)
+          else
+            Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
+        finally
+          uR.Free;
+        end;
+      finally
+        uL.Free;
+      end;
     end
   else inherited;
 end;
 
 procedure TVariantWithUnit.DoMultiply(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
+  UL,UR: TUnitsWithExponent;
 begin
-  if Right is TVariantWithUnit then
-//    instance:=instance*v.instance*units.Multiply(v.Units)
+  if Right is TVariantWithUnit then begin
+    UL:=FindPhysUnit(ConvType);
+    try
+      UR:=FindPhysUnit(v.ConvType);
+      try
+        instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
+        ConvType:=FormulaToConvType(UL);
+      finally
+        Ur.Free;
+      end;
+    finally
+      UL.Free;
+    end;
+  end
   else inherited;
 end;
 
 procedure TVariantWithUnit.DoDivide(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
+    UL,UR: TUnitsWithExponent;
 begin
-  if Right is TVariantWithUnit then
-//    instance:=instance/v.instance*units.Divide(v.Units)
+  if Right is TVariantWithUnit then begin
+    UL:=FindPhysUnit(ConvType);
+    try
+      UR:=FindPhysUnit(v.ConvType);
+      try
+        instance:=instance*UL.Divide(UR)*Convert(1,FormulaToConvType(UR),v.ConvType)/v.instance;
+        ConvType:=FormulaToConvType(UL);
+      finally
+        Ur.Free;
+      end;
+    finally
+      UL.Free;
+    end;
+  end
   else inherited;
 end;
 
@@ -652,10 +700,14 @@ begin
         //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
         //скормить ему размерность, он "выплюнет" множитель, домножаем на него
         dimension:=TUnitsWithExponent.Create;
-        instance:=instance*dimension.TakeFromString(unitStr);
-        //а также ConvType - тот, что является базовым для данного семейства
-        //возможно, семейство придется создать на ходу
-        ConvType:=FormulaToConvType(dimension);
+        try
+          instance:=instance*dimension.TakeFromString(unitStr);
+          //а также ConvType - тот, что является базовым для данного семейства
+          //возможно, семейство придется создать на ходу
+          ConvType:=FormulaToConvType(dimension);
+        finally
+          dimension.Free;
+        end;
       end;
       if Assigned(preferredUnits) then begin
         PrefConvType:=preferredUnits.GetPreferredType(ConvTypeToFamily(ConvType));
@@ -682,13 +734,8 @@ begin
   VarDataClear(Dest);
   if VarDataIsStr(Source) then
     TWrapperVarData(Dest).Data:=TVariantWithUnit.Create(VarDataToStr(Source))
-  else begin
-    with TWrapperVarData(Dest).Data as TVariantWithUnit do begin
-      Create;
-      instance:=Variant(source);
-//      Units.Clear;  //безразм. величина
-    end;
-  end;
+  else
+    TWrapperVarData(Dest).Data:=TVariantWithUnit.CreateFromVariant(Variant(source),duUnity);
   Dest.VType:=VariantWithUnit;
 end;
 
@@ -702,7 +749,8 @@ begin
         VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
       else
         with TWrapperVarData(Source).Data as TVariantWithUnit do begin
-//          if Units.fCount>0 then Raise Exception.CreateFmt('%s: can''t convert value with unit to non-string type',[AsString]);
+          if ConvTypeToFamily(ConvType)<>cbDimensionless then
+            Raise Exception.CreateFmt('''%s'': can''t convert value with unit to non-string type',[AsString]);
           VarDataCastTo(Dest,TVarData(instance),AVarType);
         end;
     end;
@@ -717,6 +765,10 @@ procedure PopulateUnitMultiplier;
 var u: PUnitMultipliersArray;
 begin
   u:=@UnitMultiplier;
+  u[Integer('d')]:=1e-1;
+  u[Integer('д')]:=1e-1;
+  u[Integer('c')]:=1e-2;
+  u[Integer('с')]:=1e-2;
   u[Integer('m')]:=1e-3;
   u[Integer('м')]:=1e-3;
   u[Integer('u')]:=1e-6;

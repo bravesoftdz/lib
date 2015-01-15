@@ -151,6 +151,7 @@ begin
 
   RegisterConversionType(cbMass,'g',1);
   muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);
+  RegisterConversionType(cbMass,'ã',1);
   auShortSqMeters:=RegisterConversionType(cbArea,'m^2',1);
   vuShortCubicMeters:=RegisterConversionType(cbVolume,'m^3',1);
   RegisterConversionType(cbVolume,'L',0.001);

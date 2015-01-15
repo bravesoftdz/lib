@@ -31,6 +31,7 @@ TConstantVariantNode=class(TEvaluationTreeNode) //может быть компл. число или с 
     fValue: Variant;
   public
     constructor Create(aValue: Variant; owner: TComponent); reintroduce; overload;
+    destructor Destroy; override;
     function getVariantValue: Variant; override;
   end;
 
@@ -159,10 +160,10 @@ TVariantExpression=class(TFloatExpression)  //
     procedure MakeEvaluationTree; override;
     procedure UnitConversionOperators(s: string; var treeNode: TEvaluationTreeNode);
 //    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode); override;
-//    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode); override;
+    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode); override;
 //  procedure Pow()
 //  procedure BracketsAndFuncs()
-//  procedure ConstsAndVars()
+    procedure ConstsAndVars(s: string; var treeNode: TEvaluationTreeNode); override;
   public
     function GetVariantValue: Variant;
 end;
@@ -174,7 +175,7 @@ end;
 
 implementation
 
-uses TypInfo,StrUtils,math,phys_units_lib;
+uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib;
 
 (*
     TEvaluationTreeNode
@@ -216,6 +217,12 @@ begin
   fValue:=aValue;
 end;
 
+destructor TConstantVariantNode.Destroy;
+begin
+//  fValue:=null;
+  inherited Destroy;
+end;
+
 function TConstantVariantNode.getVariantValue: Variant;
 begin
   Result:=fValue;
@@ -249,8 +256,9 @@ end;
 function TAdditionNode.getVariantValue: Variant;
 var i: Integer;
 begin
-  Result:=0;
-  for i:=0 to ComponentCount-1 do
+  if ComponentCount=0 then Raise Exception.Create('AdditionNode: zero elements to add');
+  Result:=(Components[0] as TEvaluationTreeNode).getVariantValue;
+  for i:=1 to ComponentCount-1 do
     Result:=Result+(Components[i] as TEvaluationTreeNode).getVariantValue;
 end;
 
@@ -461,6 +469,11 @@ end;
 (*
     TFloatExpression
                       *)
+resourcestring
+  CircularReferenceErrStr = 'циклическая ссылка в выражении %s';
+  EmptyEvaluationTreeErrStr = 'пустое дерево синтаксического разбора';
+  EmptyStringErrStr = 'Отсутствует значение';
+
 constructor TFloatExpression.Create(owner: TComponent);
 var tmp: TComponent;
 begin
@@ -473,6 +486,7 @@ begin
   end;
   //если мы передавали owner=nil, то так он и останется
   fRootComponent:=owner;
+  fLastErrorMsg:=EmptyStringErrStr;
 end;
 
 constructor TFloatExpression.CreateZero(Owner: TComponent);
@@ -685,9 +699,6 @@ begin
   BracketsAndFuncs(s,treeNode);
 end;
 
-resourcestring
-  EmptyStringErrStr = 'Отсутствует значение';
-
 procedure TFloatExpression.BracketsAndFuncs(s: string; var treeNode: TEvaluationTreeNode);
 var f: string;
   i: Integer;
@@ -712,13 +723,14 @@ begin
   else ConstsAndVars(s,treeNode);
 end;
 
+resourcestring
+  WrongExpressionStr = 'Выражение "%s" не является числом или переменной';
+
 procedure TFloatExpression.ConstsAndVars(s: String; var treeNode: TEvaluationTreeNode);
 var val: Extended;
     fComponent: TComponent;
     buRoot: TComponent;
     i: Integer;
-resourcestring
-  WrongExpressionStr = 'Выражение "%s" не является числом или переменной';
 begin
   if TryStrToFloat(s,val) then
     treeNode:=TConstantNode.Create(val,nil)
@@ -751,10 +763,6 @@ begin
   end
   else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
 end;
-
-resourcestring
-  CircularReferenceErrStr = 'циклическая ссылка в выражении %s';
-  EmptyEvaluationTreeErrStr = 'пустое дерево синтаксического разбора';
 
 function TFloatExpression.getValue: Real;
 begin
@@ -811,6 +819,7 @@ end;
 
 procedure TVariantExpression.UnitConversionOperators(s: String; var TreeNode: TEvaluationTreeNode);
 var i,j: Integer;
+    term: TEvaluationTreeNode;
 resourcestring
   NoOpeningSqBracketStr = 'Закрывающая квадратная скобка без открывающей в ''%s''';
 begin
@@ -824,8 +833,136 @@ begin
     while (j>0) and (s[j]<>'[') do dec(j);
     if j=0 then Raise ESyntaxErr.CreateFmt(NoOpeningSqBracketStr,[s]);
     //j сидит на открывающей скобке, i-на закрывающей
+    UnitConversionOperators(LeftStr(s,j-1),term);
+    TreeNode:=TUnitConversionNode.Create(MidStr(s,j+1,i-j-1),nil);
+    TreeNode.InsertComponent(term);
+  end;
+end;
+
+procedure TVariantExpression.MulDiv(s: string; var treeNode: TEvaluationTreeNode);
+var i,last_plus: Integer;
+    brCount: Integer;
+    ident: string;
+    ch: char;
+    term_index: integer;
+    children: array of TEvaluationTreeNode;
+    temp: TEvaluationTreeNode;
+    isNeg: boolean;
+    p: TSimpleParser;
+begin
+  p:=TSimpleParser.Create(s);
+(*
+  while not p.eof do begin
+    ident:=p.getIdent;
+    if ident='' then begin
+      ch:=p.NextChar;
+      if ch='(' then begin
+        brCount:=1;
+        while (not p.eof) and (brCount>0) do begin
+          ch:=p.getChar;
+          if ch='(' then inc(brCount)
+          else if ch=')' then dec(brCount);
+        end;
+        if ch<>')' then Raise ESyntaxErr.Create(TooManyClosingBracketsStr);
+
+      end //после этого снова попытаемся считать ident
+
+
 
   end;
+  *)
+  p.Free;
+//  try
+  brcount:=0;
+  last_plus:=1;
+  isNeg:=false;
+  term_index:=0;
+  for i:=1 to Length(s) do begin
+    if brCount=0 then begin
+(*
+      if (s[i]=' ') then
+        if term_index=0 then continue //пробелы перед выражением
+        else
+        *)
+      if (s[i]='*') or (s[i]='/') then begin
+        SetLength(children,Length(children)+1);
+        Pow(MidStr(s,last_plus,i-last_plus),temp);
+        if isNeg then begin
+          children[Length(children)-1]:=TInverseNode.Create(nil);  //позже закрепим
+          children[Length(children)-1].InsertComponent(temp);
+        end
+        else
+          children[length(children)-1]:=temp;
+        last_plus:=i+1; //сразу за плюсом
+        isNeg:=(s[i]='/');
+      end
+    end;
+    if s[i]='(' then inc(brCount)
+    else if s[i]=')' then dec(brCount);
+    if brCount<0 then Raise EsyntaxErr.CreateFMT(TooManyClosingBracketsStr,[s]);
+  end;
+  if Length(children)=0 then Pow(s,treeNode)
+  else begin
+    treeNode:=TMultiplicationNode.Create(nil);  //позже нас прикрепят, если надо
+    for i:=0 to Length(children)-1 do begin
+      treeNode.InsertComponent(children[i]);
+      children[i]:=nil;
+    end;
+    Pow(RightStr(s,Length(s)-last_plus+1),temp);
+    if isNeg then begin
+      children[0]:=TInverseNode.Create(nil);
+      children[0].InsertComponent(temp);
+    end
+    else
+      children[0]:=temp;
+    treeNode.InsertComponent(children[0]);
+    children[0]:=nil;
+  end;
+(*
+  finally
+    for i:=0 to Length(children)-1 do
+      children[i].Free;
+  end;
+  *)
+end;
+
+procedure TVariantExpression.ConstsAndVars(s: String; var treeNode: TEvaluationTreeNode);
+var val: Variant;
+    fComponent: TComponent;
+    buRoot: TComponent;
+    i: Integer;
+begin
+  if TryVarWithUnitCreate(s,val) then
+    treeNode:=TConstantVariantNode.Create(val,nil)
+//    treeNode:=TConstantNode.Create(val,nil)
+  else if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
+  else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
+  else if Assigned(fRootComponent) then begin
+  //видать, переменная
+    fComponent:=FindNestedComponent(fRootComponent,s);
+    if Assigned(fComponent) and (fComponent is TFloatExpression) then
+      treeNode:=TVariableNode.Create(fComponent,'',nil)
+    else begin
+      i:=Length(s);
+      while (i>0) and (s[i]<>'.') do dec(i);
+      if uppercase(leftstr(s,4))='SELF' then begin
+        buRoot:=fRootComponent;
+        fRootComponent:=Owner;
+        ConstsAndVars(rightstr(s,Length(s)-5),treeNode);
+        fRootComponent:=buRoot;
+        Exit;
+      end;
+      if i>0 then begin
+        fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
+        if fComponent=nil then
+          Raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
+      end
+      else
+        fComponent:=fRootComponent;
+      treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
+    end;
+  end
+  else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
 end;
 
 function TVariantExpression.GetVariantValue: Variant;

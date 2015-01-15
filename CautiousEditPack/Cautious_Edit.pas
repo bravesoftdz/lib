@@ -269,23 +269,27 @@ end;
             TVariantEdit
                                 *)
 function TVariantEdit.get_value: Variant;
-var expr: TFloatExpression;
+var expr: TVariantExpression;
     E: Exception;
 begin
   if AllowExpressions then begin
-    expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
-    expr.SetString(text);
-    if expr.isCorrect then Result:=expr.getValue
-    else begin
-      Result:=0;
-      if not (csDesigning in self.ComponentState) then begin
-        E:=Exception.CreateFMT('TFloatLabel: %s',[expr.errorMsg]);
-        expr.Free;  //не хотим терять память
-        Raise E;
+    expr:=TVariantExpression.Create(nil);
+    try
+      expr.SetRootComponent(ExpressionRootComponent);
+      expr.SetString(text);
+      if expr.isCorrect then
+        Result:=expr.getVariantValue  //не гарантируется отсутствие ошибок, тем не менее
+      else begin
+        Result:=0;
+        if not (csDesigning in self.ComponentState) then begin
+          E:=Exception.CreateFMT('TFloatLabel: %s',[expr.errorMsg]);
+          FreeAndNil(expr);  //не хотим терять память
+          Raise E;
+        end;
       end;
+    finally
+      expr.Free;
     end;
-    expr.Free;
   end
   else
     Result:=VarWithUnitCreate(text);
@@ -293,12 +297,12 @@ end;
 
 procedure TVariantEdit.Change;
 var res: Variant;
-    expr: TFloatExpression;
+    expr: TVariantExpression;
 resourcestring
   FloatEditNotARealNumberMsg = 'Не является действительным числом';
 begin
   if AllowExpressions then begin
-    expr:=TFloatExpression.Create(nil);
+    expr:=TVariantExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then ReturnToNormal
@@ -324,10 +328,10 @@ end;
 
 function TVariantEdit.isValid: Boolean;
 var t: Variant;
-    expr: TFloatExpression;
+    expr: TVariantExpression;
 begin
   if AllowExpressions then begin
-    expr:=TFloatExpression.Create(nil);
+    expr:=TVariantExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     Result:=expr.isCorrect;
