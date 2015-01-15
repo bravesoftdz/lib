@@ -67,6 +67,7 @@ end;  //неужели больше ничего не нужно?
       instance: Variant; //та переменная, которую мы оборачиваем
     public
       constructor Create(text: string); overload;
+      constructor CreateFromVariant(source: Variant; aConvType: TConvType); 
       procedure Assign(source: TPersistent); overload; override;
       procedure Assign(str: string); reintroduce; overload;
       procedure Negate; override; //взять обратный знак
@@ -109,10 +110,14 @@ function ConvTypeToBaseFamilyLetter(const value: TConvType): string;
 //тип VariantWithUnit
 function VariantWithUnit: TVarType;
 
-//конструкторы
+//конструкторы и пр.
 procedure VarWithUnitCreateInto(var ADest: Variant; const AData: TVariantWithUnit);
 function VarWithUnitCreate(text: string): Variant;
+function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
+function IsVarWithUnit(V: Variant): Boolean;
 function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
+function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
+
 
 
 
@@ -534,6 +539,13 @@ begin
   Assign(text);
 end;
 
+constructor TVariantWithUnit.CreateFromVariant(source: Variant; aConvType: TConvType);
+begin
+  Create;
+  instance:=source;
+  ConvType:=aConvType;
+end;
+
 procedure TVariantWithUnit.Assign(source: TPersistent);
 var s: TVariantWithUnit absolute source;
 begin
@@ -626,24 +638,31 @@ begin
     ConvType:=duUnity;  //безразм.
   end
   else begin
-    //посерединке пробел, делим напополам
-    instance:=VarComplexCreate(LeftStr(str,i-1));
-    instance:=VarComplexSimplify(instance);
-    unitStr:=RightStr(str,Length(str)-i);
-    if not DescriptionToConvType(unitStr,ConvType) then begin
-      //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
-      //скормить ему размерность, он "выплюнет" множитель, домножаем на него
-      dimension:=TUnitsWithExponent.Create;
-      instance:=instance*dimension.TakeFromString(unitStr);
-      //а также ConvType - тот, что является базовым для данного семейства
-      //возможно, семейство придется создать на ходу
-      ConvType:=FormulaToConvType(dimension);
-    end;
-    if Assigned(preferredUnits) then begin
-      PrefConvType:=preferredUnits.GetPreferredType(ConvTypeToFamily(ConvType));
-      if PrefConvType<>CIllegalConvType then begin
-        Instance:=Instance*Convert(1,ConvType,PrefConvType);
-        ConvType:=PrefConvType;
+    //посерединке пробел
+    //либо часть справа от пробела-ед. изм., либо например разделенные действ и мним. части
+    if Uppercase(str[Length(str)])='I' then begin
+      Instance:=VarComplexCreate(str);
+      ConvType:=duUnity;
+    end
+    else begin
+      instance:=VarComplexCreate(LeftStr(str,i-1));
+      instance:=VarComplexSimplify(instance);
+      unitStr:=RightStr(str,Length(str)-i);
+      if not DescriptionToConvType(unitStr,ConvType) then begin
+        //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
+        //скормить ему размерность, он "выплюнет" множитель, домножаем на него
+        dimension:=TUnitsWithExponent.Create;
+        instance:=instance*dimension.TakeFromString(unitStr);
+        //а также ConvType - тот, что является базовым для данного семейства
+        //возможно, семейство придется создать на ходу
+        ConvType:=FormulaToConvType(dimension);
+      end;
+      if Assigned(preferredUnits) then begin
+        PrefConvType:=preferredUnits.GetPreferredType(ConvTypeToFamily(ConvType));
+        if PrefConvType<>CIllegalConvType then begin
+          Instance:=Instance*Convert(1,ConvType,PrefConvType);
+          ConvType:=PrefConvType;
+        end;
       end;
     end;
   end;
@@ -778,6 +797,42 @@ begin
     on E: Exception do
       Res:=E.Message;
   end;
+end;
+
+function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
+begin
+  VarWithUnitCreateInto(Result,TVariantWithUnit.CreateFromVariant(source,ConvType));
+end;
+
+function IsVarWithUnit(V: Variant): boolean;
+begin
+  Result:=(TWrapperVarData(V).VType=VariantWithUnit);
+end;
+
+function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
+var DestConvType, BaseConvType: TConvType;
+    multiplier: Real;
+    f: TUnitsWithExponent;
+    inst,dest: TVariantWithUnit;
+begin
+  if not IsVarWithUnit(source) then
+    source:=VarWithUnitCreateFromVariant(source,duUnity);
+  if not DescriptionToConvType(UnitName,DestConvType) then begin
+    f:=TUnitsWithExponent.Create;
+    try
+      multiplier:=f.TakeFromString(UnitName);
+      BaseConvType:=FormulaToConvType(f);
+      multiplier:=multiplier*ConvertTo(1,BaseConvType);
+      DestConvType:=RegisterConversionType(ConvTypeToFamily(BaseConvType),UnitName,multiplier);
+    finally
+      f.Free;
+    end;
+  end;
+  inst:=TWrapperVarData(source).Data as TVariantWithUnit;
+  dest:=TVariantWithUnit.Create;
+  dest.instance:=inst.instance*Convert(1,inst.ConvType,DestConvType);
+  dest.ConvType:=DestConvType;
+  VarWithUnitCreateInto(Result,dest);
 end;
 
 

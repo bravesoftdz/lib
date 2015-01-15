@@ -11,9 +11,10 @@ end;
 
 TEvaluationTreeNode=class(TComponent) //тогда сразу ему компоненты могут принадлежать-удобно
   public
-    function getValue: Real; virtual; abstract;
+    function getValue: Real; virtual; //по умолчанию берет getVariantValue и преобр. в Real
+    function getVariantValue: Variant; virtual; abstract;
 //    function getIntegerValue: Integer; virtual; abstract;
-    function isIndependent: boolean; virtual; abstract;
+    function isIndependent: boolean; virtual; //по умолчанию, true
   end;
 
 TConstantNode=class(TEvaluationTreeNode) //математическая константа
@@ -22,7 +23,15 @@ TConstantNode=class(TEvaluationTreeNode) //математическая константа
   public
     constructor Create(aValue: Real; owner: TComponent); reintroduce; overload;
     function getValue: Real; override;
-    function isIndependent: boolean; override;
+    function getVariantValue: Variant; override;
+  end;
+
+TConstantVariantNode=class(TEvaluationTreeNode) //может быть компл. число или с ед. изм
+  private
+    fValue: Variant;
+  public
+    constructor Create(aValue: Variant; owner: TComponent); reintroduce; overload;
+    function getVariantValue: Variant; override;
   end;
 
 TNonTerminalNode=class(TEvaluationTreeNode) //действие над другими выражениями
@@ -34,26 +43,39 @@ TNonTerminalNode=class(TEvaluationTreeNode) //действие над другими выражениями
 TAdditionNode=class(TNonTerminalNode) //сумма нескольких слагаемых
   public
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
   end;
 
 TMultiplicationNode=class(TNonTerminalNode) //произведение
   public
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
   end;
 
 TUnaryMinusNode=class(TNonTerminalNode)
   public
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
   end;
 
 TInverseNode=class(TNonTerminalNode)  //обратная величина, 1/х
   public
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
   end;
 
 TPowNode=class(TNonTerminalNode)  //возведение в степень
   public
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
+  end;
+
+TUnitConversionNode=class(TNonTerminalnode) //приведение к другой единице
+  private
+    fUnitName: string;
+  public
+    constructor Create(aUnitName: string; owner: TComponent); reintroduce; overload;
+    function getVariantValue: Variant; override;
   end;
 
 TMathFuncProc=function(X: Real): Real of object;
@@ -64,6 +86,7 @@ TMathFuncNode=class(TNonTerminalNode)
   public
     constructor Create(afunc: string; aowner: TComponent); reintroduce; overload;
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
   published
     function Ln(x: Real): Real;
     function Lg(x: Real): Real;
@@ -83,6 +106,7 @@ TVariableNode=class(TEvaluationTreeNode)
   public
     constructor Create(aComponent: TComponent;aPropName: string; aOwner: TComponent); reintroduce; overload;
     function getValue: Real; override;
+    function getVariantValue: Variant; override;
     function isIndependent: Boolean; override;
   end;
 
@@ -102,12 +126,12 @@ TFloatExpression=class(TComponent)
     function fIsIndependent: boolean;
     function getCorrect: boolean;
   protected
-    procedure MakeEvaluationTree;
-    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode);
-    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode);
-    procedure Pow(s: string; var treeNode: TEvaluationTreeNode);
-    procedure BracketsAndFuncs(s: string; var treeNode: TEvaluationTreeNode);
-    procedure ConstsAndVars(s: string; var treeNode: TEvaluationTreeNode);
+    procedure MakeEvaluationTree; virtual;
+    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode); virtual;
+    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode); virtual;
+    procedure Pow(s: string; var treeNode: TEvaluationTreeNode); virtual;
+    procedure BracketsAndFuncs(s: string; var treeNode: TEvaluationTreeNode); virtual;
+    procedure ConstsAndVars(s: string; var treeNode: TEvaluationTreeNode); virtual;
   public
     constructor Create(Owner: TComponent); override;
     constructor CreateZero(Owner: TComponent);
@@ -130,6 +154,19 @@ TFloatExpression=class(TComponent)
     property data: string read getString write SetString;
   end;
 
+TVariantExpression=class(TFloatExpression)  //
+  protected
+    procedure MakeEvaluationTree; override;
+    procedure UnitConversionOperators(s: string; var treeNode: TEvaluationTreeNode);
+//    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode); override;
+//    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode); override;
+//  procedure Pow()
+//  procedure BracketsAndFuncs()
+//  procedure ConstsAndVars()
+  public
+    function GetVariantValue: Variant;
+end;
+
 TStandAloneFloatExpression = class (TFloatExpression)
   public
     constructor Create(Owner: TComponent); override;
@@ -137,8 +174,20 @@ end;
 
 implementation
 
-uses TypInfo,StrUtils,math;
+uses TypInfo,StrUtils,math,phys_units_lib;
 
+(*
+    TEvaluationTreeNode
+                          *)
+function TEvaluationTreeNode.getValue: Real;
+begin
+  Result:=getVariantValue;
+end;
+
+function TEvaluationTreeNode.isIndependent: Boolean;
+begin
+  Result:=true;
+end;
 (*
     TConstantNode
                       *)
@@ -153,9 +202,23 @@ begin
   Result:=fValue;
 end;
 
-function TConstantNode.isIndependent: Boolean;
+function TConstantNode.getVariantValue: Variant;
 begin
-  Result:=true;
+  Result:=fValue;
+end;
+
+(*
+    TConstantVariantNode
+                            *)
+constructor TConstantVariantNode.Create(aValue: Variant; owner: TComponent);
+begin
+  inherited Create(Owner);
+  fValue:=aValue;
+end;
+
+function TConstantVariantNode.getVariantValue: Variant;
+begin
+  Result:=fValue;
 end;
 
 (*
@@ -183,6 +246,14 @@ begin
     Result:=Result+(Components[i] as TEvaluationTreeNode).getValue;
 end;
 
+function TAdditionNode.getVariantValue: Variant;
+var i: Integer;
+begin
+  Result:=0;
+  for i:=0 to ComponentCount-1 do
+    Result:=Result+(Components[i] as TEvaluationTreeNode).getVariantValue;
+end;
+
 (*
     TMultiplicationNode
                         *)
@@ -194,12 +265,25 @@ begin
     Result:=Result*(Components[i] as TEvaluationTreeNode).getValue;
 end;
 
+function TMultiplicationNode.getVariantValue: Variant;
+var i: Integer;
+begin
+  Result:=1;
+  for i:=0 to ComponentCount-1 do
+    Result:=Result*(Components[i] as TEvaluationTreeNode).getVariantValue;
+end;
+
 (*
   TUnaryMinusNode
                       *)
 function TUnaryMinusNode.getValue: Real;
 begin
   Result:=-(Components[0] as TEvaluationTreeNode).getValue;
+end;
+
+function TUnaryMinusNode.getVariantValue: Variant;
+begin
+  Result:=-(Components[0] as TEvaluationTreeNode).getVariantValue;
 end;
 
 (*
@@ -210,12 +294,38 @@ begin
   Result:=1/(Components[0] as TEvaluationTreeNode).getValue;
 end;
 
+function TInverseNode.getVariantValue: Variant;
+begin
+  Result:=1/(Components[0] as TEvaluationTreeNode).getVariantValue;
+end;
+
+(*
+  TUnitConversionNode
+                        *)
+constructor TUnitConversionNode.Create(aUnitName: string; owner: TComponent);
+begin
+  inherited Create(owner);
+  fUnitName:=aUnitName;
+end;
+
+function TUnitConversionNode.getVariantValue: Variant;
+begin
+  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitName);
+end;
+
 (*
   TPowNode
               *)
 function TPowNode.getValue: Real;
 begin
   Result:=Power((Components[0] as TEvaluationTreeNode).getValue,(Components[1] as TEvaluationTreeNode).getValue);
+end;
+
+function TPowNode.getVariantValue: Variant;
+begin
+  //недостаточно абстрактное решение, ведь здесь оба числа преобр. в действ числа
+  //правильнее выполнить ф-ию DoPower () для 1-го Variant'а.
+  Result:=Power((Components[0] as TEvaluationTreeNode).getVariantValue,(Components[1] as TEvaluationTreeNode).getVariantValue);
 end;
 
 (*
@@ -233,6 +343,12 @@ end;
 function TMathFuncNode.getValue: Real;
 begin
   Result:=func((Components[0] as TEvaluationTreeNode).getValue);
+end;
+
+function TMathFuncNode.getVariantValue: Variant;
+begin
+  Result:=func((Components[0] as TEvaluationTreeNode).getVariantValue);
+  //халтура, мы превращаем Variant в Real и опять в Variant!
 end;
 
 function TMathFuncNode.Ln(x: Real): Real;
@@ -296,11 +412,12 @@ begin
   Result:=false;
 end;
 
-function TVariableNode.getValue: Real;
-var propInfo: PPropInfo;
 resourcestring
   VariableNodePropertyNotExistStr = 'Не найдено переменной "%s"';
   VariableNodeWrongTypeOfPropertyStr = 'Неверный тип переменной "%s"';
+
+function TVariableNode.getValue: Real;
+var propInfo: PPropInfo;
 begin
   if fComponent is TFloatExpression then
     Result:=TFloatExpression(fComponent).getValue
@@ -311,9 +428,31 @@ begin
       Result:=GetFloatProp(fComponent,fPropName)
     else if PropInfo.PropType^.Kind=tkInteger then
       Result:=GetOrdProp(fComponent,fPropName)
-    else if (PropInfo.PropType^.Kind=tkClass) then begin
-      Result:=TFloatExpression(GetObjectProp(fComponent,fPropName,TFloatExpression)).getValue;
-    end
+    else if (PropInfo.PropType^.Kind=tkClass) then
+      Result:=TFloatExpression(GetObjectProp(fComponent,fPropName,TFloatExpression)).getValue
+    else if PropInfo.PropType^.Kind=tkVariant then
+      Result:=GetVariantProp(fComponent,fPropName)
+    else
+      Raise ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
+  end;
+end;
+
+function TVariableNode.getVariantValue: Variant;
+var propInfo: PPropInfo;
+begin
+  if fComponent is TFloatExpression then
+    Result:=TFloatExpression(fComponent).getValue
+  else begin
+    propInfo:=GetPropInfo(fComponent,fPropName);
+    if propInfo=nil then raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
+    if PropInfo.PropType^.Kind=tkFloat then
+      Result:=GetFloatProp(fComponent,fPropName)
+    else if PropInfo.PropType^.Kind=tkInteger then
+      Result:=GetOrdProp(fComponent,fPropName)
+    else if (PropInfo.PropType^.Kind=tkClass) then
+      Result:=TFloatExpression(GetObjectProp(fComponent,fPropName,TFloatExpression)).getValue
+    else if PropInfo.PropType^.Kind=tkVariant then
+      Result:=GetVariantProp(fComponent,fPropName)
     else
       Raise ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
   end;
@@ -546,12 +685,13 @@ begin
   BracketsAndFuncs(s,treeNode);
 end;
 
+resourcestring
+  EmptyStringErrStr = 'Отсутствует значение';
+
 procedure TFloatExpression.BracketsAndFuncs(s: string; var treeNode: TEvaluationTreeNode);
 var f: string;
   i: Integer;
   temp: TEvaluationTreeNode;
-resourcestring
-  EmptyStringErrStr = 'Отсутствует значение';
 begin
   if Length(s)=0 then raise ESyntaxErr.Create(EmptyStringErrStr);
   if s[Length(s)]=')' then begin
@@ -612,10 +752,11 @@ begin
   else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
 end;
 
-function TFloatExpression.getValue: Real;
 resourcestring
   CircularReferenceErrStr = 'циклическая ссылка в выражении %s';
   EmptyEvaluationTreeErrStr = 'пустое дерево синтаксического разбора';
+
+function TFloatExpression.getValue: Real;
 begin
   if fchanged then MakeEvaluationTree;
   if fCorrect then begin
@@ -646,6 +787,62 @@ begin
   if fchanged then MakeEvaluationTree;
   Result:=fCorrect;
 end;
+
+(*
+    TVariantExpression
+                              *)
+procedure TVariantExpression.MakeEvaluationTree;
+begin
+  FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сносится
+  try
+    UnitConversionOperators(fstring,fEvaluationTreeRoot);
+    fcorrect:=true;
+    fIndependent:=fEvaluationTreeRoot.isIndependent;
+  except
+    on Ex: ESyntaxErr do begin
+      fLastErrorMsg:=Ex.message;
+      fcorrect:=false;
+    end;
+    else
+      raise;
+  end;
+  fchanged:=false;
+end;
+
+procedure TVariantExpression.UnitConversionOperators(s: String; var TreeNode: TEvaluationTreeNode);
+var i,j: Integer;
+resourcestring
+  NoOpeningSqBracketStr = 'Закрывающая квадратная скобка без открывающей в ''%s''';
+begin
+  //идем справа налево, ищем пробел и выражение в квадратных скобках
+  i:=Length(s);
+  while (i>0) and ((s[i]=' ') or (s[i]=#13) or (s[i]=#10) or (s[i]=#9)) do dec(i);
+  if i=0 then Raise ESyntaxErr.Create(EmptyStringErrStr);
+  if s[i]<>']' then PlusMinus(LeftStr(s,i),TreeNode)
+  else begin
+    j:=i-1;
+    while (j>0) and (s[j]<>'[') do dec(j);
+    if j=0 then Raise ESyntaxErr.CreateFmt(NoOpeningSqBracketStr,[s]);
+    //j сидит на открывающей скобке, i-на закрывающей
+
+  end;
+end;
+
+function TVariantExpression.GetVariantValue: Variant;
+begin
+  if fchanged then MakeEvaluationTree;
+  if fCorrect then begin
+    if Assigned(fEvaluationTreeRoot) then begin
+      if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
+      fworking:=true;
+      Result:=fEvaluationTreeRoot.getVariantValue;
+      fworking:=false;
+    end
+    else Raise Exception.Create(EmptyEvaluationTreeErrStr);
+  end
+  else Raise Exception.Create(fLastErrorMsg);
+end;
+
 
 (*
     TStandAloneFloatExpression
