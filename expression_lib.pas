@@ -2,7 +2,7 @@ unit expression_lib;
 
 interface
 
-uses classes,Contnrs,SysUtils;
+uses classes,Contnrs,SysUtils,ConvUtils;
 
 type
 
@@ -155,8 +155,20 @@ TFloatExpression=class(TComponent)
     property data: string read getString write SetString;
   end;
 
+TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,ltNumber,ltIdent,ltPhysUnit);
+TLexem=record
+  LType: TLexemType;
+  Num: Variant; //комплексное число тоже может быть
+  Ident: string;
+  PhysUnit: TConvType;
+end;
+
 TVariantExpression=class(TFloatExpression)  //
+  private
+    Lexems: array of TLexem;
+    procedure EnsureLexemsLen(i: Integer);
   protected
+    procedure LexicalAnalysis;
     procedure MakeEvaluationTree; override;
     procedure UnitConversionOperators(s: string; var treeNode: TEvaluationTreeNode);
 //    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode); override;
@@ -799,6 +811,43 @@ end;
 (*
     TVariantExpression
                               *)
+procedure TVariantExpression.EnsureLexemsLen(i: Integer);
+begin
+  if Length(Lexems)<i then
+    SetLength(Lexems,Length(Lexems)+i);
+end;
+procedure TVariantExpression.LexicalAnalysis;
+var p: TSimpleParser;
+    LIndex: Integer;
+    id: string;
+    CType: TConvType;
+begin
+  LIndex:=-1;
+  p:=TSimpleParser.Create(fstring);
+  try
+    while not p.eof do begin
+      inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
+      EnsureLexemsLen(LIndex+1);
+      CType:=p.GetPhysUnitStr;
+      if CType<>CIllegalConvType then begin
+        Lexems[LIndex].LType:=ltPhysUnit;
+        Lexems[LIndex].PhysUnit:=CType;
+      end
+      else begin
+        id:=p.getIdent;
+        if id<>'' then begin
+          Lexems[LIndex-1].
+
+        
+
+
+
+    end;
+  finally
+    p.Free;
+  end;
+end;
+
 procedure TVariantExpression.MakeEvaluationTree;
 begin
   FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сносится
