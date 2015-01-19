@@ -2,7 +2,7 @@ unit simple_parser_lib;
 
 interface
 
-uses SysUtils;
+uses SysUtils,ConvUtils;
 
 type
 
@@ -10,17 +10,21 @@ TSimpleParser=class
   private
     _str: string;
     _pos: Integer;
+    fBackupPos: Integer;
     procedure skip_spaces;
 //    procedure find_next_space;
     function isSpace(ch: char): boolean;
     function isDelimiter(ch: char): boolean;
+    function isFirstIdentSymbol(ch: char): boolean;
     function isIdentSymbol(ch: char): boolean;
+    function isNumberSymbol(ch: char): boolean;
   public
     spaces: string;
     delimiter: string;
     constructor Create; overload;
     constructor Create(str: String); overload;
     procedure AssignString(str: String);
+    procedure PutBack;  //что мы в прошлый раз взяли - "отдаем"
     function eof: boolean;
     function getChar: char;
     function NextChar: char;
@@ -31,10 +35,14 @@ TSimpleParser=class
     function getIdent: string; //считать символы, пока они укладываются в диап. A..Z, a..z, 0..9, _, А..Я, а..я
     function getHex: Integer;
     function getBinary: LongWord;
+    function getPhysUnit: TConvType;
+    function getVariantNum: Variant;
   end;
 
+EParserError=class(Exception);
+
 implementation
-uses strUtils;
+uses strUtils,Variants,VarCmplx;
 
 constructor TSimpleParser.Create;
 begin
@@ -42,6 +50,7 @@ begin
   spaces:=' '+#9+#10+#13;
   delimiter:=';';
   _pos:=1;
+  fbackupPos:=-1; //нечего возвращать
 end;
 
 constructor TSimpleParser.Create(str: String);
@@ -85,11 +94,29 @@ begin
   result:=false;
 end;
 
-function TSimpleParser.isIdentSymbol(ch: Char): Boolean;
+function TSimpleParser.isFirstIdentSymbol(ch: Char): Boolean;
 begin
   result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
-    ((ch>='0') and (ch<='9')) or ((ch>='А') and (ch<='Я')) or
-    ((ch>='а') and (ch<='я')) or (ch='_');
+    ((ch>='А') and (ch<='Я')) or ((ch>='а') and (ch<='я')) or (ch='_');
+end;
+
+function TSimpleParser.isNumberSymbol(ch: Char): Boolean;
+begin
+  result:=(ch>='0') and (ch<='9');
+end;
+
+function TSimpleParser.isIdentSymbol(ch: Char): Boolean;
+begin
+  result:=IsFirstIdentSymbol(ch) or isNumberSymbol(ch);
+end;
+
+
+
+procedure TSimpleParser.PutBack;
+begin
+  if fBackupPos=-1 then raise EParserError.CreateFmt('Putback at %s: nothing to put back',[GetString]);
+  _pos:=fBackupPos;
+  fBackupPos:=-1;
 end;
 
 procedure TSimpleParser.skip_spaces;
@@ -105,16 +132,15 @@ end;
 function TSimpleParser.NextChar: char;
 begin
   skip_spaces;
-  if _pos<=Length(_str) then result:=_str[_pos] else Raise Exception.Create('TParser.NextChar: unexpected end of string');
+  if _pos<=Length(_str) then result:=_str[_pos] else Raise EParserError.Create('TParser.NextChar: unexpected end of string');
 end;
 
 function TSimpleParser.getChar: char;
-var i: Integer;
 begin
   skip_spaces;
-  i:=_pos;
+  fBackupPos:=_pos;
   inc(_pos);
-  if i<=Length(_str) then result:=_str[i] else Raise Exception.Create('TParser.getChar: unexpected end of string');
+  if fBackupPos<=Length(_str) then result:=_str[fBackupPos] else Raise EParserError.Create('TParser.getChar: unexpected end of string');
 end;
 
 function TSimpleParser.getFloat: Real;
@@ -124,6 +150,7 @@ var ch: char;
 begin
   separator:=DecimalSeparator;
   skip_spaces;
+  fBackupPos:=_pos;
   while (_pos<=Length(_str)) and not isDelimiter(_str[_pos]) do begin
     ch:=_str[_pos];
     if ((ch>'9') or (ch<'0')) and (ch<>'+') and (ch<>'-') and (ch<>'E') and (ch<>'e') and (ch<>'.') and (ch<>',') and (not isSpace(ch)) then break;
@@ -140,6 +167,7 @@ var ch: char;
     s: string;
 begin
   skip_spaces;
+  fBackupPos:=_pos;
   while (_pos<=Length(_str)) and not isDelimiter(_str[_pos]) do begin
     ch:=_str[_pos];
     if ((ch>'9') or (ch<'0')) and (ch<>'-') and (not isSpace(ch)) then break;
@@ -154,6 +182,7 @@ var ch: char;
     s: string;
 begin
   skip_spaces;
+  fBackupPos:=_pos;
   while (_pos<=Length(_str)) and not isDelimiter(_str[_pos]) do begin
     ch:=_str[_pos];
     if ((ch>'9') or (ch<'0')) and (ch<>'-') and (not isSpace(ch)) then break;
@@ -164,13 +193,12 @@ begin
 end;
 
 function TSimpleParser.getString: string;
-var i: Integer;
 begin
 //  Result:=RightStr(_str,Length(_str)-_pos+1);
   skip_spaces;
-  i:=_pos;
+  fBackupPos:=_pos;
   while (_pos<=Length(_str)) and (not isDelimiter(_str[_pos])) do inc(_pos);
-  Result:=MidStr(_str,i,_pos-i);
+  Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
 end;
 
 function TSimpleParser.getHex: Integer;
@@ -180,6 +208,7 @@ begin
   int0:=Integer('0');
   x:=0;
   skip_spaces;
+  fBackupPos:=_pos;
   while (_pos<=Length(_str)) and (_str[_pos]<='F') and (_str[_pos]>='0') do begin
     ch:=Integer(_str[_pos])-Int0;
     if ch>9 then ch:=ch-7;
@@ -197,6 +226,7 @@ begin
   int0:=Integer('0');
   x:=0;
   skip_spaces;
+  fBackupPos:=_pos;
   while(_pos<=Length(_str)) and (_str[_pos]<='1') and (_str[_pos]>='0') do begin
     ch:=Integer(_str[_pos])-Int0;
     x:=(x shl 1) or ch;
@@ -206,12 +236,127 @@ begin
 end;
 
 function TSimpleParser.getIdent: string;
-var initPos: Integer;
 begin
   skip_spaces;
-  initPos:=_pos;
-  while (_pos<=Length(_str)) and IsIdentSymbol(_str[_pos]) do inc(_pos);
-  Result:=MidStr(_str,initPos,_pos-initPos);
+  fBackupPos:=_pos;
+  if (_pos<=Length(_str)) and IsFirstIdentSymbol(_str[_pos]) then begin
+    inc(_pos);
+    while (_pos<=Length(_str)) and IsIdentSymbol(_str[_pos]) do inc(_pos);
+  end;
+  Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
+end;
+
+function TSimpleParser.getPhysUnit: TConvType;
+begin
+  //хитрость в том, чтобы найти окончание.
+  //скажем, 1 км*2 - здесь ед. изм "км"
+  //но в 1 Н*м - "Н*м".
+  skip_spaces;
+
+
+  Result:=CIllegalConvType;
+end;
+
+function TSimpleParser.getVariantNum: Variant;
+var Ch: char;
+  state: Integer;
+
+  function TryExponent: Boolean;
+  begin
+    Result:=(ch='e') or (ch='E');
+    if Result then begin
+      inc(_pos);
+      if _pos>Length(_str) then begin
+        putBack;
+        Raise EParserError.CreateFmt('getVariantNum: unexpected end of string "%s"',[GetString]);
+      end;
+      ch:=_str[_pos];
+      if (ch='-') or (ch='+') then state:=4
+      else if IsNumberSymbol(ch) then state:=5
+      else begin
+        putBack;
+        Raise EParserError.CreateFmt('getVariantNum: unknown symbol after exponent, "%s"',[GetString]);
+      end;
+    end;
+  end;
+
+  procedure TryImaginary;
+  begin
+    if (ch='i') or (ch='I') or (ch='j') or (ch='J') then
+      inc(_pos);
+  end;
+
+begin
+  Result:=Unassigned;
+  //в самом числе не может содержаться никаких пробелов!
+  skip_spaces;
+  fBackupPos:=_pos;
+  state:=0;
+  while (_pos<=Length(_str)) do begin
+    Ch:=_str[_pos];
+    case state of
+      0: begin
+          if IsNumberSymbol(ch) then state:=1 else begin
+            putBack;
+            Raise EParserError.CreateFmt('getVariantNum: digit expected in "%s"',[GetString]);
+          end;
+        end;
+      1: begin
+          if not IsNumberSymbol(ch) then
+            if (ch='.') or (ch=',') then begin
+              state:=2;
+              _str[_pos]:=DecimalSeparator;
+            end
+            else if not TryExponent then begin
+              TryImaginary;
+              break;
+            end;
+        end;
+      2: if IsNumberSymbol(ch) then state:=3 else begin
+          putBack;
+          Raise EParserError.CreateFmt('getVariantNum: digit expected after decimal separator in "%s"',[GetString]);
+        end;
+      3:  if not IsNumberSymbol(ch) then
+            if not TryExponent then begin
+              TryImaginary;
+              break;
+            end;
+      4: if IsNumberSymbol(ch) then state:=5 else begin
+          putBack;
+          Raise EParserError.CreateFmt('getVariantNum: digit expected after exponent in "%s"',[GetString]);
+        end;
+      5: if not IsNumberSymbol(ch) then begin
+          TryImaginary;
+          break;
+          end;
+      end;
+    inc(_pos);
+  end;
+  if state=0 then Raise EParserError.Create('getVariantNum: empty expression');
+  if state=2 then begin
+    PutBack;
+    Raise EParserError.CreateFmt('getVariantNum: digit expected after decimal separator in "%s"',[GetString]);
+  end;
+  if state=4 then begin
+    PutBack;
+    Raise EParserError.CreateFmt('getVariantNum: digit expected after exponent sign in "%s"',[GetString]);
+  end;
+(*
+  if (_pos<=Length(_str)) and (IsNumberSymbol(_str[_pos]) or (_str[_pos]='-')) then begin
+    lastCh:=_str[_pos];
+    inc(_pos);
+    while (_pos<=Length(_str)) and (IsNumberSymbol(_str[_pos]) or
+      (IsNumberSymbol(lastCh) and ((_str[_pos]='.') or (_str[_pos]=',')
+        or (UpperCase(_str[_pos])='E'))) or
+        ((lastCh='E') and ((_str[_pos]='+') or (_str[_pos]='-')))) do begin
+          lastCh:=Uppercase(_str[_pos])[1];
+          inc(_pos);
+    end;
+    *)
+    if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then
+      Result:=VarComplexCreate(0,StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos-1)))
+    else
+      Result:=StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos));
 end;
 
 end.

@@ -6,8 +6,8 @@ uses classes,Contnrs,SysUtils,ConvUtils;
 
 type
 
-ESyntaxErr=class(Exception)
-end;
+ESyntaxErr=class(Exception);
+ELexicalErr=class(Exception);
 
 TEvaluationTreeNode=class(TComponent) //тогда сразу ему компоненты могут принадлежать-удобно
   public
@@ -819,8 +819,7 @@ end;
 procedure TVariantExpression.LexicalAnalysis;
 var p: TSimpleParser;
     LIndex: Integer;
-    id: string;
-    CType: TConvType;
+    ch: char;
 begin
   LIndex:=-1;
   p:=TSimpleParser.Create(fstring);
@@ -828,23 +827,35 @@ begin
     while not p.eof do begin
       inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
       EnsureLexemsLen(LIndex+1);
-      CType:=p.GetPhysUnitStr;
-      if CType<>CIllegalConvType then begin
-        Lexems[LIndex].LType:=ltPhysUnit;
-        Lexems[LIndex].PhysUnit:=CType;
-      end
+      Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
+      if Lexems[LIndex].PhysUnit<>CIllegalConvType then
+        Lexems[LIndex].LType:=ltPhysUnit
       else begin
-        id:=p.getIdent;
-        if id<>'' then begin
-          Lexems[LIndex-1].
-
-        
-
-
-
+        Lexems[LIndex].Ident:=p.getIdent;
+        if Lexems[LIndex].Ident<>'' then
+          Lexems[LIndex].LType:=ltIdent
+        else begin
+          ch:=p.getChar;
+          case ch of
+            ')': Lexems[LIndex].LType:=ltRightBracket;
+            '(': Lexems[LIndex].LType:=ltLeftBracket;
+            '+': Lexems[LIndex].LType:=ltPlus;
+            '-': Lexems[LIndex].LType:=ltMinus;
+            '*': Lexems[LIndex].LType:=ltMul;
+            '/': Lexems[LIndex].LType:=ltDiv;
+            '^': Lexems[LIndex].LType:=ltPow;
+            else begin
+              p.PutBack;
+              Lexems[LIndex].Num:=p.getVariantNum;
+              Lexems[LIndex].LType:=ltNumber
+            end;
+          end;
+        end;
+      end;
     end;
   finally
     p.Free;
+    SetLength(Lexems,LIndex+1);
   end;
 end;
 
@@ -852,11 +863,12 @@ procedure TVariantExpression.MakeEvaluationTree;
 begin
   FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сносится
   try
+    LexicalAnalysis;
     UnitConversionOperators(fstring,fEvaluationTreeRoot);
     fcorrect:=true;
     fIndependent:=fEvaluationTreeRoot.isIndependent;
   except
-    on Ex: ESyntaxErr do begin
+    on Ex: Exception do begin
       fLastErrorMsg:=Ex.message;
       fcorrect:=false;
     end;
