@@ -42,7 +42,7 @@ TSimpleParser=class
 EParserError=class(Exception);
 
 implementation
-uses strUtils,Variants,VarCmplx;
+uses strUtils,Variants,VarCmplx,phys_units_lib;
 
 constructor TSimpleParser.Create;
 begin
@@ -247,14 +247,49 @@ begin
 end;
 
 function TSimpleParser.getPhysUnit: TConvType;
+var id: string;
+    InitPos,tempPos: Integer;
+    CType: TConvType;
+    ch: char;
 begin
   //хитрость в том, чтобы найти окончание.
   //скажем, 1 км*2 - здесь ед. изм "км"
   //но в 1 Ќ*м - "Ќ*м".
   skip_spaces;
+  InitPos:=_pos;  //fBackupPos будет мен€тьс€ внутри цикла
+  TempPos:=_pos;
+  while (_pos<=Length(_str)) do begin
+    id:=GetIdent;
+    //хот€ у нас есть безразмерна€ величина, принимать
+    //пустое место за нее не имеем права!
+    if (id='') or not PrefixDescrToConvType(id,CType) then begin
+      _pos:=TempPos;
+      break;
+    end
+    else begin
+      if eof then break;
+      TempPos:=_pos;
+      ch:=GetChar;
+      if ch='^' then begin
+        GetFloat;
+        if eof then begin
+          PutBack;
+          break;
+        end;
+        ch:=GetChar;
+      end;
+      if eof or ((ch<>'*') and (ch<>'/')) then begin
+        _pos:=TempPos;
+        break;
+      end;
+    end;
+  end;
 
-
-  Result:=CIllegalConvType;
+  fBackupPos:=InitPos;
+  if _pos<>InitPos then
+    Result:=StrToConvType(MidStr(_str,InitPos,_pos-InitPos))
+  else
+    Result:=CIllegalConvType;
 end;
 
 function TSimpleParser.getVariantNum: Variant;
@@ -341,22 +376,11 @@ begin
     PutBack;
     Raise EParserError.CreateFmt('getVariantNum: digit expected after exponent sign in "%s"',[GetString]);
   end;
-(*
-  if (_pos<=Length(_str)) and (IsNumberSymbol(_str[_pos]) or (_str[_pos]='-')) then begin
-    lastCh:=_str[_pos];
-    inc(_pos);
-    while (_pos<=Length(_str)) and (IsNumberSymbol(_str[_pos]) or
-      (IsNumberSymbol(lastCh) and ((_str[_pos]='.') or (_str[_pos]=',')
-        or (UpperCase(_str[_pos])='E'))) or
-        ((lastCh='E') and ((_str[_pos]='+') or (_str[_pos]='-')))) do begin
-          lastCh:=Uppercase(_str[_pos])[1];
-          inc(_pos);
-    end;
-    *)
-    if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then
-      Result:=VarComplexCreate(0,StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos-1)))
-    else
-      Result:=StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos));
+
+  if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then
+    Result:=VarComplexCreate(0,StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos-1)))
+  else
+    Result:=StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos));
 end;
 
 end.

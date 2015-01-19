@@ -73,9 +73,14 @@ TPowNode=class(TNonTerminalNode)  //возведение в степень
 
 TUnitConversionNode=class(TNonTerminalnode) //приведение к другой единице
   private
-    fUnitName: string;
+    fUnitType: TConvType;
   public
-    constructor Create(aUnitName: string; owner: TComponent); reintroduce; overload;
+    constructor Create(aUnitType: TConvType; owner: TComponent); reintroduce; overload;
+    function getVariantValue: Variant; override;
+  end;
+
+TUnitAssignmentNode=class(TUnitConversionNode)
+  public
     function getVariantValue: Variant; override;
   end;
 
@@ -155,7 +160,8 @@ TFloatExpression=class(TComponent)
     property data: string read getString write SetString;
   end;
 
-TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,ltNumber,ltIdent,ltPhysUnit);
+TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,
+  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion);
 TLexem=record
   LType: TLexemType;
   Num: Variant; //комплексное число тоже может быть
@@ -170,12 +176,13 @@ TVariantExpression=class(TFloatExpression)  //
   protected
     procedure LexicalAnalysis;
     procedure MakeEvaluationTree; override;
-    procedure UnitConversionOperators(s: string; var treeNode: TEvaluationTreeNode);
-//    procedure PlusMinus(s: string; var treeNode: TEvaluationTreeNode); override;
-    procedure MulDiv(s: string; var treeNode: TEvaluationTreeNode); override;
-//  procedure Pow()
-//  procedure BracketsAndFuncs()
-    procedure ConstsAndVars(s: string; var treeNode: TEvaluationTreeNode); override;
+    procedure UnitConversionOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
+    procedure PlusMinus(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload; 
+    procedure MulDiv(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
+    procedure Pow(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
+    procedure PhysUnits(b,e: Integer; var treeNode: TEvaluationTreeNode);
+    procedure BracketsAndFuncs(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
+    procedure ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
   public
     function GetVariantValue: Variant;
 end;
@@ -187,7 +194,7 @@ end;
 
 implementation
 
-uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib;
+uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,streamable_conv_units;
 
 (*
     TEvaluationTreeNode
@@ -322,15 +329,23 @@ end;
 (*
   TUnitConversionNode
                         *)
-constructor TUnitConversionNode.Create(aUnitName: string; owner: TComponent);
+constructor TUnitConversionNode.Create(aUnitType: TConvType; owner: TComponent);
 begin
   inherited Create(owner);
-  fUnitName:=aUnitName;
+  fUnitType:=aUnitType;
 end;
 
 function TUnitConversionNode.getVariantValue: Variant;
 begin
-  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitName);
+  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType);
+end;
+
+(*
+  TUnitAssignmentNode
+                        *)
+function TUnitAssignmentNode.getVariantValue: Variant;
+begin
+  Result:=VarWithUnitCreateFromVariant((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType);
 end;
 
 (*
@@ -844,6 +859,14 @@ begin
             '*': Lexems[LIndex].LType:=ltMul;
             '/': Lexems[LIndex].LType:=ltDiv;
             '^': Lexems[LIndex].LType:=ltPow;
+            '[': begin
+                  Lexems[LIndex].LType:=ltPhysUnitConversion;
+                  Lexems[LIndex].PhysUnit:=p.getPhysUnit;
+                  if Lexems[LIndex].PhysUnit=CIllegalConvType then
+                    Lexems[LIndex].PhysUnit:=duUnity;
+                  if p.eof or (p.getChar<>']') then
+                    Raise ELexicalErr.CreateFmt('%s: [Unit] was expected',[fstring]);
+                end;
             else begin
               p.PutBack;
               Lexems[LIndex].Num:=p.getVariantNum;
@@ -864,7 +887,7 @@ begin
   FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сносится
   try
     LexicalAnalysis;
-    UnitConversionOperators(fstring,fEvaluationTreeRoot);
+    UnitConversionOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
     fcorrect:=true;
     fIndependent:=fEvaluationTreeRoot.isIndependent;
   except
@@ -878,76 +901,103 @@ begin
   fchanged:=false;
 end;
 
-procedure TVariantExpression.UnitConversionOperators(s: String; var TreeNode: TEvaluationTreeNode);
-var i,j: Integer;
-    term: TEvaluationTreeNode;
-resourcestring
-  NoOpeningSqBracketStr = 'Закрывающая квадратная скобка без открывающей в ''%s''';
+procedure TVariantExpression.UnitConversionOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
+var term: TEvaluationTreeNode;
 begin
-  //идем справа налево, ищем пробел и выражение в квадратных скобках
-  i:=Length(s);
-  while (i>0) and ((s[i]=' ') or (s[i]=#13) or (s[i]=#10) or (s[i]=#9)) do dec(i);
-  if i=0 then Raise ESyntaxErr.Create(EmptyStringErrStr);
-  if s[i]<>']' then PlusMinus(LeftStr(s,i),TreeNode)
-  else begin
-    j:=i-1;
-    while (j>0) and (s[j]<>'[') do dec(j);
-    if j=0 then Raise ESyntaxErr.CreateFmt(NoOpeningSqBracketStr,[s]);
-    //j сидит на открывающей скобке, i-на закрывающей
-    UnitConversionOperators(LeftStr(s,j-1),term);
-    TreeNode:=TUnitConversionNode.Create(MidStr(s,j+1,i-j-1),nil);
-    TreeNode.InsertComponent(term);
-  end;
+  if Lexems[e].LType=ltPhysUnitConversion then
+    if e>b then begin
+      UnitConversionOperators(b,e-1,term);
+      TreeNode:=TUnitConversionNode.Create(Lexems[e].PhysUnit,nil);
+      TreeNode.InsertComponent(term);
+    end
+    else Raise ESyntaxErr.CreateFmt('no expression to convert to %s',[ConvTypeToDescription(Lexems[e].PhysUnit)])
+  else
+    PlusMinus(b,e,TreeNode);
 end;
 
-procedure TVariantExpression.MulDiv(s: string; var treeNode: TEvaluationTreeNode);
+procedure TVariantExpression.PlusMinus(b,e: Integer; var Treenode: TEvaluationTreeNode);
+var brCount,i,last_plus,signCount: Integer;
+  children: array of TEvaluationTreeNode;
+  temp: TEvaluationTreeNode;
+  isNeg: boolean;
+begin
+  //двигаемся слева направо и ищем плюсы с минусами. Минусы могут быть унарными и бинарными
+  //и скобок никто не отменял
+  try
+  brCount:=0;
+  last_plus:=b;
+  isNeg:=false;
+  signCount:=0;
+  temp:=nil;
+  for i:=b to e do begin
+    if (brCount=0) then begin
+      if (Lexems[i].LType=ltPlus) or (Lexems[i].LType=ltMinus) then begin
+        if i>b then begin
+          SetLength(children,Length(children)+1);
+          MulDiv(last_plus,i-1,temp);
+          if IsNeg then begin
+            children[Length(children)-1]:=TUnaryMinusNode.Create(nil);
+            children[Length(children)-1].InsertComponent(temp);
+          end
+          else
+            children[Length(children)-1]:=temp;
+        end;
+        temp:=nil;
+        last_plus:=i+1;
+        isNeg:=(Lexems[i].LType=ltMinus);
+        inc(signCount);
+      end
+    end;
+    case Lexems[i].LType of
+      ltRightBracket: dec(brCount);
+      ltLeftBracket: inc(brCount);
+    end;
+    if brCount<0 then Raise ESyntaxErr.CreateFMT(TooManyClosingBracketsStr,[fstring]);
+  end;
+  if signCount=0 then MulDiv(b,e,treeNode)
+  else begin  //хоть один плюс или минус был, делаем последнюю веточку
+    SetLength(children,Length(children)+1);
+    MulDiv(last_plus,e,temp);
+    if IsNeg then begin
+      children[Length(children)-1]:=TUnaryMinusNode.Create(nil);
+      children[Length(children)-1].InsertComponent(temp);
+    end
+    else
+      children[length(children)-1]:=temp;
+    temp:=nil;
+    //вот, все "дети" в сборе!
+    treeNode:=TAdditionNode.Create(nil);  //позже нас прикрепят, если надо
+    for i:=0 to Length(children)-1 do begin
+      treeNode.InsertComponent(children[i]);
+      children[i]:=nil;
+    end;
+  end;
+
+
+  finally
+    for i:=0 to Length(children)-1 do
+      children[i].Free;
+    temp.Free;
+  end;
+
+end;
+
+procedure TVariantExpression.MulDiv(b,e: Integer; var treeNode: TEvaluationTreeNode);
 var i,last_plus: Integer;
     brCount: Integer;
-    ident: string;
-    ch: char;
-    term_index: integer;
     children: array of TEvaluationTreeNode;
     temp: TEvaluationTreeNode;
     isNeg: boolean;
-    p: TSimpleParser;
 begin
-  p:=TSimpleParser.Create(s);
-(*
-  while not p.eof do begin
-    ident:=p.getIdent;
-    if ident='' then begin
-      ch:=p.NextChar;
-      if ch='(' then begin
-        brCount:=1;
-        while (not p.eof) and (brCount>0) do begin
-          ch:=p.getChar;
-          if ch='(' then inc(brCount)
-          else if ch=')' then dec(brCount);
-        end;
-        if ch<>')' then Raise ESyntaxErr.Create(TooManyClosingBracketsStr);
-
-      end //после этого снова попытаемся считать ident
-
-
-
-  end;
-  *)
-  p.Free;
 //  try
-  brcount:=0;
-  last_plus:=1;
+  brCount:=0;
+  last_plus:=b;
   isNeg:=false;
-  term_index:=0;
-  for i:=1 to Length(s) do begin
+  for i:=b to e do begin
     if brCount=0 then begin
-(*
-      if (s[i]=' ') then
-        if term_index=0 then continue //пробелы перед выражением
-        else
-        *)
-      if (s[i]='*') or (s[i]='/') then begin
+      if (Lexems[i].LType=ltMul) or (Lexems[i].LType=ltDiv) then begin
         SetLength(children,Length(children)+1);
-        Pow(MidStr(s,last_plus,i-last_plus),temp);
+        Pow(last_plus,i-1,temp);
         if isNeg then begin
           children[Length(children)-1]:=TInverseNode.Create(nil);  //позже закрепим
           children[Length(children)-1].InsertComponent(temp);
@@ -955,21 +1005,22 @@ begin
         else
           children[length(children)-1]:=temp;
         last_plus:=i+1; //сразу за плюсом
-        isNeg:=(s[i]='/');
+        isNeg:=(Lexems[i].LType=ltDiv);
       end
     end;
-    if s[i]='(' then inc(brCount)
-    else if s[i]=')' then dec(brCount);
-    if brCount<0 then Raise EsyntaxErr.CreateFMT(TooManyClosingBracketsStr,[s]);
+    case Lexems[i].LType of
+      ltRightBracket: dec(brCount);
+      ltLeftBracket: inc(brCount);
+    end;
   end;
-  if Length(children)=0 then Pow(s,treeNode)
+  if Length(children)=0 then Pow(b,e,treeNode)
   else begin
     treeNode:=TMultiplicationNode.Create(nil);  //позже нас прикрепят, если надо
     for i:=0 to Length(children)-1 do begin
       treeNode.InsertComponent(children[i]);
       children[i]:=nil;
     end;
-    Pow(RightStr(s,Length(s)-last_plus+1),temp);
+    Pow(last_plus,e,temp);
     if isNeg then begin
       children[0]:=TInverseNode.Create(nil);
       children[0].InsertComponent(temp);
@@ -987,43 +1038,107 @@ begin
   *)
 end;
 
-procedure TVariantExpression.ConstsAndVars(s: String; var treeNode: TEvaluationTreeNode);
+procedure TVariantExpression.Pow(b,e: Integer; var TreeNode: TEvaluationTreeNode);
+var i: Integer;
+    brCount: Integer;
+    term: TEvaluationTreeNode;
+begin
+  brCount:=0;
+  for i:=b to e do begin
+    if (Lexems[i].LType=ltPow) and (brCount=0) then begin
+      treeNode:=TPowNode.Create(nil);
+      PhysUnits(b,i-1,term);
+      treeNode.InsertComponent(term);
+      PhysUnits(i+1,e,term);
+      treeNode.insertComponent(term);
+      Exit;
+    end;
+    case Lexems[i].LType of
+      ltLeftBracket: inc(brCount);
+      ltRightBracket: dec(brCount);
+    end;
+  end;
+  //если выполнение дошло досюда, значит, так и не встретили символа ^
+  PhysUnits(b,e,treeNode);
+end;
+
+procedure TVariantExpression.PhysUnits(b,e: Integer; var TreeNode: TEvaluationTreeNode);
+var term: TEvaluationTreeNode;
+begin
+  if Lexems[e].LType=ltPhysUnit then
+    if e>b then begin
+      BracketsAndFuncs(b,e-1,term);
+      TreeNode:=TUnitAssignmentNode.Create(Lexems[e].PhysUnit,nil);
+      TreeNode.InsertComponent(term);
+    end
+    else Raise ESyntaxErr.CreateFmt('no expression to assign unit %s',[ConvTypeToDescription(Lexems[e].PhysUnit)])
+  else
+    BracketsAndFuncs(b,e,TreeNode);
+end;
+
+procedure TVariantExpression.BracketsAndFuncs(b,e: Integer; var TreeNode: TEvaluationTreeNode);
+var temp: TEvaluationTreeNode;
+begin
+  if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
+  if Lexems[e].LType=ltRightBracket then begin
+    if Lexems[b].LType=ltLeftBracket then
+      UnitConversionOperators(b+1,e-1,treeNode)
+    else if (Lexems[b+1].LType=ltLeftBracket) and (Lexems[b].LType=ltIdent) then begin
+      treeNode:=TMathFuncNode.Create(Lexems[b].Ident,nil);
+      UnitConversionOperators(b+2,e-1,temp);
+      treeNode.InsertComponent(temp);
+      Exit;
+    end
+    else Raise ESyntaxErr.CreateFmt('%s: left bracket on wrong place',[fstring]);
+  end
+  else ConstsAndVars(b,e,treeNode);
+end;
+
+procedure TVariantExpression.ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);
 var val: Variant;
     fComponent: TComponent;
     buRoot: TComponent;
     i: Integer;
+    s: string;
 begin
-  if TryVarWithUnitCreate(s,val) then
-    treeNode:=TConstantVariantNode.Create(val,nil)
-//    treeNode:=TConstantNode.Create(val,nil)
-  else if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
-  else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
-  else if Assigned(fRootComponent) then begin
-  //видать, переменная
-    fComponent:=FindNestedComponent(fRootComponent,s);
-    if Assigned(fComponent) and (fComponent is TFloatExpression) then
-      treeNode:=TVariableNode.Create(fComponent,'',nil)
-    else begin
-      i:=Length(s);
-      while (i>0) and (s[i]<>'.') do dec(i);
-      if uppercase(leftstr(s,4))='SELF' then begin
-        buRoot:=fRootComponent;
-        fRootComponent:=Owner;
-        ConstsAndVars(rightstr(s,Length(s)-5),treeNode);
-        fRootComponent:=buRoot;
-        Exit;
-      end;
-      if i>0 then begin
-        fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
-        if fComponent=nil then
-          Raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
-      end
-      else
-        fComponent:=fRootComponent;
-      treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
+//должна остаться одна лексема
+  if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
+  if b<e then raise ESyntaxErr.Create('2 or more lexems without operator in between');
+  //остается b=e
+  Case Lexems[b].LType of
+    ltNumber: treeNode:=TConstantVariantNode.Create(Lexems[b].Num,nil);
+    ltIdent: begin
+      s:=Lexems[b].Ident;
+      if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
+      else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
+      else if Assigned(fRootComponent) then begin
+      //видать, переменная
+        fComponent:=FindNestedComponent(fRootComponent,s);
+        if Assigned(fComponent) and (fComponent is TFloatExpression) then
+          treeNode:=TVariableNode.Create(fComponent,'',nil)
+        else begin
+          i:=Length(s);
+          while (i>0) and (s[i]<>'.') do dec(i);
+          if uppercase(leftstr(s,4))='SELF' then begin
+            buRoot:=fRootComponent;
+            fRootComponent:=Owner;
+            ConstsAndVars(rightstr(s,Length(s)-5),treeNode);
+            fRootComponent:=buRoot;
+            Exit;
+          end;
+          if i>0 then begin
+            fComponent:=FindNestedComponent(fRootComponent,leftstr(s,i-1));
+            if fComponent=nil then
+              Raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
+          end
+          else
+            fComponent:=fRootComponent;
+            treeNode:=TVariableNode.Create(fComponent,RightStr(s,Length(s)-i),nil);
+          end;
+        end
+      else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
     end;
-  end
-  else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
+  end;
 end;
 
 function TVariantExpression.GetVariantValue: Variant;

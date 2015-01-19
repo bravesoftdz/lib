@@ -116,8 +116,10 @@ function VarWithUnitCreate(text: string): Variant;
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
 function IsVarWithUnit(V: Variant): Boolean;
 function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
-function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
-
+function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant; overload;
+function VarWithUnitConvert(source: Variant; UnitName: string): Variant; overload;
+function StrToConvType(str: string): TConvType;
+function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 
 
 
@@ -245,6 +247,33 @@ begin
       end;
   //если не найдено подх. семейства - мы создадим такое семейство и такой юнит!
   Result:=RegisterDerivedConversionFamily(formula).BaseConvType;
+end;
+
+function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
+begin
+  Result:=DescriptionToConvType(str,CType);
+  if not Result then
+    Result:=(UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
+    if not Result then
+      Result:=(LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
+end;
+
+function StrToConvType(str: string): TConvType;
+var f: TUnitsWithExponent;
+    multiplier: Real;
+    BaseConvType: TConvType;
+begin
+  if not DescriptionToConvType(str,Result) then begin
+    f:=TUnitsWithExponent.Create;
+    try
+      multiplier:=f.TakeFromString(str);
+      BaseConvType:=FormulaToConvType(f);
+      multiplier:=multiplier*ConvertTo(1,BaseConvType);
+      Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str,multiplier);
+    finally
+      f.Free;
+    end;
+  end;
 end;
 
 (*
@@ -861,30 +890,21 @@ begin
   Result:=(TWrapperVarData(V).VType=VariantWithUnit);
 end;
 
-function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
-var DestConvType, BaseConvType: TConvType;
-    multiplier: Real;
-    f: TUnitsWithExponent;
-    inst,dest: TVariantWithUnit;
+function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant;
+var inst,dest: TVariantWithUnit;
 begin
   if not IsVarWithUnit(source) then
     source:=VarWithUnitCreateFromVariant(source,duUnity);
-  if not DescriptionToConvType(UnitName,DestConvType) then begin
-    f:=TUnitsWithExponent.Create;
-    try
-      multiplier:=f.TakeFromString(UnitName);
-      BaseConvType:=FormulaToConvType(f);
-      multiplier:=multiplier*ConvertTo(1,BaseConvType);
-      DestConvType:=RegisterConversionType(ConvTypeToFamily(BaseConvType),UnitName,multiplier);
-    finally
-      f.Free;
-    end;
-  end;
   inst:=TWrapperVarData(source).Data as TVariantWithUnit;
   dest:=TVariantWithUnit.Create;
   dest.instance:=inst.instance*Convert(1,inst.ConvType,DestConvType);
   dest.ConvType:=DestConvType;
   VarWithUnitCreateInto(Result,dest);
+end;
+
+function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
+begin
+  Result:=VarWithUnitConvert(source,StrToConvType(UnitName));
 end;
 
 
