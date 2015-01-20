@@ -63,9 +63,8 @@ end;  //неужели больше ничего не нужно?
   TVariantWithUnit=class(TAbstractWrapperData)
     private
       ConvType: TConvType;
-    protected
-      instance: Variant; //та переменная, которую мы оборачиваем
     public
+      instance: Variant; //та переменная, которую мы оборачиваем
       constructor Create(text: string); overload;
       constructor CreateFromVariant(source: Variant; aConvType: TConvType); 
       procedure Assign(source: TPersistent); overload; override;
@@ -75,6 +74,7 @@ end;  //неужели больше ничего не нужно?
       procedure DoSubtract(Right: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
       procedure DoDivide(Right: TAbstractWrapperData); override;
+      procedure DoPower(pow: Real);
       function AsString: string; override;
   end;
 
@@ -91,6 +91,13 @@ end;  //неужели больше ничего не нужно?
   public
     procedure Cast(var Dest: TVarData; const Source: TVarData); override;
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
+  end;
+
+  TVariantWithUnitVarData = record
+    VType: TVarType;
+    Reserved1, Reserved2, Reserved3: Word;
+    Data: TVariantWithUnit;
+    Reserved4: LongInt;
   end;
 
   EPhysUnitError = class (Exception);
@@ -115,12 +122,13 @@ procedure VarWithUnitCreateInto(var ADest: Variant; const AData: TVariantWithUni
 function VarWithUnitCreate(text: string): Variant;
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
 function IsVarWithUnit(V: Variant): Boolean;
+function IsDimensionless(V: Variant): boolean;
 function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
 function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant; overload;
 function VarWithUnitConvert(source: Variant; UnitName: string): Variant; overload;
 function StrToConvType(str: string): TConvType;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
-
+function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
 
 implementation
@@ -217,7 +225,8 @@ begin
   ConvFamily:=ConvTypeToFamily(ConvType);
   for i:=0 to Length(BaseFamilyEntries)-1 do
     if BaseFamilyEntries[i].ConvFamily=ConvFamily then begin
-      Result.AddBaseUnit(ConvType,1);
+//      Result.AddBaseUnit(ConvType,1); //а почему ConvType, а не BaseConvType?
+      Result.AddBaseUnit(BaseFamilyEntries[i].BaseConvType,1);
       Exit;
     end;
   //среди базовых не нашли, поищем в производных
@@ -267,9 +276,11 @@ begin
     f:=TUnitsWithExponent.Create;
     try
       multiplier:=f.TakeFromString(str);
-      BaseConvType:=FormulaToConvType(f);
-      multiplier:=multiplier*ConvertTo(1,BaseConvType);
-      Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str,multiplier);
+      BaseConvType:=FormulaToConvType(f); //эта штука может создать на лету новую единицу
+      if not DescriptionToConvType(str,Result) then begin
+        multiplier:=multiplier*ConvertFrom(BaseConvType,1);
+        Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str,multiplier);
+      end;
     finally
       f.Free;
     end;
@@ -698,6 +709,25 @@ begin
   else inherited;
 end;
 
+procedure TVariantWithUnit.DoPower(pow: Real);
+var U: TUnitsWithExponent;
+    bt: TConvType;
+begin
+  U:=FindPhysUnit(ConvType);
+  try
+    bt:=FormulaToConvType(U);
+    instance:=instance*Convert(1,ConvType,bt);  //перешли в базовый тип
+    if VarIsComplex(instance) then
+      instance:=VarComplexPower(instance,pow)
+    else
+      instance:=Power(instance,pow);
+    U.DoPower(pow);
+    ConvType:=FormulaToConvType(U);
+  finally
+    U.Free;
+  end;
+end;
+
 procedure TVariantWithUnit.Assign(str: string);
 var unitStr: string;
     i: Integer;
@@ -777,7 +807,7 @@ begin
       varString:
         VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
       else
-        with TWrapperVarData(Source).Data as TVariantWithUnit do begin
+        with TVariantWithUnitVarData(Source).Data do begin
           if ConvTypeToFamily(ConvType)<>cbDimensionless then
             Raise Exception.CreateFmt('''%s'': can''t convert value with unit to non-string type',[AsString]);
           VarDataCastTo(Dest,TVarData(instance),AVarType);
@@ -786,6 +816,8 @@ begin
   end
   else inherited; //нам дали пустой variant скорее всего
 end;
+
+
 
 (*
     Initialization
@@ -882,7 +914,15 @@ end;
 
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
 begin
-  VarWithUnitCreateInto(Result,TVariantWithUnit.CreateFromVariant(source,ConvType));
+  if IsVarWithUnit(source) then
+    if TVariantWithUnitVarData(source).Data.ConvType=duUnity then begin
+      Result:=source;
+      TVariantWithUnitVarData(Result).Data.ConvType:=ConvType;
+    end
+    else
+      Raise EPhysUnitError.CreateFmt('%s already has dimension',[source])
+  else
+    VarWithUnitCreateInto(Result,TVariantWithUnit.CreateFromVariant(source,ConvType));
 end;
 
 function IsVarWithUnit(V: Variant): boolean;
@@ -890,21 +930,38 @@ begin
   Result:=(TWrapperVarData(V).VType=VariantWithUnit);
 end;
 
+function Isdimensionless(V: Variant): boolean;
+begin
+  Result:=(TVarData(V).VType=VariantWithUnit) and
+    (TVariantWithUnitVarData(V).Data.ConvType=duUnity);
+end;
+
 function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant;
 var inst,dest: TVariantWithUnit;
 begin
   if not IsVarWithUnit(source) then
     source:=VarWithUnitCreateFromVariant(source,duUnity);
-  inst:=TWrapperVarData(source).Data as TVariantWithUnit;
+  inst:=TVariantWithUnitVarData(source).Data;
   dest:=TVariantWithUnit.Create;
-  dest.instance:=inst.instance*Convert(1,inst.ConvType,DestConvType);
-  dest.ConvType:=DestConvType;
-  VarWithUnitCreateInto(Result,dest);
+  try
+    dest.instance:=inst.instance*Convert(1,inst.ConvType,DestConvType);
+    dest.ConvType:=DestConvType;
+    VarWithUnitCreateInto(Result,dest);
+  except  //эта хреновина замаскировала ошибку!
+    dest.Free;
+    raise;
+  end;
 end;
 
 function VarWithUnitConvert(source: Variant; UnitName: string): Variant;
 begin
   Result:=VarWithUnitConvert(source,StrToConvType(UnitName));
+end;
+
+function VarWithUnitPower(source: Variant; pow: Real): Variant;
+begin
+  Result:=source;
+  TVariantWithUnitVarData(Result).Data.DoPower(pow);  
 end;
 
 

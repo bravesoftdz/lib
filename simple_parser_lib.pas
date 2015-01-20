@@ -66,9 +66,12 @@ begin
 end;
 
 function TSimpleParser.eof: Boolean;
+var buPos: Integer;
 begin
+  buPos:=_pos;
   skip_spaces;
   result:=(_pos>Length(_str));
+  _pos:=buPos;
 end;
 
 function TSimpleParser.isSpace(ch: Char): Boolean;
@@ -258,7 +261,7 @@ begin
   skip_spaces;
   InitPos:=_pos;  //fBackupPos будет меняться внутри цикла
   TempPos:=_pos;
-  while (_pos<=Length(_str)) do begin
+  while not eof do begin
     id:=GetIdent;
     //хотя у нас есть безразмерная величина, принимать
     //пустое место за нее не имеем права!
@@ -272,10 +275,8 @@ begin
       ch:=GetChar;
       if ch='^' then begin
         GetFloat;
-        if eof then begin
-          PutBack;
-          break;
-        end;
+        TempPos:=_pos;
+        if eof then break;
         ch:=GetChar;
       end;
       if eof or ((ch<>'*') and (ch<>'/')) then begin
