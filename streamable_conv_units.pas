@@ -122,6 +122,8 @@ begin
   cbEnergy:=RegisterConversionFamily('Energy');
   euJ:=RegisterConversionType(cbEnergy,'J',1);
   RegisterConversionType(cbEnergy,'Дж',1);
+  RegisterConversionType(cbEnergy,'eV',1.602176565e-19);
+  RegisterConversionType(cbEnergy,'эВ',1.602176565e-19);
 
   RegisterConversionType(cbDistance,'м',1);
   duShortMeters:=RegisterConversionType(cbDistance,'m',1);

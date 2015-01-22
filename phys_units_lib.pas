@@ -107,6 +107,13 @@ end;  //неужели больше ничего не нужно?
     multiplier: Real;
   end;
 
+  TPhysConstantsToSetToUnity=record
+    name: string;
+    description: string;
+    value: Variant;
+    enabled: Boolean;
+  end;
+
   EPhysUnitError = class (Exception);
 
   PUnitMultipliersArray = ^TUnitMultipliersArray;
@@ -137,15 +144,18 @@ function StrToConvType(str: string): TConvType;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
+var UnityPhysConstants: array of TPhysConstantsToSetToUnity;
+
 implementation
 
-uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
+uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils,linear_eq;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
     VarWithUnitType: TVariantWithUnitType;
     UnitMultiplier: TUnitMultipliersArray;
     AffineUnits: array of TAffineUnitEntry;
+
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 var L,i: Integer;
@@ -302,6 +312,19 @@ begin
     finally
       f.Free;
     end;
+  end;
+end;
+
+procedure AddUnityPhysConstant(aname,adescription: string; avalue: Variant; aEnabled:Boolean=false);
+var L: Integer;
+begin
+  L:=Length(UnityPhysConstants);
+  SetLength(UnityPhysConstants,L+1);
+  with UnityPhysConstants[L] do begin
+    name:=aname;
+    description:=adescription;
+    value:=avalue;
+    enabled:=aEnabled;
   end;
 end;
 
@@ -656,8 +679,16 @@ begin
 end;
 
 procedure TVariantWithUnit.Conversion(DestConv: TConvType);
-var j: Integer;              //inst - это мы
+var j,i,ind: Integer;              //inst - это мы
     offset,k,mul: Real;     //dest - это тоже мы, но позже
+    solver: IAbstractSLEQ;
+    BaseUnitsCount: Integer;
+    EqsCount: integer;
+    formula: TUnitsWithExponent;
+    new_formula: TUnitsWithExponent;
+    V: TVariantWithUnit;
+    addition: Variant;
+    buConvType: TConvType;
 begin
   if IsAffine(j) then begin
     offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
@@ -669,8 +700,57 @@ begin
     ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
   end
   else begin
-    instance:=instance*Convert(1,ConvType,DestConv);
-    ConvType:=DestConv;
+    if CompatibleConversionTypes(ConvType,DestConv) then begin
+      instance:=instance*Convert(1,ConvType,DestConv);
+      ConvType:=DestConv;
+    end
+    else begin
+    //попробуем выразить, зная, что c=1, h=1 и т.д.
+      buConvType:=ConvType;
+      new_formula:=nil;
+      formula:=FindPhysUnit(ConvType);  //это наша родная
+      try
+        Conversion(FormulaToConvType(formula)); //всяческие электронвольты приводим к СИ
+
+        solver:=TSimpleGaussLEQ.Create;
+        BaseUnitsCount:=Length(BaseFamilyEntries);
+        EqsCount:=0;
+        for j:=0 to Length(UnityPhysConstants)-1 do
+          if UnityPhysConstants[j].enabled then begin
+            inc(EqsCount);
+            solver.SetDimensions(BaseUnitsCount,EqsCount);
+            V:=TVariantWithUnitVarData(UnityPhysConstants[j].value).Data;
+            new_formula:=FindPhysUnit(V.ConvType);
+            for i:=0 to new_formula.fCount-1 do begin
+              ind:=IndexOfBaseFamily(ConvTypeToFamily(new_formula.UnitTypes[i]));
+              solver.Matrix[ind,EqsCount-1]:=new_formula.Exponents[i];
+            end;
+            solver.Matrix[BaseUnitsCount,EqsCount-1]:=Ln(V.instance);
+            new_formula.Free;
+          end;
+        if EqsCount=0 then Raise EPhysUnitError.CreateFmt('Некорректное приведение типов: %s в %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
+        solver.Solve;
+        try
+          new_formula:=FindPhysUnit(DestConv);
+          formula.Divide(new_formula);
+          addition:=0.0;
+          for i:=0 to formula.fCount-1 do begin
+            j:=IndexOfBaseFamily(ConvTypeToFamily(formula.UnitTypes[i]));
+            addition:=addition+solver.GetVariable(j)*formula.Exponents[i];
+          end;
+          if VarManySolutionsIsNumber(addition) then begin  //успех!
+            instance:=instance*Exp(-addition);
+            ConvType:=FormulaToConvType(new_formula);
+            Conversion(DestConv); //теперь сделается как надо!
+          end
+          else Raise EphysUnitError.CreateFmt('Некорректное приведение типов: %s в %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
+        finally
+          formula.Free;
+        end;
+      finally
+      new_formula.Free;
+      end;
+    end;
   end;
 end;
 
@@ -841,6 +921,7 @@ var unitStr: string;
     i: Integer;
     dimension: TUnitsWithExponent;
     PrefConvType: TConvType;
+    val: Extended;
 begin
   i:=Length(str);
   while (i>=1) and (str[i]<>' ') do dec(i);
@@ -860,8 +941,10 @@ begin
       ConvType:=duUnity;
     end
     else begin
-      instance:=VarComplexCreate(LeftStr(str,i-1));
-      instance:=VarComplexSimplify(instance);
+      if TryStrToFloat(LeftStr(str,i-1),val) then
+        instance:=val
+      else
+        instance:=VarComplexCreate(LeftStr(str,i-1));
       unitStr:=RightStr(str,Length(str)-i);
       if not DescriptionToConvType(unitStr,ConvType) then begin
         //сложное выражение, нужно создать экземпляр TUnitsWithExponent,
@@ -981,6 +1064,34 @@ begin
   //напряжения и токи сюда же
 end;
 
+resourcestring
+  LightSpeedDescr = 'Скорость света в вакууме (3e8 м/с)';
+  PlanckDescr = 'Постоянная Планка (перечеркнутая, 1.054e-34 эрг*с)';
+  GravityConstantDescr = 'Гравитационная постоянная (6.67e-11 м^3*с^-2*кг^-1)';
+  BoltzmanConstantDescr = 'Постоянная Больцмана (1.38e-23 Дж/К)';
+  FreeSpaceDielectricConstDescr = 'Диэлектрическая постоянная (8.85e-12 Ф/м)';
+
+
+procedure RegisterUnityConstants;
+var eps0: Real;
+    streps0: String;
+begin
+  AddUnityPhysConstant('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
+  AddUnityPhysConstant('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
+  AddUnityPhysConstant('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));
+  AddUnityPhysConstant('k',BoltzmanConstantDescr,VarWithUnitCreate('1,3806488e-23 J/K'));
+  eps0:=1/299792458/299792458*1e7;
+  streps0:=FloatToStr(eps0);
+  AddUnityPhysConstant('4pi*Epsilon0',FreeSpaceDielectricConstDescr,VarWithUnitCreate(streps0+' F/m'));
+end;
+
+procedure FreeUnityConstants;
+var i: Integer;
+begin
+  for i:=0 to Length(UnityPhysConstants)-1 do
+    Finalize(UnityPhysConstants[i].value);
+end;
+
 procedure FreeUnits;
 var i: Integer;
 begin
@@ -1073,12 +1184,17 @@ begin
 end;
 
 
+
+
 initialization
   PopulateUnitMultiplier;
   RegisterStandartUnits;
   VarWithUnitType:=TVariantWithUnitType.Create;
+  RegisterUnityConstants;
+
 
 finalization
+  FreeUnityConstants;
   FreeAndNil(VarWithUnitType);
   FreeUnits;
 

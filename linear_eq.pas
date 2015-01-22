@@ -126,6 +126,8 @@ TSimpleGaussLEQForKirhgof = class(TInterfacedObject,IKirhgofSLEQ)
   end;
 
 function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
+function VarIsManySolutions(V: Variant): Boolean;
+function VarManySolutionsIsNumber(V: Variant): Boolean;
 
 function GetLengthSquared(value: Variant): Real;
 
@@ -145,6 +147,17 @@ begin
   VarClear(Result);
   TWrapperVarData(Result).VType:=ManySolutionsVariantType.VarType;
   TWrapperVarData(Result).data:=data;
+end;
+
+function VarIsManySolutions(V: Variant): Boolean;
+begin
+  Result:=TWrapperVarData(V).VType=ManySolutionsVariantType.VarType;
+end;
+
+function VarManySolutionsIsNumber(V: Variant): Boolean;
+begin
+  Result:=VarIsNumeric(V) or (VarIsManySolutions(V) and
+    (TWrapperVarData(V).Data as TManySolutionsDataType).IsPlainNumber);
 end;
 
 function GetLengthSquared(value: Variant): Real;
