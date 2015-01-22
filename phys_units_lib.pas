@@ -37,7 +37,6 @@ end;  //неужели больше ничего не нужно?
       Exponents: TExponents;
       fCount: Integer;
       fMultiplier: Real;
-      fIsAffine: Boolean;
       procedure Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
       function MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
@@ -48,7 +47,7 @@ end;  //неужели больше ничего не нужно?
     public
       procedure Clear;
       procedure Assign(source: TPersistent); override;
-      
+
       function TakeFromString(formula: string): Real;
       procedure DoPower(Exponent: Real);
       function SameFamily(value: TUnitsWithExponent): Boolean;
@@ -57,25 +56,27 @@ end;  //неужели больше ничего не нужно?
       function Divide(right: TUnitsWithExponent): Real;
       function AsString: string;
       function ShowFormula: string;
-      property isAffine: Boolean read fIsAffine;
+      function isAffine: Boolean;
   end;
 //пока что здесь - конкретный тип, для представления размерности данных
   TVariantWithUnit=class(TAbstractWrapperData)
     private
       ConvType: TConvType;
+      function IsAffine(out i: Integer): Boolean; //удобнее всего
     public
       instance: Variant; //та переменная, которую мы оборачиваем
       constructor Create(text: string); overload;
-      constructor CreateFromVariant(source: Variant; aConvType: TConvType); 
+      constructor CreateFromVariant(source: Variant; aConvType: TConvType);
       procedure Assign(source: TPersistent); overload; override;
       procedure Assign(str: string); reintroduce; overload;
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
-      procedure DoSubtract(Right: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
+      procedure DoInverse; 
       procedure DoDivide(Right: TAbstractWrapperData); override;
       procedure DoPower(pow: Real);
       function AsString: string; override;
+      procedure Conversion(DestConv: TConvType);
   end;
 
   TDerivedFamilyEntry=class
@@ -98,6 +99,12 @@ end;  //неужели больше ничего не нужно?
     Reserved1, Reserved2, Reserved3: Word;
     Data: TVariantWithUnit;
     Reserved4: LongInt;
+  end;
+
+  TaffineUnitEntry = record
+    ConvType: TConvType;
+    BaseConvType: TConvType;
+    multiplier: Real;
   end;
 
   EPhysUnitError = class (Exception);
@@ -130,7 +137,6 @@ function StrToConvType(str: string): TConvType;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
-
 implementation
 
 uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
@@ -139,9 +145,11 @@ var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
     VarWithUnitType: TVariantWithUnitType;
     UnitMultiplier: TUnitMultipliersArray;
+    AffineUnits: array of TAffineUnitEntry;
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
-var L: Integer;
+var L,i: Integer;
+  Types: TConvTypeArray;
 begin
   L:=Length(BaseFamilyEntries);
   SetLength(BaseFamilyEntries,L+1);
@@ -149,6 +157,16 @@ begin
   BaseFamilyEntries[L].BaseConvType:=BaseType;
   BaseFamilyEntries[L].letter:=letter;
   BaseFamilyEntries[L].isAffine:=isAffine;
+  if isAffine then begin
+    GetConvTypes(Family,Types);
+    L:=Length(AffineUnits);
+    SetLength(AffineUnits,L+Length(Types));
+    for i:=0 to Length(Types)-1 do begin
+      AffineUnits[L+i].ConvType:=Types[i];
+      AffineUnits[L+i].BaseConvType:=Types[i];
+      AffineUnits[L+i].multiplier:=1;
+    end;
+  end;
 end;
 
 function IndexOfBaseFamily(Family: TConvFamily): Integer;
@@ -349,7 +367,7 @@ begin
     u:=TUnitsWithExponent.Create;
     try
       u.Assign(DerivedFamilyEntries[i].formula);
-      u.DoPower(Exponent); //возвести в нужную степень
+      u.DoPower(Exponent); //возвести в нужную степень (может даже нулевую)
       Multiply(u);  //в этих формулах не должны появляться новые множители
       if ConvType=DerivedFamilyEntries[i].BaseConvType then
         Result:=1
@@ -576,6 +594,17 @@ begin
   result:=ShowSomething(ConvTypeToDescription);
 end;
 
+function TUnitsWithExponent.isAffine: Boolean;
+var i,j: Integer;
+begin
+  Result:=false;
+  for i:=0 to fCount-1 do begin
+    j:=IndexOfBaseFamily(ConvTypeToFamily(UnitTypes[i]));
+    Result:=Result or BaseFamilyEntries[j].isAffine;
+    if Result=true then break;
+  end;
+end;
+
 (*
       TVariantWithUnit
                           *)
@@ -602,82 +631,150 @@ begin
   else inherited Assign(source);
 end;
 
-procedure TVariantWithUnit.Negate;
+function GetAffineWithMultiplier(BaseConvType: TConvType; mul: Real): TConvType;
+var i,L: Integer;
+    str: string;
 begin
-  //на размерность не влияет вообще
-  instance:=-instance;
+  L:=Length(AffineUnits);
+  for i:=0 to L-1 do
+    if (AffineUnits[i].BaseConvType=BaseConvType) and (AffineUnits[i].multiplier=mul) then begin
+      Result:=AffineUnits[i].ConvType;
+      Exit;
+    end;
+  //раз нет, придется создать
+  SetLength(AffineUnits,L+1);
+  str:=ConvTypeToDescription(BaseConvType);
+  if mul<>0 then
+    str:=Format('%s{%g}',[str,mul])
+  else
+    str:=str+'{dif}';
+  Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str,1.0/0.0);
+  //никогда мы не должны пользоваться ConversionFactor'ом получившейся единицы!
+  AffineUnits[L].ConvType:=Result;
+  AffineUnits[L].BaseConvType:=BaseConvType;
+  AffineUnits[L].multiplier:=mul;
+end;
+
+procedure TVariantWithUnit.Conversion(DestConv: TConvType);
+var j: Integer;              //inst - это мы
+    offset,k,mul: Real;     //dest - это тоже мы, но позже
+begin
+  if IsAffine(j) then begin
+    offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
+    k:=Convert(1,AffineUnits[j].BaseConvType,DestConv)-offset;
+    mul:=AffineUnits[j].multiplier;
+    instance:=instance*k+offset*mul;
+    ConvType:=DestConv;
+    IsAffine(j);
+    ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
+  end
+  else begin
+    instance:=instance*Convert(1,ConvType,DestConv);
+    ConvType:=DestConv;
+  end;
+end;
+
+procedure TVariantWithUnit.Negate;
+var i: Integer;
+    tmp: Variant;
+begin
+  tmp:=instance; //все-таки счетчик ссылок- не самая надежная вещь, при
+  instance:=-tmp; //instance:=-instance течет память
+  if IsAffine(i) then
+    ConvType:=GetAffineWithMultiplier(AffineUnits[i].BaseConvType,-AffineUnits[i].multiplier);
+end;
+
+function TVariantWithUnit.IsAffine (out i: Integer): Boolean;
+var findex: Integer;
+begin
+  findex:=indexOfBaseFamily(ConvTypeToFamily(convType));
+  Result:=(findex>=0) and BaseFamilyEntries[findex].isAffine;
+  if Result then begin
+    Result:=false;
+    for findex:=0 to Length(AffineUnits)-1 do
+      if AffineUnits[findex].ConvType=convType then begin
+        Result:=true;
+        i:=findex;
+        Exit;
+      end;
+  end;
 end;
 
 procedure TVariantWithUnit.DoAdd(value: TAbstractWrapperData);
 var v: TVariantWithUnit absolute value;
-    uR,uL: TUnitsWithExponent;
+    j,k: Integer;
+    offset,mul: Real;
 begin
   if value is TVariantWithUnit then
-    if ConvType=v.ConvType then
-      instance:=instance+v.instance
-    else begin
-      uL:=FindPhysUnit(ConvType);
-      try
-        uR:=FindPhysUnit(v.ConvType);
-        try
-          if CompatibleConversionTypes(v.ConvType,ConvType) then
-            if uR.isAffine and uL.isAffine then
-              Raise EPhysUnitError.Create('Operations with affine units under construction')
-            else
-              instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
-          else
-            Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
-        finally
-          uR.Free;
-        end;
-      finally
-        uL.Free;
-      end;
-    end
+    if CompatibleConversionTypes(v.ConvType,ConvType) then
+    //'этим я хочу сказать, что темп. и разность темп. принадлежит одной семье,
+    //но это разные типы и isAffine-это свойство типа, а не семьи!
+    //K и gradC - афинные, а Kdif и Cdif - нет!
+      if IsAffine(j) and v.IsAffine(k) then begin
+        //преобр правую часть в тип левой части
+          offset:=Convert(0,AffineUnits[k].BaseConvType,AffineUnits[j].BaseConvType);
+          mul:=Convert(1,AffineUnits[k].BaseConvType,AffineUnits[j].BaseConvType)-offset;
+          instance:=instance+mul*v.instance+offset*AffineUnits[k].multiplier;
+          mul:=AffineUnits[j].multiplier+AffineUnits[k].multiplier; //получивш. множитель
+          ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
+      end
+      else
+        instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
+    else
+      Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction')
   else inherited; //не знаю пока, пригодится ли эта строчка хоть раз?
-end;
-
-procedure TVariantWithUnit.DoSubtract(Right: TAbstractWrapperData);
-var v: TVariantWithUnit absolute Right;
-    uR,uL: TUnitsWithExponent;
-begin
-  if Right is TVariantWithUnit then
-    if ConvType=v.ConvType then //самое частое все-таки)
-      instance:=instance-v.instance
-    else begin
-      //ищем соотв. запись
-      uL:=FindPhysUnit(ConvType);
-      try
-        uR:=FindPhysUnit(v.ConvType);
-        try
-          if CompatibleConversionTypes(v.ConvType,ConvType) then
-            if uR.isAffine and uL.isAffine then
-              Raise EPhysUnitError.Create('Operations with affine units under construction')
-            else
-              instance:=instance-v.instance*Convert(1,v.ConvType,ConvType)
-          else
-            Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction');
-        finally
-          uR.Free;
-        end;
-      finally
-        uL.Free;
-      end;
-    end
-  else inherited;
 end;
 
 procedure TVariantWithUnit.DoMultiply(Right: TAbstractWrapperData);
 var v: TVariantWithUnit absolute Right;
   UL,UR: TUnitsWithExponent;
+  j,k: Integer;
 begin
   if Right is TVariantWithUnit then begin
     UL:=FindPhysUnit(ConvType);
     try
       UR:=FindPhysUnit(v.ConvType);
       try
-        instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
-        ConvType:=FormulaToConvType(UL);
+        if IsAffine(j) then
+          if v.ConvType=duUnity then begin
+            instance:=instance*v.instance;
+            ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,AffineUnits[j].multiplier*v.instance);
+          end
+          else begin //разрушаем эту афинную иддилию (где здесь сдвоенные согласные - ума не приложу)
+          //преобразуем в Кельвины, а точнее, в базовую величину семейства
+            Conversion(UL.UnitTypes[0]);
+            //и остатки
+            if v.IsAffine(k) then begin
+              v.Conversion(UR.UnitTypes[0]);
+              v.IsAffine(k);
+              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
+              ConvType:=FormulaToConvType(UL);
+            end
+            else begin
+              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
+              ConvType:=FormulaToConvType(UL);
+            end;
+          end
+        else
+          if v.IsAffine(j) then
+            if ConvType=duUnity then begin
+              ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,AffineUnits[j].multiplier*instance);
+              instance:=instance*v.instance;
+            end
+            else begin  //еще одно "разрушение" афинных величин
+              v.Conversion(UR.UnitTypes[0]);
+             //но сейчас ConvType может показывать на K{0}, а не K
+             //а указать нужно именно K
+              v.IsAffine(k);
+              //и остатки
+              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
+              ConvType:=FormulaToConvType(UL);
+            end
+          else begin
+            //основная процедура
+            instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
+            ConvType:=FormulaToConvType(UL);
+          end;
       finally
         Ur.Free;
       end;
@@ -688,25 +785,35 @@ begin
   else inherited;
 end;
 
-procedure TVariantWithUnit.DoDivide(Right: TAbstractWrapperData);
-var v: TVariantWithUnit absolute Right;
-    UL,UR: TUnitsWithExponent;
+procedure TVariantWithUnit.DoInverse;
+var j: Integer;
+    U: TUnitsWithExponent;
 begin
-  if Right is TVariantWithUnit then begin
-    UL:=FindPhysUnit(ConvType);
-    try
-      UR:=FindPhysUnit(v.ConvType);
-      try
-        instance:=instance*UL.Divide(UR)*Convert(1,FormulaToConvType(UR),v.ConvType)/v.instance;
-        ConvType:=FormulaToConvType(UL);
-      finally
-        Ur.Free;
-      end;
-    finally
-      UL.Free;
+  U:=FindPhysUnit(ConvType);
+  try
+    if IsAffine(j) then begin
+      //прикрываем эту лавочку - преобр. в кельвины (точнее, в баз. величину семейства)
+      Conversion(U.UnitTypes[0]);
+      instance:=1/instance;
+      U.DoPower(-1);
+      ConvType:=FormulaToConvType(U);
+    end
+    else begin
+      //преобр. в тот тип, который нам положен по формуле
+      Conversion(FormulaToConvType(U));
+      instance:=1/instance;
+      U.DoPower(-1);
+      ConvType:=FormulaToConvType(U);
     end;
-  end
-  else inherited;
+  finally
+    U.Free;
+  end;
+end;
+
+procedure TVariantWithUnit.DoDivide(Right: TAbstractWrapperData);
+begin
+  (Right as TVariantWithUnit).DoInverse;
+  DoMultiply(Right);
 end;
 
 procedure TVariantWithUnit.DoPower(pow: Real);
@@ -716,7 +823,8 @@ begin
   U:=FindPhysUnit(ConvType);
   try
     bt:=FormulaToConvType(U);
-    instance:=instance*Convert(1,ConvType,bt);  //перешли в базовый тип
+//    instance:=instance*Convert(1,ConvType,bt);  //перешли в базовый тип
+    Conversion(bt);
     if VarIsComplex(instance) then
       instance:=VarComplexPower(instance,pow)
     else
@@ -944,8 +1052,8 @@ begin
   inst:=TVariantWithUnitVarData(source).Data;
   dest:=TVariantWithUnit.Create;
   try
-    dest.instance:=inst.instance*Convert(1,inst.ConvType,DestConvType);
-    dest.ConvType:=DestConvType;
+    dest.Assign(inst);
+    dest.Conversion(DestConvType);
     VarWithUnitCreateInto(Result,dest);
   except  //эта хреновина замаскировала ошибку!
     dest.Free;

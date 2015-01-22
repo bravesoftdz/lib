@@ -53,6 +53,11 @@ TMultiplicationNode=class(TNonTerminalNode) //произведение
     function getVariantValue: Variant; override;
   end;
 
+TParNode=class(TNonTerminalNode) //параллельное соединение
+  public
+    function getVariantValue: Variant; override;
+  end;
+
 TUnaryMinusNode=class(TNonTerminalNode)
   public
     function getValue: Real; override;
@@ -96,31 +101,49 @@ TMathFuncNode=class(TNonTerminalNode)
     function getVariantValue: Variant; override;
   published
     function Ln(x: Variant): Variant;
-    function Lg(x: Variant): Variant;
+    function Lg2(x: Variant): Variant;
+    function Log2(x: Variant): Variant;
+    function Lg10(x: Variant): Variant;
+    function Log10(x: Variant): Variant;
 
     function Sin(x: Variant): Variant;
     function Cos(x: Variant): Variant;
     function Tan(x: Variant): Variant;
+    function Tg(x: Variant): Variant;
 
     function Sind(x: Variant): Variant;
     function Cosd(x: Variant): Variant;
     function Tand(x: Variant): Variant;
+    function Tgd(x: Variant): Variant;
 
     function Asin(x: Variant): Variant;
     function ACos(x: Variant): Variant;
     function ATan(x: Variant): Variant;
+    function Arcsin(x: Variant): Variant;
+    function Arccos(x: Variant): Variant;
+    function Arctan(x: Variant): Variant;
+    function Arctg(x: Variant): Variant;
 
     function asind(X: Variant): Variant;
     function acosd(X: Variant): Variant;
     function atand(X: Variant): Variant;
+    function Arcsind(X: Variant): Variant;
+    function Arccosd(X: Variant): Variant;
+    function Arctand(x: variant): Variant;
+    function Arctgd(x: Variant): Variant;
 
     function sinh(x: Variant): Variant;
     function cosh(x: Variant): Variant;
     function tanh(x: Variant): Variant;
+    function tgh(x: Variant): Variant;
 
     function asinh(x: Variant): Variant;
     function acosh(x: Variant): Variant;
     function atanh(x: Variant): Variant;
+    function Arcsinh(x: Variant): Variant;
+    function Arccosh(x: Variant): Variant;
+    function Arctanh(x: Variant): Variant;
+    function Arctgh(x: Variant): Variant;
 
     function Sqrt(x: Variant): Variant;
     function Exp(x: Variant): Variant;
@@ -188,7 +211,7 @@ TFloatExpression=class(TComponent)
   end;
 
 TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,
-  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion);
+  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion,ltPar);
 TLexem=record
   LType: TLexemType;
   Num: Variant; //комплексное число тоже может быть
@@ -206,6 +229,7 @@ TVariantExpression=class(TFloatExpression)  //
     procedure UnitConversionOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure PlusMinus(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload; 
     procedure MulDiv(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
+    procedure Par(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure Pow(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
     procedure PhysUnits(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure BracketsAndFuncs(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
@@ -329,6 +353,21 @@ begin
 end;
 
 (*
+    TParNode
+                      *)
+function TParNode.getVariantValue: Variant;
+var i: Integer;
+  t: Variant;
+begin
+  if ComponentCount=0 then Raise Exception.Create('ParNode: zero elements');
+  Result:=(Components[0] as TEvaluationTreeNode).getVariantValue;
+  for i:=1 to ComponentCount-1 do begin
+    t:=(Components[i] as TEvaluationTreeNode).getVariantValue;
+    Result:=Result*t/(Result+t);
+  end;
+end;
+
+(*
   TUnaryMinusNode
                       *)
 function TUnaryMinusNode.getValue: Real;
@@ -385,7 +424,7 @@ begin
 end;
 
 function TPowNode.getVariantValue: Variant;
-var a,b,inst: Variant;
+var a,b,inst,tmp: Variant;
 begin
   //недостаточно абстрактное решение, ведь здесь оба числа преобр. в действ числа
   //правильнее выполнить ф-ию DoPower () для 1-го Variant'а.
@@ -394,8 +433,10 @@ begin
   //возведение физ. величины в комплексную степень - тоже
   b:=(Components[1] as TEvaluationTreeNode).getVariantValue;
   if IsVarWithUnit(b) then
-    if IsDimensionless(b) then
-      b:=TVariantWithUnitVarData(b).Data.instance
+    if IsDimensionless(b) then begin
+      tmp:=TVAriantWithUnitVarData(b).Data.instance;
+      b:=tmp;
+    end
     else
       Raise ESyntaxErr.Create('Показатель степени должен быть безразмерным');
   a:=(Components[0] as TEvaluationTreeNode).getVariantValue;
@@ -457,11 +498,26 @@ begin
   else Result:=system.Ln(x);
 end;
 
-function TMathFuncNode.Lg(x: Variant): Variant; //двоичный
+function TMathFuncNode.Lg2(x: Variant): Variant; //двоичный
 begin
-  x:=HandleFuncOfUnits(x,'lg');
+  x:=HandleFuncOfUnits(x,'lg2');
   if VarIsComplex(x) then Result:=VarComplexLog2(x)
-  else Result:=Ln(x)/Ln(2);
+  else Result:=math.Log2(x);
+end;
+function TMathFuncNode.Log2(x: Variant): Variant;
+begin
+  Result:=Lg2(x);
+end;
+
+function TMathFuncNode.Lg10(x: Variant): Variant; //десятичный
+begin
+  X:=HandleFuncOfUnits(x,'lg10');
+  if VarIsComplex(x) then Result:=VarComplexLog10(x)
+  else Result:=math.log10(x);
+end;
+function TMathFuncNode.Log10(x: Variant): Variant;
+begin
+  Result:=Lg10(x);
 end;
 
 function TMathFuncNode.Exp(x: Variant): Variant;
@@ -491,7 +547,10 @@ begin
   if VarIsComplex(x) then Result:=VarComplexCos(x)
   else Result:=math.Tan(x);
 end;
-
+function TMathFuncNode.Tg(x: Variant): Variant;
+begin
+  Result:=Tan(x);
+end;
 
 function TMathFuncNode.Sind(x: Variant): Variant;
 begin
@@ -505,6 +564,10 @@ function TMathFuncNode.Tand(x: Variant): Variant;
 begin
   Result:=Tan(x*pi/180);
 end;
+function TMathFuncNode.Tgd(x: Variant): Variant;
+begin
+  Result:=Tand(x);
+end;
 
 function TMathFuncNode.Asin(x: Variant): Variant;
 begin
@@ -512,11 +575,19 @@ begin
   if VarIsComplex(x) then Result:=VarComplexArcsin(x)
   else Result:=math.ArcSin(x);
 end;
+function TMathFuncNode.Arcsin(x: Variant): Variant;
+begin
+  Result:=Asin(x);
+end;
 function TMathFuncNode.ACos(x: Variant): Variant;
 begin
   x:=HandleFuncOfUnits(x,'acos');
   if VarIsComplex(x) then Result:=VarComplexArcCos(x)
   else Result:=math.ArcCos(x);
+end;
+function TMathFuncNode.Arccos(x: Variant): Variant;
+begin
+  Result:=acos(x);
 end;
 function TMathFuncNode.ATan(x: Variant): Variant;
 begin
@@ -524,18 +595,42 @@ begin
   if VarIsComplex(x) then Result:=VarComplexArcTan(x)
   else Result:=system.ArcTan(x);
 end;
+function TMathFuncNode.Arctan(x: Variant): Variant;
+begin
+  Result:=atan(x);
+end;
+function TMathFuncNode.Arctg(x: Variant): Variant;
+begin
+  Result:=atan(x);
+end;
 
 function TMathFuncNode.asind(X: variant): Variant;
 begin
   Result:=Asin(X)*180/pi;
 end;
+function TMathFuncNode.arcsind(x: Variant): Variant;
+begin
+  Result:=asind(x);
+end;
 function TMathFuncNode.acosd(x: Variant): Variant;
 begin
   Result:=Acos(x)*180/pi;
 end;
+function TMathFuncNode.Arccosd(x: Variant): Variant;
+begin
+  Result:=Acosd(x);
+end;
 function TMathFuncNode.atand(x: Variant): Variant;
 begin
   Result:=atan(x)*180/pi;
+end;
+function TMathFuncNode.Arctand(x: Variant): Variant;
+begin
+  Result:=atand(x);
+end;
+function TMathFuncNode.Arctgd(x: Variant): Variant;
+begin
+  Result:=atand(x);
 end;
 
 function TMathFuncNode.sinh(x: Variant): Variant;
@@ -556,6 +651,10 @@ begin
   if VarIsComplex(x) then Result:=VarComplexTanh(x)
   else Result:=math.Tanh(x);
 end;
+function TMathFuncNode.tgh(x: Variant): Variant;
+begin
+  Result:=tanh(x);
+end;
 
 function TMathFuncNode.asinh(x: Variant): Variant;
 begin
@@ -563,17 +662,33 @@ begin
   if VarIsComplex(x) then Result:=VarComplexArcsinH(x)
   else Result:=math.ArcSinh(x);
 end;
+function TMathFuncNode.Arcsinh(x: Variant): Variant;
+begin
+  Result:=asinh(x);
+end;
 function TMathFuncNode.acosh(x: Variant): Variant;
 begin
   x:=HandleFuncOfUnits(x,'acosh');
   if VarIsComplex(x) then Result:=VarComplexArccosH(x)
   else Result:=math.ArcCos(x);
 end;
+function TMathFuncNode.Arccosh(x: Variant): Variant;
+begin
+  Result:=acosh(x);
+end;
 function TMathFuncNode.atanh(x: Variant): Variant;
 begin
   X:=HandleFuncOfUnits(x,'atanh');
   if VarisComplex(x) then Result:=VarComplexArctanh(x)
   else Result:=math.ArcTanh(x);
+end;
+function TMathFuncNode.Arctanh(x: Variant): Variant;
+begin
+  Result:=atanh(x);
+end;
+function TMathFuncNode.Arctgh(x: Variant): Variant;
+begin
+  Result:=atanh(x);
 end;
 
 
@@ -628,7 +743,12 @@ end;
 
 function TMathFuncNode.Im(x: Variant): Variant;
 begin
-
+  if IsVarWithUnit(x) then begin
+    Result:=x;
+    TVariantWithUnitVarData(Result).Data.instance:=Im(TVariantWithUnitVarData(x).Data.instance);
+  end
+  else if VarIsComplex(x) then Result:=x.Imaginary
+  else Result:=0.0;
 end;
 
 
@@ -1086,6 +1206,10 @@ begin
                   EnsureLexemsLen(LIndex+1);
                   Lexems[LIndex].LType:=ltRightBracket;
                 end;
+            '|': if (not p.eof) and (p.getChar='|') then
+                    Lexems[LIndex].LType:=ltPar
+                  else
+                    Raise ELexicalErr.Create('неизвестный оператор |');
             else begin
               p.PutBack;
               Lexems[LIndex].Num:=p.getVariantNum;
@@ -1153,7 +1277,7 @@ begin
       if (Lexems[i].LType=ltPlus) or (Lexems[i].LType=ltMinus) then begin
         if i>b then begin
           SetLength(children,Length(children)+1);
-          MulDiv(last_plus,i-1,temp);
+          Par(last_plus,i-1,temp);
           if IsNeg then begin
             children[Length(children)-1]:=TUnaryMinusNode.Create(nil);
             children[Length(children)-1].InsertComponent(temp);
@@ -1173,10 +1297,10 @@ begin
     end;
     if brCount<0 then Raise ESyntaxErr.CreateFMT(TooManyClosingBracketsStr,[fstring]);
   end;
-  if signCount=0 then MulDiv(b,e,treeNode)
+  if signCount=0 then Par(b,e,treeNode)
   else begin  //хоть один плюс или минус был, делаем последнюю веточку
     SetLength(children,Length(children)+1);
-    MulDiv(last_plus,e,temp);
+    Par(last_plus,e,temp);
     if IsNeg then begin
       children[Length(children)-1]:=TUnaryMinusNode.Create(nil);
       children[Length(children)-1].InsertComponent(temp);
@@ -1198,8 +1322,39 @@ begin
       children[i].Free;
     temp.Free;
   end;
-
 end;
+
+procedure TVariantExpression.Par(b,e: Integer; var treeNode: TEvaluationTreeNode);
+var i,brCount,last_plus: Integer;
+    children: array of TEvaluationTreeNode;
+begin
+  brCount:=0;
+  last_plus:=b;
+  for i:=b to e do begin
+    if brCount=0 then
+      if Lexems[i].LType = ltPar then begin
+        SetLength(children,Length(children)+1);
+        MulDiv(last_plus,i-1,children[Length(children)-1]);
+        last_plus:=i+1;
+      end;
+    case Lexems[i].LType of
+      ltRightBracket: dec(brCount);
+      ltLeftBracket: inc(brCount);
+    end;
+  end;
+  if Length(children)=0 then MulDiv(b,e,treeNode)
+  else begin
+    treeNode:=TParNode.Create(nil);
+    for i:=0 to Length(children)-1 do begin
+      treeNode.InsertComponent(children[i]);
+      children[i]:=nil;
+    end;
+    MulDiv(last_plus,e,children[0]);
+    treeNode.InsertComponent(children[0]);
+    children[0]:=nil;
+  end;
+end;
+
 
 procedure TVariantExpression.MulDiv(b,e: Integer; var treeNode: TEvaluationTreeNode);
 var i,last_plus: Integer;
@@ -1208,7 +1363,7 @@ var i,last_plus: Integer;
     temp: TEvaluationTreeNode;
     isNeg: boolean;
 begin
-//  try
+  try
   brCount:=0;
   last_plus:=b;
   isNeg:=false;
@@ -1249,12 +1404,12 @@ begin
     treeNode.InsertComponent(children[0]);
     children[0]:=nil;
   end;
-(*
+
   finally
     for i:=0 to Length(children)-1 do
       children[i].Free;
   end;
-  *)
+
 end;
 
 procedure TVariantExpression.Pow(b,e: Integer; var TreeNode: TEvaluationTreeNode);
@@ -1303,9 +1458,15 @@ begin
     if Lexems[b].LType=ltLeftBracket then
       UnitConversionOperators(b+1,e-1,treeNode)
     else if (Lexems[b+1].LType=ltLeftBracket) and (Lexems[b].LType=ltIdent) then begin
-      treeNode:=TMathFuncNode.Create(Lexems[b].Ident,nil);
-      UnitConversionOperators(b+2,e-1,temp);
-      treeNode.InsertComponent(temp);
+      temp:=nil;
+      try
+        UnitConversionOperators(b+2,e-1,temp);
+        treeNode:=TMathFuncNode.Create(Lexems[b].Ident,nil);
+        treeNode.InsertComponent(temp);
+        temp:=nil;
+      finally
+        temp.Free;
+      end;
       Exit;
     end
     else Raise ESyntaxErr.CreateFmt('%s: left bracket on wrong place',[fstring]);

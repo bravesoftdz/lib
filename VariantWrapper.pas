@@ -18,7 +18,7 @@ type
     public
       procedure Negate; virtual; abstract; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); virtual; abstract;
-      procedure DoSubtract(Right: TAbstractWrapperData); virtual; abstract;
+      procedure DoSubtract(Right: TAbstractWrapperData); virtual;
       procedure DoMultiply(Right: TAbstractWrapperData); virtual; abstract;
       procedure DoDivide(Right: TAbstractWrapperData); virtual; abstract;
       function AsString: string; virtual; abstract;
@@ -47,6 +47,15 @@ type
   end;
 
 implementation
+
+(*
+    TAbstractWrapperData
+                              *)
+procedure TAbstractWrapperData.DoSubtract(Right: TAbstractWrapperData);
+begin
+  Right.Negate;
+  DoAdd(Right);
+end;
 
 (*
     TAbstractWrapperVariantType
