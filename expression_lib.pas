@@ -177,8 +177,6 @@ TFloatExpression=class(TComponent)
     fLastErrorMsg: string;  //объ€снение, в чем некорректность строки
     findependent: boolean;
     fchanged: boolean;
-//    fOnChange: TNotifyEvent;
-//    procedure SetOnChange(value: TNotifyEvent);
     function fIsIndependent: boolean;
     function getCorrect: boolean;
   protected
@@ -194,30 +192,27 @@ TFloatExpression=class(TComponent)
 
     destructor Destroy; override;
     procedure SetString(value: string);
-//    procedure DoChange;
     function getString: string;
-//    function NonTrivial: Boolean;
-//    function IsTrivial: Boolean;
     procedure SetRootComponent(value: TComponent);
     function getValue: Real;
-//    procedure SetValue(val: Real);
     function getIntegerValue: Integer;
     property isCorrect: Boolean read GetCorrect;
     property errorMsg: string read fLastErrorMsg;
     property isIndependent: boolean read fIsIndependent;
-//    property onChange: TNotifyEvent read fOnChange write SetOnChange;
   published
     property data: string read getString write SetString;
   end;
 
 TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,
-  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion,ltPar);
+  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion,ltPar,ltAssign);
 TLexem=record
   LType: TLexemType;
   Num: Variant; //комплексное число тоже может быть
   Ident: string;
   PhysUnit: TConvType;
 end;
+
+TAssignValueToVariableProc = function (aname: string; avalue: Variant): Boolean;
 
 TVariantExpression=class(TFloatExpression)  //
   private
@@ -226,8 +221,9 @@ TVariantExpression=class(TFloatExpression)  //
   protected
     procedure LexicalAnalysis;
     procedure MakeEvaluationTree; override;
+    procedure AssignOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure UnitConversionOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
-    procedure PlusMinus(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload; 
+    procedure PlusMinus(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
     procedure MulDiv(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
     procedure Par(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure Pow(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
@@ -235,7 +231,9 @@ TVariantExpression=class(TFloatExpression)  //
     procedure BracketsAndFuncs(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
     procedure ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
   public
+    AssignValueToVariableProc: TAssignValueToVariableProc;
     function GetVariantValue: Variant;
+
 end;
 
 TStandAloneFloatExpression = class (TFloatExpression)
@@ -482,12 +480,15 @@ begin
 end;
 
 function TMathFuncNode.HandleFuncOfUnits(V: Variant; funcname: string): Variant;
+var tmp: Variant;
 begin
-  if IsVarWithUnit(V) then
-    if IsDimensionLess(V) then
-      Result:=TVariantWithUnitVarData(V).Data.instance
+  if IsVarWithUnit(V) then begin
+    if not IsDimensionLess(V) then
+      tmp:=VarWithUnitConvert(V,duUnity)
     else
-      Raise ESyntaxErr.CreateFMT('јргумент функции %s должен быть безразмерным',[funcname])
+      tmp:=V;
+    Result:=TVariantWithUnitVarData(tmp).Data.instance;
+  end
   else Result:=V;
 end;
 
@@ -760,7 +761,7 @@ begin
   inherited Create(aOwner);
   fComponent:=aComponent;
   fPropName:=aPropName;
-  getValue;
+  getVariantValue;
 end;
 
 function TVariableNode.isIndependent: boolean;
@@ -1159,6 +1160,7 @@ var p: TSimpleParser;
 begin
   LIndex:=-1;
   p:=TSimpleParser.Create(fstring);
+  p.delimiter:=' '#9;
   try
     while not p.eof do begin
       inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
@@ -1178,7 +1180,12 @@ begin
             '+': Lexems[LIndex].LType:=ltPlus;
             '-': Lexems[LIndex].LType:=ltMinus;
             '*': Lexems[LIndex].LType:=ltMul;
-            '/': Lexems[LIndex].LType:=ltDiv;
+            '/': if (not p.eof) and (p.nextChar='/') then begin
+                  //нашли комментарий, игнорируем все
+                  dec(LIndex);
+                  break;
+                  end
+                  else Lexems[LIndex].LType:=ltDiv;
             '^': Lexems[LIndex].LType:=ltPow;
             '[': begin
                   inc(LIndex);  //у нас еще скобочка по€витс€ где-то слева
@@ -1210,6 +1217,7 @@ begin
                     Lexems[LIndex].LType:=ltPar
                   else
                     Raise ELexicalErr.Create('неизвестный оператор |');
+            '=': Lexems[LIndex].LType:=ltAssign;
             else begin
               p.PutBack;
               Lexems[LIndex].Num:=p.getVariantNum;
@@ -1230,7 +1238,9 @@ begin
   FreeAndNil(fEvaluationTreeRoot);  //все дерево целиком сноситс€
   try
     LexicalAnalysis;
-    UnitConversionOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
+    if Length(Lexems)=0 then Raise ESyntaxErr.Create(EmptyStringErrStr);
+//    UnitConversionOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
+    AssignOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
     fcorrect:=true;
     fIndependent:=fEvaluationTreeRoot.isIndependent;
   except
@@ -1242,6 +1252,27 @@ begin
       raise;
   end;
   fchanged:=false;
+end;
+
+procedure TVariantExpression.AssignOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
+var i,brCount: Integer;
+begin
+  brCount:=0;
+(*
+  for i:=b to e do begin
+    Case Lexems[i].LType of
+      ltLeftBracket: inc(brCount);
+      ltRightBracket: dec(brCount);
+      ltAssign: if brCount=0 then begin
+        if (i=b) or (Lexems[i-1].LType<>ltIdent) then
+          Raise ESyntaxErr.Create('—лева от = должна быть переменна€');
+
+
+      end;
+    end;
+  end;
+  *)
+  UnitConversionOperators(b,e,TreeNode);
 end;
 
 procedure TVariantExpression.UnitConversionOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);

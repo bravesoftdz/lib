@@ -12,7 +12,7 @@ unit phys_units_lib;
 
 interface
 
-uses classes,VariantWrapper,ConvUtils,sysUtils;
+uses classes,VariantWrapper,ConvUtils,sysUtils,linear_eq;
 
 type
 
@@ -72,7 +72,7 @@ end;  //неужели больше ничего не нужно?
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
-      procedure DoInverse; 
+      procedure DoInverse;
       procedure DoDivide(Right: TAbstractWrapperData); override;
       procedure DoPower(pow: Real);
       function AsString: string; override;
@@ -107,17 +107,35 @@ end;  //неужели больше ничего не нужно?
     multiplier: Real;
   end;
 
-  TPhysConstantsToSetToUnity=record
-    name: string;
-    description: string;
-    value: Variant;
-    enabled: Boolean;
+  TFundamentalPhysConstants = class
+    private
+      fNames: array of string;
+      fDescriptions: array of string;
+      fValues: array of Variant;
+      fenabled: array of Boolean;
+      fcount: Integer;
+      fsolver: IAbstractSLEQ;
+      function getName(i: Integer): string;
+      function getDescription(i: Integer): string;
+      function getEnabled(i: Integer): boolean;
+      procedure setEnabled(i: Integer; avalue: boolean);
+      function Recalculate: Boolean;
+    public
+      constructor Create;
+      procedure Add(aname,adescr: string; aValue: Variant; aEnabled: boolean=false);
+      function GetVar(i: Integer): Variant;
+      property Count: Integer read fCount;
+      property Names[i: Integer]: string read getName;
+      property Descriptions[i: Integer]: string read getDescription;
+      property Enabled[i: Integer]: Boolean read getEnabled write setEnabled;
   end;
 
   EPhysUnitError = class (Exception);
 
   PUnitMultipliersArray = ^TUnitMultipliersArray;
   TUnitMultipliersArray = array [0..255] of Real;
+
+  TLogConversionDetailsProc = procedure (line: string); //цвет сами придумаем
 
 procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
@@ -144,11 +162,12 @@ function StrToConvType(str: string): TConvType;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
-var UnityPhysConstants: array of TPhysConstantsToSetToUnity;
+var UnityPhysConstants: TFundamentalPhysConstants;
+    LogConversionDetailsProc: TLogConversionDetailsProc;
 
 implementation
 
-uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils,linear_eq;
+uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
@@ -312,19 +331,6 @@ begin
     finally
       f.Free;
     end;
-  end;
-end;
-
-procedure AddUnityPhysConstant(aname,adescription: string; avalue: Variant; aEnabled:Boolean=false);
-var L: Integer;
-begin
-  L:=Length(UnityPhysConstants);
-  SetLength(UnityPhysConstants,L+1);
-  with UnityPhysConstants[L] do begin
-    name:=aname;
-    description:=adescription;
-    value:=avalue;
-    enabled:=aEnabled;
   end;
 end;
 
@@ -711,44 +717,25 @@ begin
       formula:=FindPhysUnit(ConvType);  //это наша родная
       try
         Conversion(FormulaToConvType(formula)); //всяческие электронвольты приводим к СИ
-
-        solver:=TSimpleGaussLEQ.Create;
-        BaseUnitsCount:=Length(BaseFamilyEntries);
-        EqsCount:=0;
-        for j:=0 to Length(UnityPhysConstants)-1 do
-          if UnityPhysConstants[j].enabled then begin
-            inc(EqsCount);
-            solver.SetDimensions(BaseUnitsCount,EqsCount);
-            V:=TVariantWithUnitVarData(UnityPhysConstants[j].value).Data;
-            new_formula:=FindPhysUnit(V.ConvType);
-            for i:=0 to new_formula.fCount-1 do begin
-              ind:=IndexOfBaseFamily(ConvTypeToFamily(new_formula.UnitTypes[i]));
-              solver.Matrix[ind,EqsCount-1]:=new_formula.Exponents[i];
-            end;
-            solver.Matrix[BaseUnitsCount,EqsCount-1]:=Ln(V.instance);
-            new_formula.Free;
-          end;
-        if EqsCount=0 then Raise EPhysUnitError.CreateFmt('Некорректное приведение типов: %s в %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
-        solver.Solve;
         try
           new_formula:=FindPhysUnit(DestConv);
           formula.Divide(new_formula);
           addition:=0.0;
           for i:=0 to formula.fCount-1 do begin
             j:=IndexOfBaseFamily(ConvTypeToFamily(formula.UnitTypes[i]));
-            addition:=addition+solver.GetVariable(j)*formula.Exponents[i];
+            addition:=addition+UnityPhysConstants.GetVar(j)*formula.Exponents[i];
           end;
           if VarManySolutionsIsNumber(addition) then begin  //успех!
             instance:=instance*Exp(-addition);
             ConvType:=FormulaToConvType(new_formula);
             Conversion(DestConv); //теперь сделается как надо!
           end
-          else Raise EphysUnitError.CreateFmt('Некорректное приведение типов: %s в %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
+          else Raise EphysUnitError.CreateFmt('Некорректное приведение типов: [%s] в [%s]',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
         finally
-          formula.Free;
+          new_formula.Free;
         end;
       finally
-      new_formula.Free;
+      formula.Free;
       end;
     end;
   end;
@@ -800,8 +787,10 @@ begin
       end
       else
         instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
-    else
-      Raise EPhysUnitError.Create('Sorry, implicit unit conversion is also under construction')
+    else begin
+      v.Conversion(ConvType);
+      instance:=instance+v.instance;
+    end
   else inherited; //не знаю пока, пригодится ли эта строчка хоть раз?
 end;
 
@@ -1008,6 +997,91 @@ begin
   else inherited; //нам дали пустой variant скорее всего
 end;
 
+(*
+    TFundamentalPhysConstants
+                                *)
+constructor TFundamentalPhysConstants.Create;
+begin
+  inherited Create;
+  fsolver:=TSimpleGaussLEQ.Create;
+  fsolver.SetTolerance(1e-19);
+end;
+
+function TFundamentalPhysConstants.getName(i: Integer): string;
+begin
+  Result:=fNames[i];
+end;
+
+function TFundamentalPhysConstants.getDescription(i: Integer): string;
+begin
+  Result:=fDescriptions[i];
+end;
+
+function TFundamentalPhysConstants.getEnabled(i: Integer): Boolean;
+begin
+  Result:=fEnabled[i];
+end;
+
+procedure TFundamentalPhysConstants.setEnabled(i: Integer; aValue: Boolean);
+begin
+  if aValue<>fEnabled[i] then begin
+    fEnabled[i]:=aValue;
+    if not Recalculate then begin
+      fEnabled[i]:=not aValue;
+      Raise EPhysUnitError.CreateFMT('Добавление условия %s=1 приводит к противоречию',[fNames[i]]);
+    end;
+  end;
+end;
+
+procedure TFundamentalPhysConstants.Add(aName,aDescr: string; aValue: Variant; aEnabled: Boolean=false);
+var L: Integer;
+begin
+  inc(fCount);
+  L:=Length(fNames);
+  if L<fCount then L:=2*fCount;
+  SetLength(fNames,L);
+  SetLength(fDescriptions,L);
+  SetLength(fValues,L);
+  SetLength(fEnabled,L);
+  fNames[fCount-1]:=aName;
+  fDescriptions[fCount-1]:=aDescr;
+  fValues[fCount-1]:=aValue;
+  if aEnabled then begin
+    fEnabled[fCount-1]:=recalculate;
+    if fEnabled[fCount-1]=false then
+      Raise EPhysUnitError.CreateFmt('Добавление условия %s=1 приводит к противоречию',[aName]);
+  end;
+end;
+
+function TFundamentalPhysConstants.GetVar(i: Integer): Variant;
+begin
+  Result:=fsolver.GetVariable(i);
+end;
+
+function TFundamentalPhysConstants.Recalculate: Boolean;
+var BaseUnitsCount,EqsCount,i,j,ind: Integer;
+    formula: TUnitsWithExponent;
+    V: TVariantWithUnit;
+begin
+  BaseUnitsCount:=Length(BaseFamilyEntries);
+  EqsCount:=0;
+  fsolver.SetDimensions(0,0);
+  for j:=0 to fCount-1 do
+    if fenabled[j] then begin
+      inc(EqsCount);
+      fsolver.SetDimensions(BaseUnitsCount,EqsCount);
+      V:=TVariantWithUnitVarData(fvalues[j]).Data;
+      formula:=FindPhysUnit(V.ConvType);
+      for i:=0 to formula.fCount-1 do begin
+        ind:=IndexOfBaseFamily(ConvTypeToFamily(formula.UnitTypes[i]));
+        fsolver.Matrix[ind,EqsCount-1]:=formula.Exponents[i];
+      end;
+      fsolver.Matrix[BaseUnitsCount,EqsCount-1]:=Ln(V.instance);
+      formula.Free;
+    end;
+  fsolver.Solve;  //нужно будет добавить возм. пустой системы
+  Result:=(fsolver.GetStatus<>slNoSolution);
+end;
 
 
 (*
@@ -1070,26 +1144,29 @@ resourcestring
   GravityConstantDescr = 'Гравитационная постоянная (6.67e-11 м^3*с^-2*кг^-1)';
   BoltzmanConstantDescr = 'Постоянная Больцмана (1.38e-23 Дж/К)';
   FreeSpaceDielectricConstDescr = 'Диэлектрическая постоянная (8.85e-12 Ф/м)';
+  ElementaryChargeDescr = 'Элементарный электрический заряд (1.6 Кл)';
 
 
 procedure RegisterUnityConstants;
 var eps0: Real;
     streps0: String;
 begin
-  AddUnityPhysConstant('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
-  AddUnityPhysConstant('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
-  AddUnityPhysConstant('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));
-  AddUnityPhysConstant('k',BoltzmanConstantDescr,VarWithUnitCreate('1,3806488e-23 J/K'));
-  eps0:=1/299792458/299792458*1e7;
-  streps0:=FloatToStr(eps0);
-  AddUnityPhysConstant('4pi*Epsilon0',FreeSpaceDielectricConstDescr,VarWithUnitCreate(streps0+' F/m'));
+  UnityPhysConstants:=TFundamentalPhysConstants.Create;
+  with UnityPhysConstants do begin
+    Add('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
+    Add('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
+    Add('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));
+    Add('k',BoltzmanConstantDescr,VarWithUnitCreate('1,3806488e-23 J/K'));
+    eps0:=1/299792458/299792458*1e7;
+    streps0:=FloatToStr(eps0);
+    Add('4pi*Epsilon0',FreeSpaceDielectricConstDescr,VarWithUnitCreate(streps0+' F/m'));
+    Add('e',ElementaryChargeDescr,VarWithUnitCreate('1,602176565e-19 C'));
+  end;
 end;
 
 procedure FreeUnityConstants;
-var i: Integer;
 begin
-  for i:=0 to Length(UnityPhysConstants)-1 do
-    Finalize(UnityPhysConstants[i].value);
+  FreeAndNil(UnityPhysConstants);
 end;
 
 procedure FreeUnits;
