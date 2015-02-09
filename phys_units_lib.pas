@@ -115,6 +115,8 @@ end;  //неужели больше ничего не нужно?
       fenabled: array of Boolean;
       fcount: Integer;
       fsolver: IAbstractSLEQ;
+      fActuallyUsedCount: Integer;
+      fActualIndex: array of Integer;
       function getName(i: Integer): string;
       function getDescription(i: Integer): string;
       function getEnabled(i: Integer): boolean;
@@ -124,13 +126,17 @@ end;  //неужели больше ничего не нужно?
       constructor Create;
       procedure Add(aname,adescr: string; aValue: Variant; aEnabled: boolean=false);
       function GetVar(i: Integer): Variant;
+      function GetActualIndex(i: Integer): Integer;
       property Count: Integer read fCount;
       property Names[i: Integer]: string read getName;
       property Descriptions[i: Integer]: string read getDescription;
       property Enabled[i: Integer]: Boolean read getEnabled write setEnabled;
+      property Solver: IAbstractSLEQ read fsolver;
+      property ActuallyUsedCount: Integer read fActuallyUsedCount;
   end;
 
   EPhysUnitError = class (Exception);
+
 
   PUnitMultipliersArray = ^TUnitMultipliersArray;
   TUnitMultipliersArray = array [0..255] of Real;
@@ -685,27 +691,33 @@ begin
 end;
 
 procedure TVariantWithUnit.Conversion(DestConv: TConvType);
-var j,i,ind: Integer;              //inst - это мы
+var j,i,b: Integer;              //inst - это мы
     offset,k,mul: Real;     //dest - это тоже мы, но позже
-    solver: IAbstractSLEQ;
-    BaseUnitsCount: Integer;
-    EqsCount: integer;
     formula: TUnitsWithExponent;
     new_formula: TUnitsWithExponent;
-    V: TVariantWithUnit;
     addition: Variant;
+    pow: Real;
     buConvType: TConvType;
+    s: string;
 begin
   if IsAffine(j) then begin
-    offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
-    k:=Convert(1,AffineUnits[j].BaseConvType,DestConv)-offset;
-    mul:=AffineUnits[j].multiplier;
-    instance:=instance*k+offset*mul;
-    ConvType:=DestConv;
-    IsAffine(j);
-    ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
-  end
-  else begin
+    if CompatibleConversionTypes(ConvType,DestConv) then begin
+      offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
+      k:=Convert(1,AffineUnits[j].BaseConvType,DestConv)-offset;
+      mul:=AffineUnits[j].multiplier;
+      instance:=instance*k+offset*mul;
+      ConvType:=DestConv;
+      IsAffine(j);
+      ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
+      Exit;
+    end
+    else begin
+      new_formula:=FindPhysUnit(ConvType);
+      Conversion(new_formula.UnitTypes[0]);  //проще говор€, в кельвины
+      new_formula.Free;
+    end;
+  end;
+  if (ConvType<>DestConv) then begin
     if CompatibleConversionTypes(ConvType,DestConv) then begin
       instance:=instance*Convert(1,ConvType,DestConv);
       ConvType:=DestConv;
@@ -729,6 +741,24 @@ begin
             instance:=instance*Exp(-addition);
             ConvType:=FormulaToConvType(new_formula);
             Conversion(DestConv); //теперь сделаетс€ как надо!
+            if Assigned(LogConversionDetailsProc) then begin
+//разоблачение фокуса - на что мы помножили и поделили
+              for i:=0 to UnityPhysConstants.ActuallyUsedCount-1 do begin
+                pow:=0.0;
+                for j:=0 to formula.fCount-1 do begin
+                  b:=IndexOfBaseFamily(ConvTypeToFamily(formula.UnitTypes[j]));
+                  pow:=pow-UnityPhysConstants.Solver.getInvMatrix(i,b)*formula.Exponents[j];
+                end;
+                if abs(pow)>0.001 then begin
+                  if Length(s)>0 then s:=s+'*';
+                  if abs(pow-1)>1e-19 then
+                    s:=s+'('+UnityPhysConstants.Names[UnityPhysConstants.GetActualIndex(i)]+')^'+Format('%2.2g' ,[pow])
+                  else
+                    s:=s+UnityPhysConstants.Names[UnityPhysConstants.GetActualIndex(i)];
+                end;
+              end;
+              LogConversionDetailsProc(Format('ƒл€ преобразовани€ из [%s] в [%s] выражение домножено на %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv),s]));
+            end;
           end
           else Raise EphysUnitError.CreateFmt('Ќекорректное приведение типов: [%s] в [%s]',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
         finally
@@ -1005,6 +1035,7 @@ begin
   inherited Create;
   fsolver:=TSimpleGaussLEQ.Create;
   fsolver.SetTolerance(1e-19);
+  recalculate;
 end;
 
 function TFundamentalPhysConstants.getName(i: Integer): string;
@@ -1020,6 +1051,11 @@ end;
 function TFundamentalPhysConstants.getEnabled(i: Integer): Boolean;
 begin
   Result:=fEnabled[i];
+end;
+
+function TFundamentalPhysConstants.GetActualIndex(i: Integer): Integer;
+begin
+  Result:=fActualIndex[i];
 end;
 
 procedure TFundamentalPhysConstants.setEnabled(i: Integer; aValue: Boolean);
@@ -1065,7 +1101,9 @@ var BaseUnitsCount,EqsCount,i,j,ind: Integer;
 begin
   BaseUnitsCount:=Length(BaseFamilyEntries);
   EqsCount:=0;
-  fsolver.SetDimensions(0,0);
+  fActuallyUsedCount:=0;
+  SetLength(fActualIndex,fcount);
+  fsolver.SetDimensions(BaseUnitsCount,0);
   for j:=0 to fCount-1 do
     if fenabled[j] then begin
       inc(EqsCount);
@@ -1078,8 +1116,10 @@ begin
       end;
       fsolver.Matrix[BaseUnitsCount,EqsCount-1]:=Ln(V.instance);
       formula.Free;
+      inc(fActuallyUsedCount);
+      fActualIndex[fActuallyUsedCount-1]:=j;
     end;
-  fsolver.Solve;  //нужно будет добавить возм. пустой системы
+  fsolver.InvertMatrix;
   Result:=(fsolver.GetStatus<>slNoSolution);
 end;
 

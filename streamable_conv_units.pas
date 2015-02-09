@@ -94,10 +94,14 @@ begin
   cbPressure:=RegisterConversionFamily('Pressure');
   puPa:=RegisterConversionType(cbPressure,'Pa',1);
   RegisterConversionType(cbPressure,'Па',1);
-  RegisterConversionType(cbPressure,'m_water',9800);
-  RegisterConversionType(cbPressure,'м_вод_ст',9800);
-  RegisterConversionType(cbPressure,'bar',101000);
-  RegisterConversionType(cbPressure,'атм',101000);
+  RegisterConversionType(cbPressure,'m_water',9806.65);
+  RegisterConversionType(cbPressure,'м_вод_ст',9806.65);
+  RegisterConversionType(cbPressure,'atm',101325);
+  RegisterConversionType(cbPressure,'атм',101325);
+  RegisterConversionType(cbPressure,'at',98066.5);
+  RegisterConversionType(cbPressure,'ат',98066.5);
+  RegisterConversionType(cbPressure,'bar',100000);
+  RegisterConversionType(cbPressure,'бар',100000);
 
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
   vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
@@ -116,8 +120,8 @@ begin
   cbForce:=RegisterConversionFamily('Force');
   fuN:=RegisterConversionType(cbForce,'N',1);
   RegisterConversionType(cbForce,'Н',1);
-  RegisterConversionType(cbForce,'kgf',9.81);
-  RegisterConversionType(cbForce,'кгс',9.81);
+  RegisterConversionType(cbForce,'kgf',9.80665 );
+  RegisterConversionType(cbForce,'кгс',9.80665 );
 
   cbEnergy:=RegisterConversionFamily('Energy');
   euJ:=RegisterConversionType(cbEnergy,'J',1);
@@ -159,6 +163,7 @@ begin
   RegisterConversionType(cbVolume,'L',0.001);
 
   tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
+  RegisterConversionType(cbTemperature,'gradC',1);
 end;
 
 (*

@@ -42,12 +42,15 @@ IAbstractSLEQ=interface
   procedure SetMatrix(i,j: Integer; value: Variant);
   procedure SetTolerance(value: real);
   function GetMatrix(i,j: Integer): Variant;
+  function GetInvMatrix(i,j: Integer): Variant;
   function GetVariable(i: Integer): Variant;
   procedure SetVariableName(i: Integer; value: string);
   function GetVariableName(i: Integer): string;
   function GetStatus: TSLEQStatus;
   procedure Solve;
+  procedure InvertMatrix;
   property Matrix[i,j: Integer]: Variant read GetMatrix write SetMatrix;
+  property InvMatrix[i,j: Integer]: Variant read GetInvMatrix;
   property VariableName[i: Integer]: string read GetVariableName write SetVariableName;
 end;
 
@@ -89,21 +92,27 @@ TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
     fNumOfVars,fNumOfEqs: Integer;
     ftolerance: Real;
     fstatus: TSLEQStatus;
+    finvMatrix: array of array of Variant;
   protected
     procedure SwitchRows(row1,row2: Integer);
     procedure SwitchCols(col1,col2: Integer);
+    procedure FullSwitchRows(row1,row2: Integer);
     procedure SolveOneSolution;
     procedure SolveManySolutions;
+    procedure SolveInvOneSolution;
+    procedure SolveInvManySolutions;
   public
     procedure SetDimensions(NumOfVars,NumOfEqs: Integer);
     procedure SetMatrix(i,j: Integer; value: Variant);
     procedure SetTolerance(value: real);
     function GetMatrix(i,j: Integer): Variant;
+    function GetInvMatrix(i,j: Integer): Variant;
     function GetVariable(i: Integer): Variant;
     function GetStatus: TSLEQStatus;
     procedure SetVariableName(i: Integer; value: string);
     function GetVariableName(i: Integer): string;
     procedure Solve;
+    procedure InvertMatrix;
 //    property Matrix[i,j: Integer]: Real read GetMatrix write SetMatrix;
 end;
 
@@ -215,6 +224,16 @@ begin
   Result:=fmatrix[i,j];
 end;
 
+function TSimpleGaussLEQ.GetInvMatrix(i,j: Integer): Variant;
+begin
+  //i здесь - номер уравнения по сути
+  //j - номер переменной, до их перепутывания
+  if findexes[j]>=fNumOfEqs then
+    Result:=0.0
+  else
+    Result:=finvmatrix[i,findexes[j]];
+end;
+
 function TSimpleGaussLEQ.GetStatus: TSLEQStatus;
 begin
   Result:=fstatus;
@@ -295,12 +314,91 @@ begin
   end;
 end;
 
+procedure TSimpleGaussLEQ.InvertMatrix;
+var i,j,k: Integer;
+  max_elem: Real;
+  row_num,col_num: Integer;
+  ratio: Variant;
+begin
+  SetLength(finvMatrix,fNumOfEqs,fNumOfEqs);
+  for i:=0 to fNumOfEqs-1 do
+    for j:=0 to fNumOfEqs-1 do
+      if i=j then finvMatrix[i,j]:=1.0
+      else fInvMatrix[i,j]:=0.0;
+  //преобразуем исходную матрицу в единичную
+  for j:=0 to fNumOfEqs-1 do begin
+    //ищем макс. элем не выше и не левее (j,j)
+    max_elem:=-1;
+    row_num:=-1;  //при попытке заменить такие элем. выругается на index out of bounds
+    col_num:=-1;
+    for i:=j to fNumOfVars-1 do
+      for k:=j to fNumOfEqs-1 do
+        if GetLengthSquared(fmatrix[i,k])>max_elem then begin
+          max_elem:=GetLengthSquared(fmatrix[i,k]);
+          row_num:=k;
+          col_num:=i;
+        end;
+    if max_elem<=ftolerance then begin  //сплошь одни нули, не можем новый диаг. элем найти
+      for i:=j to fNumOfEqs-1 do
+        if GetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
+          fstatus:=slNoSolution;  //получилось уравнение вида 0=1 - все тлен
+          Exit;
+        end;
+      fNumOfEqs:=j; //несколько нижних уравнений имеют вид 0=0 - выкидываем их
+      break;
+    end;
+    FullSwitchRows(j,row_num);
+    SwitchCols(j,col_num);
+    //элем (j,j) - лучший из лучших!
+    ratio:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
+    if GetLengthSquared(ratio-1)>ftolerance then begin
+      ratio:=1/ratio;
+      fmatrix[j,j]:=1;
+      for i:=j+1 to fNumOfVars do
+        fmatrix[i,j]:=fmatrix[i,j]*ratio;
+      for i:=0 to fNumOfEqs-1 do
+        finvmatrix[i,j]:=finvmatrix[i,j]*ratio;        
+    end;
+
+    //вычитаем строку из всех прочих, чтобы получить нули в столбце j
+    for i:=0 to fNumOfEqs-1 do
+      if i<>j then begin
+        if GetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
+        ratio:=fmatrix[j,i];
+        fmatrix[j,i]:=0;
+        for k:=j+1 to fNumOfVars do
+          fmatrix[k,i]:=fmatrix[k,i]-ratio*fmatrix[k,j];
+        for k:=0 to fNumOfEqs-1 do
+          finvmatrix[k,i]:=finvmatrix[k,i]-ratio*finvmatrix[k,j];
+      end;
+  end;
+  //получаем единичную матрицу слева (возможно, нулевые строки и столбцы)
+  if fNumOfEqs=fNumOfVars then begin
+    fstatus:=slOneSolution;
+    SolveInvOneSolution;
+  end
+  else begin
+    fstatus:=slManySolutions;
+    SolveInvManySolutions;
+  end;
+end;
+
 procedure TSimpleGaussLEQ.SwitchRows(row1,row2: Integer);
 var i: Integer;
 begin
   if row1<>row2 then
     for i:=0 to fNumOfVars do
       SwapVariants(fmatrix[i,row1],fmatrix[i,row2]);
+end;
+
+procedure TSimpleGaussLEQ.FullSwitchRows(row1,row2: Integer);
+var i: Integer;
+begin
+  if row1<>row2 then begin
+    for i:=0 to fNumOfEqs-1 do
+      SwapVariants(finvMatrix[i,row1],finvmatrix[i,row2]);
+    SwitchRows(row1,row2);
+  end;
 end;
 
 procedure TSimpleGaussLEQ.SwitchCols(col1,col2: Integer);
@@ -324,6 +422,16 @@ begin
       val:=val-fvariables[i]*fmatrix[i,j];
     fvariables[j]:=val;
   end;
+end;
+
+procedure TSimpleGaussLEQ.SolveInvOneSolution;
+begin
+  SolveOneSolution;
+end;
+
+procedure TSimpleGaussLEQ.SolveInvManySolutions;
+begin
+  SolveManySolutions;
 end;
 
 
