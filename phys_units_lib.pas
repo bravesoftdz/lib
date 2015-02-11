@@ -36,7 +36,6 @@ end;  //неужели больше ничего не нужно?
       UnitTypes: TUnitTypes;
       Exponents: TExponents;
       fCount: Integer;
-      fMultiplier: Real;
       procedure Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
       function MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
@@ -51,9 +50,8 @@ end;  //неужели больше ничего не нужно?
       function TakeFromString(formula: string): Real;
       procedure DoPower(Exponent: Real);
       function SameFamily(value: TUnitsWithExponent): Boolean;
-      function FindMultiplier(value: TUnitsWithExponent): Real;
-      function Multiply(value: TUnitsWithExponent): Real;
-      function Divide(right: TUnitsWithExponent): Real;
+      procedure Multiply(value: TUnitsWithExponent);
+      procedure Divide(right: TUnitsWithExponent);
       function AsString: string;
       function ShowFormula: string;
       function isAffine: Boolean;
@@ -225,17 +223,6 @@ begin
     Raise EPhysUnitError.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
 end;
 
-function BaseFamilyLetterToConvFamily(letter: string): TConvFamily;
-var i: Integer;
-begin
-  for i:=0 to Length(BaseFamilyEntries)-1 do
-    if BaseFamilyEntries[i].letter=letter then begin
-      Result:=BaseFamilyEntries[i].ConvFamily;
-      Exit;
-    end;
-  Raise EPhysUnitError.CreateFmt('BaseFamilyLetterToConvFamily: letter %s not found',[letter]);
-end;
-
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string);
 var L: Integer;
 begin
@@ -268,6 +255,15 @@ begin
       Exit;
     end;
   Result:=-1;
+end;
+
+function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
+begin
+  Result:=DescriptionToConvType(str,CType);
+  if not Result then
+    Result:=(UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
+    if not Result then
+      Result:=(LeftStr(str,2)='??') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
 end;
 
 function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
@@ -309,15 +305,6 @@ begin
       end;
   //если не найдено подх. семейства - мы создадим такое семейство и такой юнит!
   Result:=RegisterDerivedConversionFamily(formula).BaseConvType;
-end;
-
-function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
-begin
-  Result:=DescriptionToConvType(str,CType);
-  if not Result then
-    Result:=(UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
-    if not Result then
-      Result:=(LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
 end;
 
 function StrToConvType(str: string): TConvType;
@@ -497,16 +484,6 @@ begin
   else Result:=false;
 end;
 
-function TUnitsWithExponent.FindMultiplier(value: TUnitsWithExponent): Real;
-var i: Integer;
-begin
-  //мы уже знаем, что семейство одно и то же
-  Result:=1;
-  for i:=0 to fCount-1 do
-    if (UnitTypes[i]<>value.UnitTypes[i]) then
-      Result:=Result*Convert(1,value.UnitTypes[i],UnitTypes[i]);
-end;
-
 procedure TUnitsWithExponent.Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
 var i,j,k: Integer;
     L1,L2: Integer;
@@ -570,35 +547,23 @@ end;
 function TUnitsWithExponent.MergeMul(value: TUnitsWithExponent; i,j: Integer): Real;
 begin
   if i=-1 then Result:=value.exponents[j]
-  else begin
-    if UnitTypes[i]<>value.UnitTypes[j] then
-      fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),value.Exponents[j]);
-    Result:=Exponents[i]+value.exponents[j];
-  end;
+  else Result:=Exponents[i]+value.exponents[j];
 end;
 
 function TUnitsWithExponent.MergeDiv(value: TUnitsWithExponent; i,j: Integer): Real;
 begin
   if i=-1 then Result:=-value.exponents[j]
-  else begin
-    if UnitTypes[i]<>value.UnitTypes[j] then
-      fMultiplier:=fMultiplier*Power(Convert(1,value.UnitTypes[j],UnitTypes[i]),-value.Exponents[j]);
-    Result:=Exponents[i]-value.exponents[j];
-  end;
+  else Result:=Exponents[i]-value.exponents[j];
 end;
 
-function TUnitsWithExponent.Multiply(value: TUnitsWithExponent): Real;
+procedure TUnitsWithExponent.Multiply(value: TUnitsWithExponent);
 begin
-  fMultiplier:=1;
   Merge(value,MergeMul);
-  Result:=fMultiplier;
 end;
 
-function TUnitsWithExponent.Divide(right: TUnitsWithExponent): Real;
+procedure TUnitsWithExponent.Divide(right: TUnitsWithExponent);
 begin
-  fMultiplier:=1;
   Merge(right,MergeDiv);
-  Result:=fMultiplier;
 end;
 
 function TUnitsWithExponent.ShowSomething(proc: TShowName): string;
@@ -846,11 +811,13 @@ begin
             if v.IsAffine(k) then begin
               v.Conversion(UR.UnitTypes[0]);
               v.IsAffine(k);
-              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
+              UL.Multiply(Ur);
+              instance:=instance*v.instance*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
               ConvType:=FormulaToConvType(UL);
             end
             else begin
-              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
+              UL.Multiply(Ur);
+              instance:=instance*v.instance*Convert(1,v.ConvType,FormulaToConvType(Ur));
               ConvType:=FormulaToConvType(UL);
             end;
           end
@@ -866,12 +833,14 @@ begin
              //а указать нужно именно K
               v.IsAffine(k);
               //и остатки
-              instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
+              UL.Multiply(Ur);
+              instance:=instance*v.instance*Convert(1,AffineUnits[k].BaseConvType,FormulaToConvType(Ur));
               ConvType:=FormulaToConvType(UL);
             end
           else begin
             //основная процедура
-            instance:=instance*v.instance*UL.Multiply(Ur)*Convert(1,v.ConvType,FormulaToConvType(Ur));
+            UL.Multiply(Ur);
+            instance:=instance*v.instance*Convert(1,v.ConvType,FormulaToConvType(Ur));
             ConvType:=FormulaToConvType(UL);
           end;
       finally
