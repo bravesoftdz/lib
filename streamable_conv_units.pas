@@ -24,12 +24,12 @@ end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     cbFrequency, cbDimensionless,cbForce,cbEnergy,cbCharge,cbResistance,
-    cbCapacitance,cbInductance: TConvFamily;
+    cbCapacitance,cbInductance, cbAngle, cbSolidAngle: TConvFamily;
     vuVolts,iuAmps,ruOhm,cuFarade,iuHenry: TConvType;
     puBar,puPa,puMeters: TConvType;
     vcuM3PerSec: TConvType;
     powWatt: TConvType;
-    fuHz: TConvType;
+    fuRadPerSec: TConvType;
     duUnity: TConvType;
     fuN: TConvType;
     euJ: TConvType;
@@ -37,6 +37,8 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
 
     duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     auShortSqMeters,vuShortCubicMeters: TConvType;
+    auRadian: TConvType;
+    sauSteradian: TConvType;
 
     PreferredUnits: TPreferredUnits;
 implementation
@@ -83,14 +85,28 @@ end;
 
 procedure NewConvFamilies;
 begin
+//длина
+  duShortMeters:=RegisterConversionType(cbDistance,'m',1);
+  RegisterConversionType(cbDistance,'м',1);
+  RegisterConversionType(cbDistance,'Ангстрем',1e-10);
+  RegisterConversionType(cbDistance,'in',2.54e-2);
+  RegisterConversionType(cbDistance,'mi',1609.344);
+  RegisterConversionType(cbDistance,'a_u',149598000000);
+  RegisterConversionType(cbDistance,'а_е',149598000000);
+  RegisterConversionType(cbDistance,'св_лет',9.46052840487936e15);
+  RegisterConversionType(cbDistance,'пк',3.08568024849531E16);
+//площадь
+  RegisterConversionType(cbArea,'ар',100);
+  RegisterConversionType(cbArea,'гектар',1e4);
+//напряжение
   cbVoltage:=RegisterConversionFamily('Voltage');
   vuVolts:=RegisterConversionType(cbVoltage,'V',1);
   RegisterConversionType(cbVoltage,'В',1);
-
+//ток
   cbCurrent:=RegisterConversionFamily('Current');
   iuAmps:=RegisterConversionType(cbCurrent,'A',1);
   RegisterConversionType(cbCurrent,'А',1);
-
+//давление
   cbPressure:=RegisterConversionFamily('Pressure');
   puPa:=RegisterConversionType(cbPressure,'Pa',1);
   RegisterConversionType(cbPressure,'Па',1);
@@ -102,68 +118,78 @@ begin
   RegisterConversionType(cbPressure,'ат',98066.5);
   RegisterConversionType(cbPressure,'bar',100000);
   RegisterConversionType(cbPressure,'бар',100000);
-
+//объемный расход
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
   vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
-
+//мощность
   cbPower:=RegisterConversionFamily('Power');
   powWatt:=RegisterConversionType(cbPower,'W',1);
   RegisterConversionType(cbPower,'Вт',1);
-
-  cbFrequency:=RegisterConversionFamily('Frequency');
-  fuHz:=RegisterConversionType(cbFrequency,'Hz',1);
-  RegisterConversionType(cbFrequency,'Гц',1);
-
+//безразмерная величина
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
-
+//сила
   cbForce:=RegisterConversionFamily('Force');
   fuN:=RegisterConversionType(cbForce,'N',1);
   RegisterConversionType(cbForce,'Н',1);
   RegisterConversionType(cbForce,'kgf',9.80665 );
   RegisterConversionType(cbForce,'кгс',9.80665 );
-
+//энергия
   cbEnergy:=RegisterConversionFamily('Energy');
   euJ:=RegisterConversionType(cbEnergy,'J',1);
   RegisterConversionType(cbEnergy,'Дж',1);
   RegisterConversionType(cbEnergy,'eV',1.602176565e-19);
   RegisterConversionType(cbEnergy,'эВ',1.602176565e-19);
-
-  RegisterConversionType(cbDistance,'м',1);
-  duShortMeters:=RegisterConversionType(cbDistance,'m',1);
-
+//заряд
   cbCharge:=RegisterConversionFamily('Charge');
   cuC:=RegisterConversionType(cbCharge,'C',1);
   RegisterConversionType(cbCharge,'Кл',1);
-
+//сопротивление
   cbResistance:=RegisterConversionFamily('Resistance');
   ruOhm:=RegisterConversionType(cbResistance,'Ohm',1);
   RegisterConversionType(cbResistance,'Ом',1);
-
+//емкость
   cbCapacitance:=RegisterConversionFamily('Capacitance');
   cuFarade:=RegisterConversionType(cbCapacitance,'F',1);
   RegisterConversionType(cbCapacitance,'Ф',1);
-
+//индуктивность
   cbInductance:=RegisterConversionFamily('Inductance');
   iuHenry:=RegisterConversionType(cbInductance,'H',1);
   RegisterConversionType(cbInductance,'Гн',1);
-
+//время
   RegisterConversionType(cbTime,'с',1 / SecsPerDay);
   tuShortSeconds:=RegisterConversionType(cbTime,'s',1 / SecsPerDay);
   RegisterConversionType(cbTime,'hr',3600 / SecsPerDay);
   RegisterConversionType(cbTime,'ч',3600 / SecsPerDay);
   RegisterConversionType(cbTime,'min',60 / SecsPerDay);
   RegisterConversionType(cbTime,'мин',60 / SecsPerDay);
-
+//масса
   RegisterConversionType(cbMass,'g',1);
   muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);
   RegisterConversionType(cbMass,'г',1);
   auShortSqMeters:=RegisterConversionType(cbArea,'m^2',1);
   vuShortCubicMeters:=RegisterConversionType(cbVolume,'m^3',1);
   RegisterConversionType(cbVolume,'L',0.001);
-
+//температура
   tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
   RegisterConversionType(cbTemperature,'gradC',1);
+//углы
+  cbAngle:=RegisterConversionFamily('Angle');
+  auRadian:=RegisterConversionType(cbAngle,'rad',1);
+  RegisterConversionType(cbAngle,'turn',2*pi);
+  RegisterConversionType(cbAngle,'deg',pi/180);
+  RegisterConversionType(cbAngle,'рад',1);
+  RegisterConversionType(cbAngle,'град',pi/180);
+  RegisterConversionType(cbAngle,'об',2*pi);
+//телесный угол
+  cbSolidAngle:=RegisterConversionFamily('SolidAngle');
+  sauSteradian:=RegisterConversionType(cbSolidAngle,'sr',1);
+  RegisterConversionType(cbSolidAngle,'ср',1);
+//частота
+  cbFrequency:=RegisterConversionFamily('Frequency');
+  fuRadPerSec:=RegisterConversionType(cbFrequency,'rad/s',1);
+  RegisterConversionType(cbFrequency,'Hz',2*pi);
+  RegisterConversionType(cbFrequency,'Гц',2*pi);
 end;
 
 (*

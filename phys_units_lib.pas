@@ -942,6 +942,8 @@ var unitStr: string;
     PrefConvType: TConvType;
     val: Extended;
 begin
+  for i:=1 to Length(str) do
+    if (str[i]='.') or (str[i]=',') then str[i]:=DecimalSeparator;
   i:=Length(str);
   while (i>=1) and (str[i]<>' ') do dec(i);
   if i=0 then begin
@@ -1083,9 +1085,11 @@ begin
   fDescriptions[fCount-1]:=aDescr;
   fValues[fCount-1]:=aValue;
   if aEnabled then begin
-    fEnabled[fCount-1]:=recalculate;
-    if fEnabled[fCount-1]=false then
+    fEnabled[fCount-1]:=true;
+    if not Recalculate then begin
+      fEnabled[fCount-1]:=false;
       Raise EPhysUnitError.CreateFmt('Добавление условия %s=1 приводит к противоречию',[aName]);
+    end;
   end;
 end;
 
@@ -1161,13 +1165,16 @@ begin
   RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
   RegisterBaseConversionFamily(cbCurrent,iuAmps,'I');
+
+  RegisterBaseConversionFamily(cbAngle,auRadian,'A');
+
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
   RegisterDerivedConversionFamily(cbArea,auShortSqMeters,'m^2');
   RegisterDerivedConversionFamily(cbVolume,vuShortCubicMeters,'m^3');
   RegisterDerivedConversionFamily(cbForce,fuN,'kg*m*s^-2');
   RegisterDerivedConversionFamily(cbPressure,puPa,'N/m^2');
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
-  RegisterDerivedConversionFamily(cbFrequency,fuHz,'s^-1');
+  RegisterDerivedConversionFamily(cbFrequency,fuRadPerSec,'rad*s^-1');
   RegisterDerivedConversionFamily(cbEnergy,euJ,'N*m');
   RegisterDerivedConversionFamily(cbPower,powWatt,'J/s');
   RegisterDerivedConversionFamily(cbCharge,cuC,'A*s');
@@ -1175,6 +1182,7 @@ begin
   RegisterDerivedConversionFamily(cbResistance,ruOhm,'V/A');
   RegisterDerivedConversionFamily(cbCapacitance,cuFarade,'C/V');
   RegisterDerivedConversionFamily(cbInductance,iuHenry,'V*s/A');
+  RegisterBaseConversionFamily(cbSolidAngle,sauSteradian,'rad^2');
   //напряжения и токи сюда же
 end;
 
@@ -1185,7 +1193,7 @@ resourcestring
   BoltzmanConstantDescr = 'Постоянная Больцмана (1.38e-23 Дж/К)';
   FreeSpaceDielectricConstDescr = 'Диэлектрическая постоянная (8.85e-12 Ф/м)';
   ElementaryChargeDescr = 'Элементарный электрический заряд (1.6 Кл)';
-
+  RadianDescr = 'Объявить радиан безразмерной величиной';
 
 procedure RegisterUnityConstants;
 var eps0: Real;
@@ -1193,6 +1201,7 @@ var eps0: Real;
 begin
   UnityPhysConstants:=TFundamentalPhysConstants.Create;
   with UnityPhysConstants do begin
+    Add('rad',RadianDescr,VarWithUnitCreate('1 rad'),true);
     Add('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
     Add('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
     Add('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));

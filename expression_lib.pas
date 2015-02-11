@@ -95,6 +95,7 @@ TMathFuncNode=class(TNonTerminalNode)
   private
     func: TMathFuncProc;
     function HandleFuncOfUnits(V: Variant; funcname: string): Variant;
+    function HandleTrigFunc(V: Variant): Variant;
   public
     constructor Create(afunc: string; aowner: TComponent); reintroduce; overload;
     function getValue: Real; override;
@@ -111,11 +112,6 @@ TMathFuncNode=class(TNonTerminalNode)
     function Tan(x: Variant): Variant;
     function Tg(x: Variant): Variant;
 
-    function Sind(x: Variant): Variant;
-    function Cosd(x: Variant): Variant;
-    function Tand(x: Variant): Variant;
-    function Tgd(x: Variant): Variant;
-
     function Asin(x: Variant): Variant;
     function ACos(x: Variant): Variant;
     function ATan(x: Variant): Variant;
@@ -123,14 +119,6 @@ TMathFuncNode=class(TNonTerminalNode)
     function Arccos(x: Variant): Variant;
     function Arctan(x: Variant): Variant;
     function Arctg(x: Variant): Variant;
-
-    function asind(X: Variant): Variant;
-    function acosd(X: Variant): Variant;
-    function atand(X: Variant): Variant;
-    function Arcsind(X: Variant): Variant;
-    function Arccosd(X: Variant): Variant;
-    function Arctand(x: variant): Variant;
-    function Arctgd(x: Variant): Variant;
 
     function sinh(x: Variant): Variant;
     function cosh(x: Variant): Variant;
@@ -492,6 +480,12 @@ begin
   else Result:=V;
 end;
 
+function TMathFuncNode.HandleTrigFunc(V: Variant): Variant;
+begin
+  V:=VarWithUnitConvert(V,auRadian);
+  Result:=TVariantWithUnitVarData(V).Data.instance;
+end;
+
 function TMathFuncNode.Ln(x: Variant): Variant; //натуральный
 begin
   x:=HandleFuncOfUnits(x,'ln');
@@ -532,19 +526,19 @@ end;
 
 function TMathFuncNode.Sin(x: Variant): Variant;
 begin
-  x:=HandleFuncOfUnits(x,'sin');
+  x:=HandleTrigFunc(x);
   if VarIsComplex(x) then Result:=VarComplexSin(x)
   else Result:=system.Sin(x);
 end;
 function TMathFuncNode.Cos(x: Variant): Variant;
 begin
-  x:=HandleFuncOfUnits(x,'cos');
+  x:=HandleTrigFunc(x);
   if VarIsComplex(x) then Result:=VarComplexCos(x)
   else Result:=system.Cos(x);
 end;
 function TMathFuncNode.Tan(x: Variant): Variant;
 begin
-  x:=HandleFuncOfUnits(x,'tan');
+  x:=HandleTrigFunc(x);
   if VarIsComplex(x) then Result:=VarComplexCos(x)
   else Result:=math.Tan(x);
 end;
@@ -553,48 +547,37 @@ begin
   Result:=Tan(x);
 end;
 
-function TMathFuncNode.Sind(x: Variant): Variant;
-begin
-  Result:=Sin(x*pi/180);
-end;
-function TMathFuncNode.Cosd(x: Variant): Variant;
-begin
-  Result:=Cos(x*pi/180);
-end;
-function TMathFuncNode.Tand(x: Variant): Variant;
-begin
-  Result:=Tan(x*pi/180);
-end;
-function TMathFuncNode.Tgd(x: Variant): Variant;
-begin
-  Result:=Tand(x);
-end;
-
 function TMathFuncNode.Asin(x: Variant): Variant;
+var tmp: Variant;
 begin
   x:=HandleFuncOfUnits(x,'asin');
-  if VarIsComplex(x) then Result:=VarComplexArcsin(x)
-  else Result:=math.ArcSin(x);
+  if VarIsComplex(x) then tmp:=VarComplexArcsin(x)
+  else tmp:=math.ArcSin(x);
+  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
 end;
 function TMathFuncNode.Arcsin(x: Variant): Variant;
 begin
   Result:=Asin(x);
 end;
 function TMathFuncNode.ACos(x: Variant): Variant;
+var tmp: Variant;
 begin
   x:=HandleFuncOfUnits(x,'acos');
-  if VarIsComplex(x) then Result:=VarComplexArcCos(x)
-  else Result:=math.ArcCos(x);
+  if VarIsComplex(x) then tmp:=VarComplexArcCos(x)
+  else tmp:=math.ArcCos(x);
+  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
 end;
 function TMathFuncNode.Arccos(x: Variant): Variant;
 begin
   Result:=acos(x);
 end;
 function TMathFuncNode.ATan(x: Variant): Variant;
+var tmp: Variant;
 begin
   x:=HandleFuncOfUnits(x,'atan');
-  if VarIsComplex(x) then Result:=VarComplexArcTan(x)
-  else Result:=system.ArcTan(x);
+  if VarIsComplex(x) then tmp:=VarComplexArcTan(x)
+  else tmp:=system.ArcTan(x);
+  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
 end;
 function TMathFuncNode.Arctan(x: Variant): Variant;
 begin
@@ -603,35 +586,6 @@ end;
 function TMathFuncNode.Arctg(x: Variant): Variant;
 begin
   Result:=atan(x);
-end;
-
-function TMathFuncNode.asind(X: variant): Variant;
-begin
-  Result:=Asin(X)*180/pi;
-end;
-function TMathFuncNode.arcsind(x: Variant): Variant;
-begin
-  Result:=asind(x);
-end;
-function TMathFuncNode.acosd(x: Variant): Variant;
-begin
-  Result:=Acos(x)*180/pi;
-end;
-function TMathFuncNode.Arccosd(x: Variant): Variant;
-begin
-  Result:=Acosd(x);
-end;
-function TMathFuncNode.atand(x: Variant): Variant;
-begin
-  Result:=atan(x)*180/pi;
-end;
-function TMathFuncNode.Arctand(x: Variant): Variant;
-begin
-  Result:=atand(x);
-end;
-function TMathFuncNode.Arctgd(x: Variant): Variant;
-begin
-  Result:=atand(x);
 end;
 
 function TMathFuncNode.sinh(x: Variant): Variant;
@@ -691,9 +645,6 @@ function TMathFuncNode.Arctgh(x: Variant): Variant;
 begin
   Result:=atanh(x);
 end;
-
-
-
 
 function TMathFuncNode.Sqrt(x: Variant): Variant;
 begin
