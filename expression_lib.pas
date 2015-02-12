@@ -1169,6 +1169,13 @@ begin
                   else
                     Raise ELexicalErr.Create('неизвестный оператор |');
             '=': Lexems[LIndex].LType:=ltAssign;
+            '\': begin
+              Lexems[LIndex].Ident:=p.getIdent;
+              Lexems[LIndex].LType:=ltPhysUnit;
+              if Lexems[LIndex].Ident='deg' then begin
+                DescriptionToConvType('°',Lexems[LIndex].PhysUnit);
+              end;
+              end;
             else begin
               p.PutBack;
               Lexems[LIndex].Num:=p.getVariantNum;
@@ -1467,7 +1474,9 @@ begin
   if b<e then raise ESyntaxErr.Create('2 or more lexems without operator in between');
   //остается b=e
   Case Lexems[b].LType of
-    ltNumber: treeNode:=TConstantVariantNode.Create(VarWithUnitCreateFromVariant(Lexems[b].Num,duUnity),nil);
+    ltNumber: if IsVarWithUnit(Lexems[b].Num) then
+      treeNode:=TConstantVariantNode.Create(Lexems[b].Num,nil)
+      else treeNode:=TConstantVariantNode.Create(VarWithUnitCreateFromVariant(Lexems[b].Num,duUnity),nil);
     ltIdent: begin
       s:=Lexems[b].Ident;
       if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)

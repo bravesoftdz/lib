@@ -171,7 +171,7 @@ var UnityPhysConstants: TFundamentalPhysConstants;
 
 implementation
 
-uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils;
+uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils,variants;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
@@ -284,7 +284,7 @@ begin
       Result.Assign(DerivedFamilyEntries[i].formula);
       Exit;
     end;
-  Raise EPhysUnitError.CreateFMT('Couldn''t find unit %s',[ConvTypeToDescription(ConvType)]);
+  Raise EPhysUnitError.CreateFMT('Couldn''t find unit %s among base or derived',[ConvTypeToDescription(ConvType)]);
 end;
 
 function FormulaToConvType(formula: TUnitsWithExponent): TConvType;
@@ -961,9 +961,31 @@ begin
 end;
 
 function TVariantWithUnit.AsString: string;
+var deg,min: Variant;
+    s: string;
+    d: extended;
 begin
-  Result:=instance;
-  Result:=Result+' '+ConvTypeToDescription(ConvType);
+  if ConvType=auDMS then begin
+    instance:=instance+1/7200000;
+    deg:=Floor(instance);
+    s:=deg;
+    Result:=s+'∞';
+    min:=Floor((instance-deg)*60);
+    s:=min;
+    Result:=Result+s+'''';
+    deg:=(instance-deg-min/60)*3600;
+    if VarIsNumeric(deg) then begin
+      d:=deg;
+      s:=Format('%2.2f',[d]);
+    end
+    else s:=deg;
+    Result:=Result+s+'"';
+  end
+  else begin
+    Result:=instance;
+    s:=ConvTypeToDescription(ConvType);
+    if s<>'' then Result:=Result+' '+s;
+  end;
 end;
 (*
     TVariantWithUnitType
@@ -1136,6 +1158,7 @@ begin
   RegisterBaseConversionFamily(cbCurrent,iuAmps,'I');
 
   RegisterBaseConversionFamily(cbAngle,auRadian,'A');
+  RegisterBaseConversionFamily(cbQuantity,quPcs,'qty');
 
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
   RegisterDerivedConversionFamily(cbArea,auShortSqMeters,'m^2');
@@ -1151,7 +1174,7 @@ begin
   RegisterDerivedConversionFamily(cbResistance,ruOhm,'V/A');
   RegisterDerivedConversionFamily(cbCapacitance,cuFarade,'C/V');
   RegisterDerivedConversionFamily(cbInductance,iuHenry,'V*s/A');
-  RegisterBaseConversionFamily(cbSolidAngle,sauSteradian,'rad^2');
+  RegisterDerivedConversionFamily(cbSolidAngle,sauSteradian,'rad^2');
   //напр€жени€ и токи сюда же
 end;
 
@@ -1163,7 +1186,7 @@ resourcestring
   FreeSpaceDielectricConstDescr = 'ƒиэлектрическа€ посто€нна€ (8.85e-12 ‘/м)';
   ElementaryChargeDescr = 'Ёлементарный электрический зар€д (1.6  л)';
   RadianDescr = 'ќбъ€вить радиан безразмерной величиной';
-
+  pcsDescr = 'объ€вить ''шт'' безразмерной величиной';
 procedure RegisterUnityConstants;
 var eps0: Real;
     streps0: String;
@@ -1171,6 +1194,7 @@ begin
   UnityPhysConstants:=TFundamentalPhysConstants.Create;
   with UnityPhysConstants do begin
     Add('rad',RadianDescr,VarWithUnitCreate('1 rad'),true);
+    Add('шт',pcsDescr,VarWithUnitCreate('1 pcs'),true);
     Add('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
     Add('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
     Add('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));

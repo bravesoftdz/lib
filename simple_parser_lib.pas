@@ -18,6 +18,7 @@ TSimpleParser=class
     function isFirstIdentSymbol(ch: char): boolean;
     function isIdentSymbol(ch: char): boolean;
     function isNumberSymbol(ch: char): boolean;
+    function isPhysIdentSymbol(ch: char): boolean;
   public
     spaces: string;
     delimiter: string;
@@ -33,6 +34,7 @@ TSimpleParser=class
     function getInt64: Int64;
     function getString: string;   //считать остаток строки
     function getIdent: string; //считать символы, пока они укладываютс€ в диап. A..Z, a..z, 0..9, _, ј..я, а..€
+    function getPhysUnitIdent: string;
     function getHex: Integer;
     function getBinary: LongWord;
     function getPhysUnit: TConvType;
@@ -42,7 +44,7 @@ TSimpleParser=class
 EParserError=class(Exception);
 
 implementation
-uses strUtils,Variants,VarCmplx,phys_units_lib;
+uses strUtils,Variants,VarCmplx,phys_units_lib,streamable_conv_units;
 
 constructor TSimpleParser.Create;
 begin
@@ -101,6 +103,18 @@ function TSimpleParser.isFirstIdentSymbol(ch: Char): Boolean;
 begin
   result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
     ((ch>='ј') and (ch<='я')) or ((ch>='а') and (ch<='€')) or (ch='_');
+end;
+
+function TSimpleParser.isPhysIdentSymbol(ch: Char): Boolean;
+begin
+(*
+  result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
+    ((ch>='ј') and (ch<='я')) or ((ch>='а') and (ch<='€')) or (ch='_') or
+    (ch='$') or (ch='.') or (ch='%') or (ch='''') or (ch='"');
+    *)
+//проще сказать, чего нельз€: чисел, знаков +-*/, скобок
+  result:=(ch<>'+') and (ch<>'-') and (ch<>'*') and (ch<>'/') and (ch<>'(') and
+    (ch<>')') and not isSpace(ch) and (ch<>'[') and (ch<>']');
 end;
 
 function TSimpleParser.isNumberSymbol(ch: Char): Boolean;
@@ -249,6 +263,17 @@ begin
   Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
 end;
 
+function TSimpleParser.getPhysUnitIdent: string;
+begin
+  skip_spaces;
+  fBackupPos:=_pos;
+  if (_pos<=Length(_str)) and IsPhysIdentSymbol(_str[_pos]) then begin
+    inc(_pos);
+    while (_pos<=Length(_str)) and IsPhysIdentSymbol(_str[_pos]) do inc(_pos);
+  end;
+  Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
+end;
+
 function TSimpleParser.getPhysUnit: TConvType;
 var id: string;
     InitPos,tempPos: Integer;
@@ -262,7 +287,7 @@ begin
   InitPos:=_pos;  //fBackupPos будет мен€тьс€ внутри цикла
   TempPos:=_pos;
   while not eof do begin
-    id:=GetIdent;
+    id:=GetPhysUnitIdent;
     //хот€ у нас есть безразмерна€ величина, принимать
     //пустое место за нее не имеем права!
     if (id='') or not PrefixDescrToConvType(id,CType) then begin
@@ -296,6 +321,8 @@ end;
 function TSimpleParser.getVariantNum: Variant;
 var Ch: char;
   state: Integer;
+  deg,min: Integer;
+  sec: Real;
 
   function TryExponent: Boolean;
   begin
@@ -342,6 +369,17 @@ begin
             if (ch='.') or (ch=',') then begin
               state:=2;
               _str[_pos]:=DecimalSeparator;
+            end
+            else if (ch='d') or (ch='D') or (ch='∞') then begin
+              deg:=StrToInt(MidStr(_str,fBackupPos,_pos-fBackupPos));
+              getChar;
+              min:=getInt;
+              if getChar<>'''' then Raise EParserError.Create(''' symbol (minutes) expected');
+              sec:=getFloat;
+              ch:=getChar;
+              if (ch<>'"') and (getChar<>'''') then Raise EParserError.Create('" symbol (seconds) expected');
+              Result:=VarWithUnitCreateFromVariant(deg+min/60+sec/3600,auDMS);
+              Exit;
             end
             else if not TryExponent then begin
               TryImaginary;

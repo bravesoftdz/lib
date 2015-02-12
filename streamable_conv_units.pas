@@ -24,7 +24,7 @@ end;
 
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
     cbFrequency, cbDimensionless,cbForce,cbEnergy,cbCharge,cbResistance,
-    cbCapacitance,cbInductance, cbAngle, cbSolidAngle: TConvFamily;
+    cbCapacitance,cbInductance, cbAngle, cbSolidAngle,cbQuantity: TConvFamily;
     vuVolts,iuAmps,ruOhm,cuFarade,iuHenry: TConvType;
     puBar,puPa,puMeters: TConvType;
     vcuM3PerSec: TConvType;
@@ -37,8 +37,9 @@ var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
 
     duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     auShortSqMeters,vuShortCubicMeters: TConvType;
-    auRadian: TConvType;
+    auRadian, auDeg, auDMS: TConvType;
     sauSteradian: TConvType;
+    quPcs: TConvType; //штуки
 
     PreferredUnits: TPreferredUnits;
 implementation
@@ -91,9 +92,9 @@ begin
   RegisterConversionType(cbDistance,'јнгстрем',1e-10);
   RegisterConversionType(cbDistance,'in',2.54e-2);
   RegisterConversionType(cbDistance,'mi',1609.344);
-  RegisterConversionType(cbDistance,'a_u',149598000000);
-  RegisterConversionType(cbDistance,'а_е',149598000000);
-  RegisterConversionType(cbDistance,'св_лет',9.46052840487936e15);
+  RegisterConversionType(cbDistance,'a.u.',149598000000);
+  RegisterConversionType(cbDistance,'а.е.',149598000000);
+  RegisterConversionType(cbDistance,'св.лет',9.46052840487936e15);
   RegisterConversionType(cbDistance,'пк',3.08568024849531E16);
 //площадь
   RegisterConversionType(cbArea,'ар',100);
@@ -128,6 +129,7 @@ begin
 //безразмерна€ величина
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
+  RegisterConversionType(cbDimensionless,'%',0.01);
 //сила
   cbForce:=RegisterConversionFamily('Force');
   fuN:=RegisterConversionType(cbForce,'N',1);
@@ -178,9 +180,15 @@ begin
   auRadian:=RegisterConversionType(cbAngle,'rad',1);
   RegisterConversionType(cbAngle,'turn',2*pi);
   RegisterConversionType(cbAngle,'deg',pi/180);
+  auDeg:=RegisterConversionType(cbAngle,'∞',pi/180);
+  auDMS:=RegisterConversionType(cbAngle,'dms',pi/180);
+
   RegisterConversionType(cbAngle,'рад',1);
   RegisterConversionType(cbAngle,'град',pi/180);
   RegisterConversionType(cbAngle,'об',2*pi);
+  RegisterConversionType(cbAngle,'''',pi/180/60);
+  RegisterConversionType(cbAngle,'''''',pi/180/3600);
+  RegisterConversionType(cbAngle,'"',pi/180/3600);
 //телесный угол
   cbSolidAngle:=RegisterConversionFamily('SolidAngle');
   sauSteradian:=RegisterConversionType(cbSolidAngle,'sr',1);
@@ -190,6 +198,10 @@ begin
   fuRadPerSec:=RegisterConversionType(cbFrequency,'rad/s',1);
   RegisterConversionType(cbFrequency,'Hz',2*pi);
   RegisterConversionType(cbFrequency,'√ц',2*pi);
+//штуки
+  cbQuantity:=RegisterConversionFamily('Quantity');
+  quPcs:=RegisterConversionType(cbQuantity,'pcs',1);
+  RegisterConversionType(cbQuantity,'шт',1);
 end;
 
 (*
