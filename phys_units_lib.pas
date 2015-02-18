@@ -1154,17 +1154,9 @@ end;
 procedure RegisterStandartUnits;
 begin
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
-  RegisterBaseConversionFamily(cbCurrent,iuAmps,'I');
 
-  RegisterDerivedConversionFamily(cbForce,fuN,'kg*m*s^-2');
-  RegisterDerivedConversionFamily(cbPressure,puPa,'N/m^2');
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
   RegisterDerivedConversionFamily(cbFrequency,fuRadPerSec,'rad*s^-1');
-  RegisterDerivedConversionFamily(cbEnergy,euJ,'N*m');
-  RegisterDerivedConversionFamily(cbPower,powWatt,'J/s');
-  RegisterDerivedConversionFamily(cbCharge,cuC,'A*s');
-  RegisterDerivedConversionFamily(cbVoltage,vuVolts,'J/C');
-  RegisterDerivedConversionFamily(cbResistance,ruOhm,'V/A');
   RegisterDerivedConversionFamily(cbCapacitance,cuFarade,'C/V');
   RegisterDerivedConversionFamily(cbInductance,iuHenry,'V*s/A');
   RegisterDerivedConversionFamily(cbSolidAngle,sauSteradian,'rad^2');

@@ -59,22 +59,15 @@ end;
     property formula: string write fFormula;
   end;
 
-var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
-    cbFrequency, cbForce,cbEnergy,cbCharge,cbResistance,
-    cbCapacitance,cbInductance, cbSolidAngle,cbQuantity: TConvFamily;
-    vuVolts,iuAmps,ruOhm,cuFarade,iuHenry: TConvType;
-    puBar,puPa,puMeters: TConvType;
+var cbVolumetricFlowRate,
+    cbFrequency,
+    cbCapacitance,cbInductance, cbSolidAngle: TConvFamily;
+    cuFarade,iuHenry: TConvType;
     vcuM3PerSec: TConvType;
-    powWatt: TConvType;
     fuRadPerSec: TConvType;
-
-    fuN: TConvType;
-    euJ: TConvType;
-    cuC: TConvType;
 
     muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     sauSteradian: TConvType;
-    quPcs: TConvType; //штуки
 
     PreferredUnits: TPreferredUnits;
 implementation
@@ -150,53 +143,9 @@ begin
     until FindNext(sr)<>0
   end;
 
-//напряжение
-  cbVoltage:=RegisterConversionFamily('Voltage');
-  vuVolts:=RegisterConversionType(cbVoltage,'V',1);
-  RegisterConversionType(cbVoltage,'В',1);
-//ток
-  cbCurrent:=RegisterConversionFamily('Current');
-  iuAmps:=RegisterConversionType(cbCurrent,'A',1);
-  RegisterConversionType(cbCurrent,'А',1);
-//давление
-  cbPressure:=RegisterConversionFamily('Pressure');
-  puPa:=RegisterConversionType(cbPressure,'Pa',1);
-  RegisterConversionType(cbPressure,'Па',1);
-  RegisterConversionType(cbPressure,'m_water',9806.65);
-  RegisterConversionType(cbPressure,'м_вод_ст',9806.65);
-  RegisterConversionType(cbPressure,'atm',101325);
-  RegisterConversionType(cbPressure,'атм',101325);
-  RegisterConversionType(cbPressure,'at',98066.5);
-  RegisterConversionType(cbPressure,'ат',98066.5);
-  RegisterConversionType(cbPressure,'bar',100000);
-  RegisterConversionType(cbPressure,'бар',100000);
 //объемный расход
   cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
   vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
-//мощность
-  cbPower:=RegisterConversionFamily('Power');
-  powWatt:=RegisterConversionType(cbPower,'W',1);
-  RegisterConversionType(cbPower,'Вт',1);
-//сила
-  cbForce:=RegisterConversionFamily('Force');
-  fuN:=RegisterConversionType(cbForce,'N',1);
-  RegisterConversionType(cbForce,'Н',1);
-  RegisterConversionType(cbForce,'kgf',9.80665 );
-  RegisterConversionType(cbForce,'кгс',9.80665 );
-//энергия
-  cbEnergy:=RegisterConversionFamily('Energy');
-  euJ:=RegisterConversionType(cbEnergy,'J',1);
-  RegisterConversionType(cbEnergy,'Дж',1);
-  RegisterConversionType(cbEnergy,'eV',1.602176565e-19);
-  RegisterConversionType(cbEnergy,'эВ',1.602176565e-19);
-//заряд
-  cbCharge:=RegisterConversionFamily('Charge');
-  cuC:=RegisterConversionType(cbCharge,'C',1);
-  RegisterConversionType(cbCharge,'Кл',1);
-//сопротивление
-  cbResistance:=RegisterConversionFamily('Resistance');
-  ruOhm:=RegisterConversionType(cbResistance,'Ohm',1);
-  RegisterConversionType(cbResistance,'Ом',1);
 //емкость
   cbCapacitance:=RegisterConversionFamily('Capacitance');
   cuFarade:=RegisterConversionType(cbCapacitance,'F',1);
