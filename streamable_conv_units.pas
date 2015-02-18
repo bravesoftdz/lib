@@ -7,6 +7,7 @@ uses classes,ConvUtils,streaming_class_lib;
 type
   TPreferredUnits=class(TStreamingClass)
   //содержит в себе пары (семейство;предпочитаемая величина)
+  //используется в Михалыче
   private
     fFamily: array of TConvFamily;
     fUnit: array of TConvType;
@@ -22,29 +23,70 @@ type
     function GetPreferredType(aFamily: TConvFamily): TConvType;
 end;
 
+  TAbstractSavedConvFamily=class(TStreamingClass)
+  private
+    flang: string;
+    fBaseUnit: string;  //вообще, TConvType умеет записываться символьно,
+    //однако на момент считывания BaseUnit мы еще можем не знать такого юнита
+    UnitNames: array of string;
+    Multipliers: array of Real;
+    offsets: array of Real;
+    procedure ReadUnits(Reader: TReader);
+  protected
+    procedure DefineProperties(Filer: TFiler); override;
+  published
+    property Lang: string write flang;
+    property BaseUnit: string write fBaseUnit;
+  end;
+
+  TBaseConvFamily=class(TAbstractSavedConvFamily)
+  private
+    fLetter: string;
+    fAffine: boolean;
+  public
+    procedure Loaded; override;
+  published
+    property letter: string write fLetter;
+    property IsAffine: Boolean write fAffine;
+  end;
+
+  TDerivedConvFamily=class(TAbstractSavedConvFamily)
+  private
+    fFormula: string;
+  public
+    procedure Loaded; override;
+  published
+    property formula: string write fFormula;
+  end;
+
 var cbVoltage, cbCurrent, cbPressure, cbVolumetricFlowRate, cbPower,
-    cbFrequency, cbDimensionless,cbForce,cbEnergy,cbCharge,cbResistance,
-    cbCapacitance,cbInductance, cbAngle, cbSolidAngle,cbQuantity: TConvFamily;
+    cbFrequency, cbForce,cbEnergy,cbCharge,cbResistance,
+    cbCapacitance,cbInductance, cbSolidAngle,cbQuantity: TConvFamily;
     vuVolts,iuAmps,ruOhm,cuFarade,iuHenry: TConvType;
     puBar,puPa,puMeters: TConvType;
     vcuM3PerSec: TConvType;
     powWatt: TConvType;
     fuRadPerSec: TConvType;
-    duUnity: TConvType;
+
     fuN: TConvType;
     euJ: TConvType;
     cuC: TConvType;
 
-    duShortMeters, muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
-    auShortSqMeters,vuShortCubicMeters: TConvType;
-    auRadian, auDeg, auDMS: TConvType;
+    muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
     sauSteradian: TConvType;
     quPcs: TConvType; //штуки
 
     PreferredUnits: TPreferredUnits;
 implementation
 
-uses SysUtils,stdConvs,variants,VarCmplx;
+uses SysUtils,stdConvs,variants,VarCmplx,simple_parser_lib,
+  set_english_locale_if_not_sure, phys_units_lib;
+
+var default_dir: string;
+
+(*
+    General procedures
+                          *)
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 var id: string;
@@ -85,20 +127,29 @@ begin
 end;
 
 procedure NewConvFamilies;
+var comp: TComponent;
+//  strStream: TStringStream;
+  fileStream: TFileStream;
+  BinStream: TMemoryStream;
+  sr: TSearchRec;
 begin
-//длина
-  duShortMeters:=RegisterConversionType(cbDistance,'m',1);
-  RegisterConversionType(cbDistance,'м',1);
-  RegisterConversionType(cbDistance,'Ангстрем',1e-10);
-  RegisterConversionType(cbDistance,'in',2.54e-2);
-  RegisterConversionType(cbDistance,'mi',1609.344);
-  RegisterConversionType(cbDistance,'a.u.',149598000000);
-  RegisterConversionType(cbDistance,'а.е.',149598000000);
-  RegisterConversionType(cbDistance,'св.лет',9.46052840487936e15);
-  RegisterConversionType(cbDistance,'пк',3.08568024849531E16);
-//площадь
-  RegisterConversionType(cbArea,'ар',100);
-  RegisterConversionType(cbArea,'гектар',1e4);
+  if FindFirst(Default_Dir+'*.txt',0,sr)=0 then begin
+    repeat
+      fileStream:=TFileStream.Create(Default_dir+sr.Name,fmOpenRead);
+      fileStream.Seek(0, soFromBeginning);
+      binStream:=TMemoryStream.Create;
+      while FileStream.Position<FileStream.Size do
+        ObjectTextToBinary(FileStream,BinStream);
+      BinStream.Seek(0, soFromBeginning);
+      while BinStream.Position<BinStream.Size do begin
+        comp:=BinStream.ReadComponent(nil);
+        comp.Free;
+      end;
+      BinStream.Free;
+      FileStream.Free;
+    until FindNext(sr)<>0
+  end;
+
 //напряжение
   cbVoltage:=RegisterConversionFamily('Voltage');
   vuVolts:=RegisterConversionType(cbVoltage,'V',1);
@@ -126,10 +177,6 @@ begin
   cbPower:=RegisterConversionFamily('Power');
   powWatt:=RegisterConversionType(cbPower,'W',1);
   RegisterConversionType(cbPower,'Вт',1);
-//безразмерная величина
-  cbDimensionless:=RegisterConversionFamily('Dimensionless');
-  duUnity:=RegisterConversionType(cbDimensionless,'',1);
-  RegisterConversionType(cbDimensionless,'%',0.01);
 //сила
   cbForce:=RegisterConversionFamily('Force');
   fuN:=RegisterConversionType(cbForce,'N',1);
@@ -158,37 +205,10 @@ begin
   cbInductance:=RegisterConversionFamily('Inductance');
   iuHenry:=RegisterConversionType(cbInductance,'H',1);
   RegisterConversionType(cbInductance,'Гн',1);
-//время
-  RegisterConversionType(cbTime,'с',1 / SecsPerDay);
-  tuShortSeconds:=RegisterConversionType(cbTime,'s',1 / SecsPerDay);
-  RegisterConversionType(cbTime,'hr',3600 / SecsPerDay);
-  RegisterConversionType(cbTime,'ч',3600 / SecsPerDay);
-  RegisterConversionType(cbTime,'min',60 / SecsPerDay);
-  RegisterConversionType(cbTime,'мин',60 / SecsPerDay);
-//масса
-  RegisterConversionType(cbMass,'g',1);
-  muShortKilograms:=RegisterConversionType(cbMass,'kg',1000);
-  RegisterConversionType(cbMass,'г',1);
-  auShortSqMeters:=RegisterConversionType(cbArea,'m^2',1);
-  vuShortCubicMeters:=RegisterConversionType(cbVolume,'m^3',1);
-  RegisterConversionType(cbVolume,'L',0.001);
+
 //температура
   tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
   RegisterConversionType(cbTemperature,'gradC',1);
-//углы
-  cbAngle:=RegisterConversionFamily('Angle');
-  auRadian:=RegisterConversionType(cbAngle,'rad',1);
-  RegisterConversionType(cbAngle,'turn',2*pi);
-  RegisterConversionType(cbAngle,'deg',pi/180);
-  auDeg:=RegisterConversionType(cbAngle,'°',pi/180);
-  auDMS:=RegisterConversionType(cbAngle,'dms',pi/180);
-
-  RegisterConversionType(cbAngle,'рад',1);
-  RegisterConversionType(cbAngle,'град',pi/180);
-  RegisterConversionType(cbAngle,'об',2*pi);
-  RegisterConversionType(cbAngle,'''',pi/180/60);
-  RegisterConversionType(cbAngle,'''''',pi/180/3600);
-  RegisterConversionType(cbAngle,'"',pi/180/3600);
 //телесный угол
   cbSolidAngle:=RegisterConversionFamily('SolidAngle');
   sauSteradian:=RegisterConversionType(cbSolidAngle,'sr',1);
@@ -198,10 +218,6 @@ begin
   fuRadPerSec:=RegisterConversionType(cbFrequency,'rad/s',1);
   RegisterConversionType(cbFrequency,'Hz',2*pi);
   RegisterConversionType(cbFrequency,'Гц',2*pi);
-//штуки
-  cbQuantity:=RegisterConversionFamily('Quantity');
-  quPcs:=RegisterConversionType(cbQuantity,'pcs',1);
-  RegisterConversionType(cbQuantity,'шт',1);
 end;
 
 (*
@@ -236,9 +252,6 @@ end;
 procedure TPreferredUnits.ReadData(Reader: TReader);
 var sFamily,sUnit: string;
     aFamily: TConvFamily;
-//    aFamInt: Integer absolute aFamily;
-//странно, чем ему эта строка не понравилась?
-//длина разная, вот чем.
     aFamInt: Integer;
     aUnit: TConvType;
 begin
@@ -318,8 +331,79 @@ begin
   Result:=CIllegalConvType;
 end;
 
+(*
+      TBaseConvFamily
+                          *)
+procedure TAbstractSavedConvFamily.DefineProperties(Filer: TFiler);
+begin
+  Filer.DefineProperty('Units',ReadUnits,nil,true);
+end;
+
+procedure TAbstractSavedConvFamily.ReadUnits(Reader: TReader);
+var i,L: Integer;
+    s: string;
+    p: TSimpleParser;
+begin
+  Reader.ReadListBegin;
+  i:=0;
+  p:=TSimpleParser.Create;
+  while not Reader.EndOfList do begin
+    inc(i);
+    if Length(UnitNames)<i then begin
+      L:=i*2;
+      SetLength(UnitNames,L);
+      SetLength(Multipliers,L);
+      SetLength(offsets,L);
+    end;
+    s:=Reader.ReadString;
+    p.AssignString(s);
+    UnitNames[i-1]:=p.getString;
+    Multipliers[i-1]:=p.getFloat;
+    if not p.eof then offsets[i-1]:=p.getFloat;
+  end;
+  SetLength(UnitNames,i);
+  SetLength(Multipliers,i);
+  SetLength(offsets,i);
+  p.Free;
+  Reader.ReadListEnd;
+end;
+
+procedure TBaseConvFamily.Loaded;
+var family: TConvFamily;
+    baseType: TConvType;
+    i: Integer;
+begin
+  if not DescriptionToConvFamily(name,family) then
+    family:=RegisterConversionFamily(name);
+  for i:=0 to Length(UnitNames)-1 do
+    RegisterConversionType(family,UnitNames[i],multipliers[i]);
+
+  if Uppercase(GetDefaultLanguageInEnglish)=Uppercase(flang) then
+    if DescriptionToConvType(fbaseUnit,baseType) then
+      RegisterBaseConversionFamily(family,baseType,fletter,fAffine)
+    else Raise Exception.CreateFmt('Couldn''t find BaseConvFamily''s baseType %s',[fBaseUnit]);
+end;
+
+procedure TDerivedConvFamily.Loaded;
+var family: TConvFamily;
+    baseType: TConvType;
+    i: Integer;
+begin
+  if not DescriptionToConvFamily(name,family) then
+    family:=RegisterConversionFamily(name);
+  for i:=0 to Length(UnitNames)-1 do
+    RegisterConversionType(family,UnitNames[i],multipliers[i]);
+
+  if (Uppercase(GetDefaultLanguageInEnglish)=Uppercase(flang)) or (UpperCase(flang)='ANY') then
+    if DescriptionToConvType(fbaseUnit,baseType) then
+      RegisterDerivedConversionFamily(family,baseType,fformula)
+    else Raise Exception.CreateFmt('Couldn''t find DerivedConvFamily''s baseType %s',[fBaseUnit]);
+end;
+
 
 initialization
+  RegisterClasses([TBaseConvFamily,TDerivedConvFamily]);
+  default_dir:=GetCurrentDir+'\data\PhysUnits\';
   NewConvFamilies;
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);

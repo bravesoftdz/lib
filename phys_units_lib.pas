@@ -168,7 +168,8 @@ function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
 var UnityPhysConstants: TFundamentalPhysConstants;
     LogConversionDetailsProc: TLogConversionDetailsProc;
-
+    cbDimensionless,cbAngle: TConvFamily;
+    duUnity,auDMS,auRadian: TConvType;
 implementation
 
 uses StdConvs,streamable_conv_units,math,simple_parser_lib,VarCmplx,strUtils,variants;
@@ -259,11 +260,11 @@ end;
 
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 begin
-  Result:=DescriptionToConvType(str,CType);
+  Result:=(LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
   if not Result then
     Result:=(UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
     if not Result then
-      Result:=(LeftStr(str,2)='??') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
+      Result:=DescriptionToConvType(str,CType);
 end;
 
 function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
@@ -428,14 +429,15 @@ begin
       term:=p.getIdent;
       mul:=1;
       if not DescriptionToConvType(term,convType) then
-        if DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) then begin
-          Mul:=UnitMultiplier[Integer(term[1])];
-          if Mul=0 then Raise EPhysUnitError.CreateFmt('%s is not correct multiplier',[term[1]])
-        end
+        if DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
+          Mul:=1e-6
         else
-          if DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
-            Mul:=1e-6
-          else Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
+          if DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) then begin
+            Mul:=UnitMultiplier[Integer(term[1])];
+            if Mul=0 then Raise EPhysUnitError.CreateFmt('%s is not correct multiplier',[term[1]])
+          end
+          else
+            Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
@@ -1151,18 +1153,9 @@ end;
 
 procedure RegisterStandartUnits;
 begin
-  RegisterBaseConversionFamily(cbMass,muShortKilograms,'M');
-  RegisterBaseConversionFamily(cbDistance,duShortMeters,'L');
-  RegisterBaseConversionFamily(cbTime,tuShortSeconds,'T');
   RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
   RegisterBaseConversionFamily(cbCurrent,iuAmps,'I');
 
-  RegisterBaseConversionFamily(cbAngle,auRadian,'A');
-  RegisterBaseConversionFamily(cbQuantity,quPcs,'qty');
-
-  RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
-  RegisterDerivedConversionFamily(cbArea,auShortSqMeters,'m^2');
-  RegisterDerivedConversionFamily(cbVolume,vuShortCubicMeters,'m^3');
   RegisterDerivedConversionFamily(cbForce,fuN,'kg*m*s^-2');
   RegisterDerivedConversionFamily(cbPressure,puPa,'N/m^2');
   RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
@@ -1299,7 +1292,7 @@ end;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
-  TVariantWithUnitVarData(Result).Data.DoPower(pow);  
+  TVariantWithUnitVarData(Result).Data.DoPower(pow);
 end;
 
 
@@ -1307,9 +1300,18 @@ end;
 
 initialization
   PopulateUnitMultiplier;
-  RegisterStandartUnits;
+//безразмерная величина - засуну пока сюда
+  cbDimensionless:=RegisterConversionFamily('Dimensionless');
+  duUnity:=RegisterConversionType(cbDimensionless,'',1);
+  cbAngle:=RegisterConversionFamily('Angle');
+  auDMS:=RegisterConversionType(cbAngle,'dms',pi/180);
+  auRadian:=RegisterConversionType(cbAngle,'rad',1);
+
+  RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
+
+//  RegisterStandartUnits;
   VarWithUnitType:=TVariantWithUnitType.Create;
-  RegisterUnityConstants;
+//  RegisterUnityConstants;
 
 
 finalization

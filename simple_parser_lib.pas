@@ -114,7 +114,7 @@ begin
     *)
 //проще сказать, чего нельзя: чисел, знаков +-*/, скобок
   result:=(ch<>'+') and (ch<>'-') and (ch<>'*') and (ch<>'/') and (ch<>'(') and
-    (ch<>')') and not isSpace(ch) and (ch<>'[') and (ch<>']');
+    (ch<>')') and not isSpace(ch) and (ch<>'[') and (ch<>']') and (ch<>'^');
 end;
 
 function TSimpleParser.isNumberSymbol(ch: Char): Boolean;
