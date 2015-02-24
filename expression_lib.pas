@@ -231,8 +231,7 @@ end;
 
 implementation
 
-uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,
-  streamable_conv_units,VarCmplx;
+uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,VarCmplx;
 
 (*
     TEvaluationTreeNode
@@ -1169,6 +1168,7 @@ begin
                   else
                     Raise ELexicalErr.Create('неизвестный оператор |');
             '=': Lexems[LIndex].LType:=ltAssign;
+            
             '\': begin
               Lexems[LIndex].Ident:=p.getIdent;
               Lexems[LIndex].LType:=ltPhysUnit;

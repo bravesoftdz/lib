@@ -294,7 +294,8 @@ var k: Integer;
 r: Real;
 begin
   k:=FindInterval(xi);
-  if k=-2 then Result:=NAN
+  if k=-2 then
+    if _oub then Result:=0 else Result:=NAN
   else if (k=-1) then
     if _oub then Result:=0 else Result:=Y[0]
     else if k>=count then

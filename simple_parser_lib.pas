@@ -44,7 +44,7 @@ TSimpleParser=class
 EParserError=class(Exception);
 
 implementation
-uses strUtils,Variants,VarCmplx,phys_units_lib,streamable_conv_units;
+uses strUtils,Variants,VarCmplx,phys_units_lib;
 
 constructor TSimpleParser.Create;
 begin
