@@ -76,6 +76,7 @@ TPowNode=class(TNonTerminalNode)  //возведение в степень
     function getVariantValue: Variant; override;
   end;
 
+
 TUnitConversionNode=class(TNonTerminalnode) //приведение к другой единице
   private
     fUnitType: TConvType;
@@ -85,6 +86,11 @@ TUnitConversionNode=class(TNonTerminalnode) //приведение к другой единице
   end;
 
 TUnitAssignmentNode=class(TUnitConversionNode)
+  public
+    function getVariantValue: Variant; override;
+  end;
+
+TAssignNode=class(TNonTerminalNode)
   public
     function getVariantValue: Variant; override;
   end;
@@ -143,6 +149,14 @@ TMathFuncNode=class(TNonTerminalNode)
     function Im(x: Variant): Variant;
   end;
 
+IVariantProperties=Interface
+['{99CB6FA7-1795-4C73-A4B7-E2854435DAFA}']
+  procedure SetProperty(name: string; value: Variant);
+  function GetProperty(name: string): Variant; //идем напролом,
+  //если нет св-ва или read-only, выкидываем exception
+  //позже можно сделать еще TrySet и TryGet
+end;
+
 TVariableNode=class(TEvaluationTreeNode)
   private
     fComponent: TPersistent;
@@ -151,6 +165,7 @@ TVariableNode=class(TEvaluationTreeNode)
     constructor Create(aComponent: TComponent;aPropName: string; aOwner: TComponent); reintroduce; overload;
     function getValue: Real; override;
     function getVariantValue: Variant; override;
+    procedure Assign(value: Variant); reintroduce; overload;
     function isIndependent: Boolean; override;
   end;
 
@@ -207,6 +222,7 @@ TVariantExpression=class(TFloatExpression)  //
     Lexems: array of TLexem;
     procedure EnsureLexemsLen(i: Integer);
   protected
+    function AddBracketsForAssign(text: string): string;
     procedure LexicalAnalysis;
     procedure MakeEvaluationTree; override;
     procedure AssignOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
@@ -231,7 +247,7 @@ end;
 
 implementation
 
-uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,VarCmplx;
+uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,VarCmplx,specchars;
 
 (*
     TEvaluationTreeNode
@@ -711,7 +727,7 @@ begin
   inherited Create(aOwner);
   fComponent:=aComponent;
   fPropName:=aPropName;
-  getVariantValue;
+//  getVariantValue;
 end;
 
 function TVariableNode.isIndependent: boolean;
@@ -725,12 +741,19 @@ resourcestring
 
 function TVariableNode.getValue: Real;
 var propInfo: PPropInfo;
+    intf: IVariantProperties;
 begin
   if fComponent is TFloatExpression then
     Result:=TFloatExpression(fComponent).getValue
   else begin
     propInfo:=GetPropInfo(fComponent,fPropName);
-    if propInfo=nil then raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
+    if propInfo=nil then
+      if fcomponent.GetInterface(IVariantProperties,intf) then begin
+        Result:=intf.GetProperty(fPropName);
+        Exit;
+      end
+      else
+        raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
     if PropInfo.PropType^.Kind=tkFloat then
       Result:=GetFloatProp(fComponent,fPropName)
     else if PropInfo.PropType^.Kind=tkInteger then
@@ -746,12 +769,19 @@ end;
 
 function TVariableNode.getVariantValue: Variant;
 var propInfo: PPropInfo;
+    intf: IVariantProperties;
 begin
   if fComponent is TFloatExpression then
     Result:=TFloatExpression(fComponent).getValue
   else begin
     propInfo:=GetPropInfo(fComponent,fPropName);
-    if propInfo=nil then raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
+    if propInfo=nil then
+      if fComponent.GetInterface(IVariantProperties,intf) then begin
+        Result:=intf.GetProperty(fPropName);
+        Exit;
+      end
+      else
+        raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
     if PropInfo.PropType^.Kind=tkFloat then
       Result:=GetFloatProp(fComponent,fPropName)
     else if PropInfo.PropType^.Kind=tkInteger then
@@ -763,6 +793,45 @@ begin
     else
       Raise ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
   end;
+end;
+
+procedure TVariableNode.Assign(value: Variant);
+var propInfo: PPropInfo;
+    intf: IVariantProperties;
+begin
+  if fcomponent is TFloatExpression then
+    TFloatExpression(fComponent).SetString(value)
+  else begin
+    propInfo:=GetPropInfo(fComponent,fPropName);
+    if propInfo=nil then
+      if fComponent.GetInterface(IVariantProperties,intf) then begin
+        intf.SetProperty(fPropName,value);
+        Exit;
+      end
+      else
+        raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
+    if propInfo.SetProc=nil then
+      Raise ESyntaxErr.CreateFmt('Переменной %s нельзя присвоить значение',[fPropName]);
+    case propInfo.PropType^.Kind of
+      tkFloat: SetFloatProp(fComponent,fPropName,value);
+      tkInteger: SetOrdProp(fComponent,fPropName,value);
+      tkVariant: SetVariantProp(fComponent,fPropName,value);
+      tkClass: TFloatExpression(GetObjectProp(fComponent,fPropName,TFloatExpression)).SetString(value);
+      else ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
+    end;
+  end;
+end;
+
+(*
+    TAssignNode
+                    *)
+function TAssignNode.getVariantValue: Variant;
+begin
+  Result:=(Components[1] as TEvaluationTreeNode).getVariantValue;
+  if Components[0] is TVariableNode then
+    TVariableNode(Components[0]).Assign(Result)
+  else
+    Raise ESyntaxErr.Create('выражение слева от "=" является константой');
 end;
 
 (*
@@ -1103,13 +1172,61 @@ begin
   if Length(Lexems)<i then
     SetLength(Lexems,Length(Lexems)+i);
 end;
+
+function TVariantExpression.AddBracketsForAssign(text: string): string;
+var i,j,k,curbr: Integer;
+begin
+  Result:='';
+  j:=1;
+//  brCount:=0;
+  i:=1;
+  while i<=Length(text)-1 do begin
+    case text[i] of
+//      '(': inc(brCount);
+//      ')': dec(brCount);
+      '=': begin
+        result:=result+MidStr(text,j,i-j+1);  //вставляем все до знака равенства и его тоже
+        //открывающую скобку перед переменной поставим на стадии лексического анализа
+//        inc(brCount);
+        k:=i;
+        curbr:=0;
+        while (k<Length(text)) and (curbr>=0) do begin
+          inc(k);
+          text[k-1]:=text[k];
+          case text[k] of
+            '(': inc(curbr);
+            ')': dec(curbr);
+          end;
+        end;
+        text[k]:=')';
+        j:=i;
+//        dec(i);
+
+      end;
+
+
+    end;
+    inc(i);
+
+  end;
+  result:=result+RightStr(text,Length(text)-j+1);
+end;
+
 procedure TVariantExpression.LexicalAnalysis;
 var p: TSimpleParser;
     LIndex,i,brLevel: Integer;
     ch: char;
+    str,str1: string;
 begin
   LIndex:=-1;
-  p:=TSimpleParser.Create(fstring);
+  //первый проход - замена \deg на ° и добавление скобок для знака равенства
+  //и вообще проверка на кол-во скобок, иначе сообщ. об ошибке невыразительное
+  str:=ConvertSpecChars(fstring);
+
+  str1:=AddBracketsForAssign(str);
+
+
+  p:=TSimpleParser.Create(str1);
   p.delimiter:=' '#9;
   try
     while not p.eof do begin
@@ -1167,8 +1284,14 @@ begin
                     Lexems[LIndex].LType:=ltPar
                   else
                     Raise ELexicalErr.Create('неизвестный оператор |');
-            '=': Lexems[LIndex].LType:=ltAssign;
-            
+            '=':  if LIndex=0 then Raise ELexicalErr.Create('отсутствует переменная перед знаком =')
+                  else begin
+                    Lexems[LIndex]:=Lexems[LIndex-1];
+                    Lexems[LIndex-1].LType:=ltLeftBracket;
+                    inc(LIndex);
+                    EnsureLexemsLen(LIndex+1);
+                    Lexems[LIndex].LType:=ltAssign;
+                  end;
             '\': begin
               Lexems[LIndex].Ident:=p.getIdent;
               Lexems[LIndex].LType:=ltPhysUnit;
@@ -1213,24 +1336,19 @@ begin
 end;
 
 procedure TVariantExpression.AssignOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
-var i,brCount: Integer;
+var tmp: TEvaluationTreeNode;
 begin
-  brCount:=0;
-(*
-  for i:=b to e do begin
-    Case Lexems[i].LType of
-      ltLeftBracket: inc(brCount);
-      ltRightBracket: dec(brCount);
-      ltAssign: if brCount=0 then begin
-        if (i=b) or (Lexems[i-1].LType<>ltIdent) then
-          Raise ESyntaxErr.Create('Слева от = должна быть переменная');
-
-
-      end;
-    end;
-  end;
-  *)
-  UnitConversionOperators(b,e,TreeNode);
+  if (b+1<e) and (Lexems[b+1].LType=ltAssign) then begin
+    if (Lexems[b].LType<>ltIdent) then
+      Raise ESyntaxErr.Create('Слева от = должна быть переменная');
+    TreeNode:=TAssignNode.Create(nil);
+    ConstsAndVars(b,b,tmp);
+    TreeNode.InsertComponent(tmp);  //переменную вставили
+    AssignOperators(b+2,e,tmp);
+    TreeNode.InsertComponent(tmp);
+  end
+  else
+    UnitConversionOperators(b,e,TreeNode);
 end;
 
 procedure TVariantExpression.UnitConversionOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
@@ -1434,7 +1552,11 @@ begin
       TreeNode:=TUnitAssignmentNode.Create(Lexems[e].PhysUnit,nil);
       TreeNode.InsertComponent(term);
     end
-    else Raise ESyntaxErr.CreateFmt('no expression to assign unit %s',[ConvTypeToDescription(Lexems[e].PhysUnit)])
+    else begin
+      Lexems[e].Ident:=ConvTypeToDescription(Lexems[e].PhysUnit);
+      Lexems[e].LType:=ltIdent;
+      BracketsAndFuncs(b,e,TreeNode);
+    end
   else
     BracketsAndFuncs(b,e,TreeNode);
 end;
@@ -1445,11 +1567,11 @@ begin
   if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
   if Lexems[e].LType=ltRightBracket then begin
     if Lexems[b].LType=ltLeftBracket then
-      UnitConversionOperators(b+1,e-1,treeNode)
+      AssignOperators(b+1,e-1,treeNode)
     else if (Lexems[b+1].LType=ltLeftBracket) and (Lexems[b].LType=ltIdent) then begin
       temp:=nil;
       try
-        UnitConversionOperators(b+2,e-1,temp);
+        AssignOperators(b+2,e-1,temp);
         treeNode:=TMathFuncNode.Create(Lexems[b].Ident,nil);
         treeNode.InsertComponent(temp);
         temp:=nil;

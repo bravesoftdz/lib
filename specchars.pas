@@ -17,10 +17,10 @@ implementation
 uses classes,strUtils,simple_parser_lib;
 
 var idents: TStrings;
+    maxidentlen: Integer;
 
 function ConvertSpecChars(text: string): string;
-var i,j,k: Integer;
-    p: TSimpleParser;
+var i,j,z,k: Integer;
     id: string;
 begin
   result:='';
@@ -28,18 +28,23 @@ begin
   for i:=1 to Length(text) do begin
     if text[i]='\' then begin
       result:=result+MidStr(text,j,i-j);
-      p:=TSimpleParser.Create(RightStr(text,Length(text)-i));
-      id:=p.getIdent;
-      k:=idents.IndexOf(id);
+      z:=1;
+      id:='';
+      k:=-1;
+      while (k=-1) and (z<=maxidentlen) and (i+z <= Length(text)) do begin
+        id:=id+text[i+z];
+        k:=idents.IndexOf(id);
+        inc(z);
+      end;
       if k=-1 then
         j:=i
       else begin
         result:=result+wchobj(idents.Objects[k]).ch;
-        j:=i+Length(id);
+        j:=i+Length(id)+1;
       end;
     end;
   end;
-  result:=result+RightStr(text,Length(text)-j);
+  result:=result+RightStr(text,Length(text)-j+1);
 end;
 
 constructor wchobj.Create(ach: widechar);
@@ -57,9 +62,9 @@ begin
   idents:=TStringList.Create;
 //  idents.AddObject('deg',wchobj.Create('°'));
   idents.AddObject('deg',wchobj.Create($00b0));
-  idents.AddObject('alpha',wchobj.Create($03b1));
+//  idents.AddObject('alpha',wchobj.Create($03b1));
 
-
+  maxidentlen:=3;
 end;
 
 procedure FreeIdents;

@@ -187,6 +187,15 @@ end;  //неужели больше ничего не нужно?
       property ActuallyUsedCount: Integer read fActuallyUsedCount;
   end;
 
+  TConvTypeAffine = class(TConvTypeInfo)
+  private
+    fOffset,fFactor: Real;
+  public
+    constructor Create(const AConvFamily: TConvFamily; const ADescription: string; offset,factor: Real); //reintroduce;
+    function ToCommon(const AValue: Double): Double; override;
+    function FromCommon(const AValue: Double): Double; override;
+  end;
+
   EPhysUnitError = class (Exception);
 
 
@@ -225,18 +234,6 @@ var UnityPhysConstants: TFundamentalPhysConstants;
     cbDimensionless,cbAngle: TConvFamily;
     duUnity,auDMS,auRadian: TConvType;
     PreferredUnits: TPreferredUnits;
-
-    //временные, скоро удалим
-    cbVolumetricFlowRate,
-    cbFrequency,
-    cbCapacitance,cbInductance, cbSolidAngle: TConvFamily;
-    cuFarade,iuHenry: TConvType;
-    vcuM3PerSec: TConvType;
-    fuRadPerSec: TConvType;
-
-    muShortKilograms, tuShortSeconds,tuShortKelvin: TConvType;
-    sauSteradian: TConvType;
-
 implementation
 
 uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,set_english_locale_if_not_sure;
@@ -1218,18 +1215,6 @@ begin
   u[Integer('Т')]:=1e12;
 end;
 
-procedure RegisterStandartUnits;
-begin
-  RegisterBaseConversionFamily(cbTemperature,tuShortKelvin,'Temp',true);
-
-  RegisterDerivedConversionFamily(cbVolumetricFlowRate,vcuM3PerSec,'m^3*s^-1');
-  RegisterDerivedConversionFamily(cbFrequency,fuRadPerSec,'rad*s^-1');
-  RegisterDerivedConversionFamily(cbCapacitance,cuFarade,'C/V');
-  RegisterDerivedConversionFamily(cbInductance,iuHenry,'V*s/A');
-  RegisterDerivedConversionFamily(cbSolidAngle,sauSteradian,'rad^2');
-  //напряжения и токи сюда же
-end;
-
 resourcestring
   LightSpeedDescr = 'Скорость света в вакууме (3e8 м/с)';
   PlanckDescr = 'Постоянная Планка (перечеркнутая, 1.054e-34 эрг*с)';
@@ -1388,16 +1373,6 @@ begin
   Result:=true;
 end;
 
-function KelvinToCelsius(const AValue: Double): Double;
-begin
-  Result := AValue - 273.15;
-end;
-
-function CelsiusToKelvin(const AValue: Double): Double;
-begin
-  Result := AValue + 273.15;
-end;
-
 procedure NewConvFamilies;
 var comp: TComponent;
 //  strStream: TStringStream;
@@ -1421,31 +1396,6 @@ begin
       FileStream.Free;
     until FindNext(sr)<>0
   end;
-
-//объемный расход
-  cbVolumetricFlowRate:=RegisterConversionFamily('VolumetricFlowRate');
-  vcuM3PerSec:=RegisterConversionType(cbVolumetricFlowRate,'m3/sec',1);
-//емкость
-  cbCapacitance:=RegisterConversionFamily('Capacitance');
-  cuFarade:=RegisterConversionType(cbCapacitance,'F',1);
-  RegisterConversionType(cbCapacitance,'Ф',1);
-//индуктивность
-  cbInductance:=RegisterConversionFamily('Inductance');
-  iuHenry:=RegisterConversionType(cbInductance,'H',1);
-  RegisterConversionType(cbInductance,'Гн',1);
-
-//температура
-  tuShortKelvin:=RegisterConversionType(cbTemperature,'K',KelvinToCelsius, CelsiusToKelvin);
-  RegisterConversionType(cbTemperature,'gradC',1);
-//телесный угол
-  cbSolidAngle:=RegisterConversionFamily('SolidAngle');
-  sauSteradian:=RegisterConversionType(cbSolidAngle,'sr',1);
-  RegisterConversionType(cbSolidAngle,'ср',1);
-//частота
-  cbFrequency:=RegisterConversionFamily('Frequency');
-  fuRadPerSec:=RegisterConversionType(cbFrequency,'rad/s',1);
-  RegisterConversionType(cbFrequency,'Hz',2*pi);
-  RegisterConversionType(cbFrequency,'Гц',2*pi);
 end;
 
 (*
@@ -1597,14 +1547,17 @@ begin
 end;
 
 procedure TBaseConvFamily.Loaded;
-var family: TConvFamily;
-    baseType: TConvType;
+var baseType: TConvType;
+    family: TConvFamily;
     i: Integer;
 begin
   if not DescriptionToConvFamily(name,family) then
     family:=RegisterConversionFamily(name);
   for i:=0 to Length(UnitNames)-1 do
-    RegisterConversionType(family,UnitNames[i],multipliers[i]);
+    if fAffine then
+      RegisterConversionType(TconvTypeAffine.Create(family,UnitNames[i],offsets[i],multipliers[i]),baseType)
+    else
+      RegisterConversionType(family,UnitNames[i],multipliers[i]);
 
   if Uppercase(GetDefaultLanguageInEnglish)=Uppercase(flang) then
     if DescriptionToConvType(fbaseUnit,baseType) then
@@ -1629,14 +1582,29 @@ begin
 end;
 
 
+(*
+      TConvTypeAffine
+                          *)
+constructor TConvTypeAffine.Create(const AConvFamily: TConvFamily; const ADescription: string; offset,factor: Real);
+begin
+  inherited Create(AConvFamily,ADescription);
+  foffset:=offset;
+  ffactor:=factor;
+end;
 
+function TConvTypeAffine.ToCommon(const AValue: Double): Double;
+begin
+  Result:=foffset+AValue*ffactor;
+end;
 
-
+function TConvTypeAffine.FromCommon(const AValue: Double): Double;
+begin
+  Result:=(AValue-foffset)/ffactor;
+end;
 
 initialization
   //милли, микро, кило и пр.
   PopulateUnitMultiplier;
-//  RegisterStandartUnits;
   //новый тип Variant'а
   VarWithUnitType:=TVariantWithUnitType.Create;
 
@@ -1652,6 +1620,7 @@ initialization
   RegisterClasses([TBaseConvFamily,TDerivedConvFamily]);
   default_dir:=GetCurrentDir+'\data\PhysUnits\';
   NewConvFamilies;
+
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
   RegisterClass(TPreferredUnits);
