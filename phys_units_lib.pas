@@ -101,7 +101,7 @@ end;  //неужели больше ничего не нужно?
       procedure Clear;
       procedure Assign(source: TPersistent); override;
 
-      function TakeFromString(formula: string): Real;
+      function TakeFromString(formula: string; out modifier: string): Real;
       procedure DoPower(Exponent: Real);
       function SameFamily(value: TUnitsWithExponent): Boolean;
       procedure Multiply(value: TUnitsWithExponent);
@@ -236,7 +236,8 @@ var UnityPhysConstants: TFundamentalPhysConstants;
     PreferredUnits: TPreferredUnits;
 implementation
 
-uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,set_english_locale_if_not_sure;
+uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
+  set_english_locale_if_not_sure,expression_lib;
 
 var BaseFamilyEntries: array of TBaseFamilyEntry;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
@@ -290,11 +291,13 @@ end;
 
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string);
 var L: Integer;
+    modifier: string;
 begin
   L:=Length(DerivedFamilyEntries);
   SetLength(DerivedFamilyEntries,L+1);
   DerivedFamilyEntries[L]:=TDerivedFamilyEntry.Create;
-  DerivedFamilyEntries[L].formula.TakeFromString(formula);
+  DerivedFamilyEntries[L].formula.TakeFromString(formula,modifier);
+  if modifier<>'' then Raise Exception.CreateFmt('неоднозначно интерп. производная величина %s',[formula]);
   DerivedFamilyEntries[L].ConvFamily:=Family;
   DerivedFamilyEntries[L].BaseConvType:=BaseType;
 end;
@@ -376,20 +379,20 @@ function StrToConvType(str: string): TConvType;
 var f: TUnitsWithExponent;
     multiplier: Real;
     BaseConvType: TConvType;
+    modifier: string;
 begin
-  if not DescriptionToConvType(str,Result) then begin
-    f:=TUnitsWithExponent.Create;
-    try
-      multiplier:=f.TakeFromString(str);
-      BaseConvType:=FormulaToConvType(f); //эта штука может создать на лету новую единицу
-      if not DescriptionToConvType(str,Result) then begin
-        multiplier:=multiplier*ConvertFrom(BaseConvType,1);
-        Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str,multiplier);
-      end;
-    finally
-      f.Free;
+  f:=TUnitsWithExponent.Create;
+  try
+    multiplier:=f.TakeFromString(str,modifier);
+    BaseConvType:=FormulaToConvType(f); //эта штука может создать на лету новую единицу
+    if not DescriptionToConvType(str+modifier,Result) then begin
+      multiplier:=multiplier*ConvertFrom(BaseConvType,1);
+      Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str+modifier,multiplier);
     end;
+  finally
+    f.Free;
   end;
+//end  
 end;
 
 (*
@@ -473,7 +476,7 @@ begin
     Exponents[i]:=Exponents[i]*Exponent;
 end;
 
-function TUnitsWithExponent.TakeFromString(formula: string): Real;
+function TUnitsWithExponent.TakeFromString(formula: string; out modifier: string): Real;
 var p: TSimpleParser;
     term: string;
     convType: TConvType;
@@ -484,6 +487,7 @@ var p: TSimpleParser;
     mul: Real;
 begin
   Clear;
+  modifier:='';
   p:=TSimpleParser.Create(formula);
   Result:=1;
   isDivide:=false;
@@ -492,16 +496,17 @@ begin
     while not p.eof do begin
       term:=p.getPhysUnitIdent;
       mul:=1;
-      if not DescriptionToConvType(term,convType) then
-        if DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
-          Mul:=1e-6
-        else
-          if DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) then begin
-            Mul:=UnitMultiplier[Integer(term[1])];
-            if Mul=0 then Raise EPhysUnitError.CreateFmt('%s is not correct multiplier',[term[1]])
-          end
-          else
-            Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
+      if (Length(term)>2) and DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='мк') then
+        Mul:=1e-6
+      else if (Length(term)>1) and DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) and (UnitMultiplier[Integer(term[1])]<>0) then begin
+        Mul:=UnitMultiplier[Integer(term[1])];
+        case term[1] of
+          'm': Modifier:=Modifier+'l';
+          'M': Modifier:=Modifier+'u';
+        end;
+      end
+      else if not DescriptionToConvType(term,convType) then
+        Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
@@ -522,6 +527,7 @@ begin
     end;
   finally
     p.Free;
+    if modifier<>'' then modifier:='\'+modifier;
   end;
 end;
 
@@ -976,6 +982,7 @@ var unitStr: string;
     dimension: TUnitsWithExponent;
     PrefConvType: TConvType;
     val: Extended;
+    modifier: string;
 begin
   for i:=1 to Length(str) do
     if (str[i]='.') or (str[i]=',') then str[i]:=DecimalSeparator;
@@ -1007,7 +1014,7 @@ begin
         //скормить ему размерность, он "выплюнет" множитель, домножаем на него
         dimension:=TUnitsWithExponent.Create;
         try
-          instance:=instance*dimension.TakeFromString(unitStr);
+          instance:=instance*dimension.TakeFromString(unitStr,modifier);
           //а также ConvType - тот, что является базовым для данного семейства
           //возможно, семейство придется создать на ходу
           ConvType:=FormulaToConvType(dimension);
@@ -1030,6 +1037,7 @@ function TVariantWithUnit.AsString: string;
 var deg,min: Variant;
     s: string;
     d: extended;
+    i: Integer;
 begin
   if ConvType=auDMS then begin
     instance:=instance+1/7200000;
@@ -1050,6 +1058,9 @@ begin
   else begin
     Result:=instance;
     s:=ConvTypeToDescription(ConvType);
+    i:=Pos('\',s);
+    if i>0 then
+      s:=LeftStr(s,i-1);
     if s<>'' then Result:=Result+' '+s;
   end;
 end;
@@ -1521,7 +1532,10 @@ procedure TAbstractSavedConvFamily.ReadUnits(Reader: TReader);
 var i,L: Integer;
     s: string;
     p: TSimpleParser;
+    expr: string;
+    varexpr: TFloatExpression;
 begin
+  varexpr:=TVariantExpression.Create(nil);
   Reader.ReadListBegin;
   i:=0;
   p:=TSimpleParser.Create;
@@ -1536,13 +1550,18 @@ begin
     s:=Reader.ReadString;
     p.AssignString(s);
     UnitNames[i-1]:=p.getString;
-    Multipliers[i-1]:=p.getFloat;
-    if not p.eof then offsets[i-1]:=p.getFloat;
+    varexpr.SetString(p.getString);
+    Multipliers[i-1]:=varexpr.getValue;
+    if not p.eof then begin
+      varexpr.SetString(p.getString);
+      offsets[i-1]:=varExpr.getValue;
+    end;
   end;
   SetLength(UnitNames,i);
   SetLength(Multipliers,i);
   SetLength(offsets,i);
   p.Free;
+  varexpr.Free;
   Reader.ReadListEnd;
 end;
 
