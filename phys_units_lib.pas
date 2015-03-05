@@ -1532,8 +1532,7 @@ procedure TAbstractSavedConvFamily.ReadUnits(Reader: TReader);
 var i,L: Integer;
     s: string;
     p: TSimpleParser;
-    expr: string;
-    varexpr: TFloatExpression;
+    varexpr: TVariantExpression;
 begin
   varexpr:=TVariantExpression.Create(nil);
   Reader.ReadListBegin;
@@ -1551,10 +1550,10 @@ begin
     p.AssignString(s);
     UnitNames[i-1]:=p.getString;
     varexpr.SetString(p.getString);
-    Multipliers[i-1]:=varexpr.getValue;
+    Multipliers[i-1]:=varexpr.getVariantValue;
     if not p.eof then begin
       varexpr.SetString(p.getString);
-      offsets[i-1]:=varExpr.getValue;
+      offsets[i-1]:=varExpr.getVariantValue;
     end;
   end;
   SetLength(UnitNames,i);

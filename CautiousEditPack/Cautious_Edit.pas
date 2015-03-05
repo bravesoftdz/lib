@@ -126,7 +126,7 @@ procedure Register;
 
 implementation
 
-uses expression_lib,phys_units_lib;
+uses expression_lib,float_expression_lib,phys_units_lib;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
