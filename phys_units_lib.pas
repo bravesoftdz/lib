@@ -16,24 +16,6 @@ uses classes,VariantWrapper,ConvUtils,sysUtils,linear_eq,streaming_class_lib;
 
 type
 
-  TPreferredUnits=class(TStreamingClass)
-  //содержит в себе пары (семейство;предпочитаемая величина)
-  //используется в Михалыче
-  private
-    fFamily: array of TConvFamily;
-    fUnit: array of TConvType;
-    procedure WriteData(Writer: TWriter);
-    procedure ReadData(Reader: TReader);
-  protected
-    procedure DefineProperties(Filer: TFiler); override;
-  public
-    procedure Add(aFamily: TConvFamily; aUnit: TConvType);
-    function ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
-    function ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
-    function GetPreferredUnitName(aFamily: TConvFamily): string;
-    function GetPreferredType(aFamily: TConvFamily): TConvType;
-end;
-
   TAbstractSavedConvFamily=class(TStreamingClass)
   private
     flang: string;
@@ -70,12 +52,14 @@ end;
     property formula: string write fFormula;
   end;
 
+(*
 TBaseFamilyEntry=record
   ConvFamily: TConvFamily;  //ссылка на description здесь же
   BaseConvType: TConvType;  //а все из-за базовой ед. изм времени 1 сутки в StdConvs
   isAffine: boolean;  //false: векторная величина, true: афинная
   letter: string;
 end;  //неужели больше ничего не нужно?
+*)
 
   //а теперь одна из конкретных реализаций
 
@@ -159,7 +143,7 @@ end;  //неужели больше ничего не нужно?
     multiplier: Real;
   end;
 
-  TFundamentalPhysConstants = class
+  TFundamentalPhysConstants = class(TComponent)
     private
       fNames: array of string;
       fDescriptions: array of string;
@@ -169,13 +153,17 @@ end;  //неужели больше ничего не нужно?
       fsolver: IAbstractSLEQ;
       fActuallyUsedCount: Integer;
       fActualIndex: array of Integer;
+      fLang: string;
       function getName(i: Integer): string;
       function getDescription(i: Integer): string;
       function getEnabled(i: Integer): boolean;
       procedure setEnabled(i: Integer; avalue: boolean);
       function Recalculate: Boolean;
+      procedure ReadData(reader: TReader);
+    protected
+      procedure DefineProperties(filer: TFiler); override;
     public
-      constructor Create;
+      constructor Create(Owner: TComponent); override;
       procedure Add(aname,adescr: string; aValue: Variant; aEnabled: boolean=false);
       function GetVar(i: Integer): Variant;
       function GetActualIndex(i: Integer): Integer;
@@ -185,6 +173,8 @@ end;  //неужели больше ничего не нужно?
       property Enabled[i: Integer]: Boolean read getEnabled write setEnabled;
       property Solver: IAbstractSLEQ read fsolver;
       property ActuallyUsedCount: Integer read fActuallyUsedCount;
+    published
+      property Lang: string read fLang write fLang;
   end;
 
   TConvTypeAffine = class(TConvTypeInfo)
@@ -204,7 +194,7 @@ end;  //неужели больше ничего не нужно?
 
   TLogConversionDetailsProc = procedure (line: string); //цвет сами придумаем
 
-procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
+//procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
 //уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
 //procedure RegisterBaseConversionFamily(
 procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
@@ -229,17 +219,21 @@ function StrToConvType(str: string): TConvType;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
+function NameToFamily(const Ident: string; var Int: Longint): Boolean;
+function FamilyToName(Int: LongInt; var Ident: string): Boolean;
+function NameToConv(const Ident: string; var Int: LongInt): Boolean;
+function ConvToName(Int: LongInt; var Ident: string): Boolean;
+
 var UnityPhysConstants: TFundamentalPhysConstants;
     LogConversionDetailsProc: TLogConversionDetailsProc;
     cbDimensionless,cbAngle: TConvFamily;
     duUnity,auDMS,auRadian: TConvType;
-    PreferredUnits: TPreferredUnits;
 implementation
 
 uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
-  set_english_locale_if_not_sure,expression_lib;
+  set_english_locale_if_not_sure,expression_lib,Contnrs;
 
-var BaseFamilyEntries: array of TBaseFamilyEntry;
+var BaseFamilyEntries: TObjectList;
     DerivedFamilyEntries: array of TDerivedFamilyEntry;
     VarWithUnitType: TVariantWithUnitType;
     UnitMultiplier: TUnitMultipliersArray;
@@ -980,7 +974,6 @@ procedure TVariantWithUnit.Assign(str: string);
 var unitStr: string;
     i: Integer;
     dimension: TUnitsWithExponent;
-    PrefConvType: TConvType;
     val: Extended;
     modifier: string;
 begin
@@ -1020,13 +1013,6 @@ begin
           ConvType:=FormulaToConvType(dimension);
         finally
           dimension.Free;
-        end;
-      end;
-      if Assigned(preferredUnits) then begin
-        PrefConvType:=preferredUnits.GetPreferredType(ConvTypeToFamily(ConvType));
-        if PrefConvType<>CIllegalConvType then begin
-          Instance:=Instance*Convert(1,ConvType,PrefConvType);
-          ConvType:=PrefConvType;
         end;
       end;
     end;
@@ -1100,9 +1086,9 @@ end;
 (*
     TFundamentalPhysConstants
                                 *)
-constructor TFundamentalPhysConstants.Create;
+constructor TFundamentalPhysConstants.Create(Owner: TComponent);
 begin
-  inherited Create;
+  inherited Create(Owner);
   fsolver:=TSimpleGaussLEQ.Create;
   fsolver.SetTolerance(1e-19);
   recalculate;
@@ -1195,6 +1181,34 @@ begin
   Result:=(fsolver.GetStatus<>slNoSolution);
 end;
 
+procedure TFundamentalPhysConstants.DefineProperties(filer: TFiler);
+begin
+  filer.DefineProperty('constants',ReadData,nil,false);
+end;
+
+procedure TFundamentalPhysConstants.ReadData(reader: TReader);
+var p: TSimpleParser;
+    aname,adescr: string;
+    aunit: Variant;
+    aenabled: boolean;
+begin
+  reader.ReadListBegin;
+  p:=TSimpleParser.Create;
+  while not reader.EndOfList do begin
+    p.AssignString(reader.ReadString);
+    aname:=p.getString;
+    aunit:=VarWithUnitCreate(p.getString);
+    adescr:=p.getString;
+    if not p.eof then
+      aenabled:=(p.getInt=1)
+    else
+      aenabled:=false;
+    Add(aname,adescr,aunit,aenabled);
+  end;
+  p.Free;
+  reader.ReadListEnd;
+end;
+
 
 (*
     Initialization
@@ -1239,7 +1253,7 @@ procedure RegisterUnityConstants;
 var eps0: Real;
     streps0: String;
 begin
-  UnityPhysConstants:=TFundamentalPhysConstants.Create;
+  UnityPhysConstants:=TFundamentalPhysConstants.Create(nil);
 (*
   with UnityPhysConstants do begin
     Add('rad',RadianDescr,VarWithUnitCreate('1 rad'),true);
@@ -1386,6 +1400,7 @@ end;
 
 procedure NewConvFamilies;
 var comp: TComponent;
+    consts: TFundamentalPhysConstants absolute comp;
 //  strStream: TStringStream;
   fileStream: TFileStream;
   BinStream: TMemoryStream;
@@ -1401,6 +1416,11 @@ begin
       BinStream.Seek(0, soFromBeginning);
       while BinStream.Position<BinStream.Size do begin
         comp:=BinStream.ReadComponent(nil);
+        if (comp is TFundamentalPhysConstants) and
+         (uppercase(consts.Lang)=Uppercase(GetDefaultLanguageInEnglish)) then begin
+          UnityPhysConstants.Free;
+          UnityPhysConstants:=consts;
+        end;
         comp.Free;
       end;
       BinStream.Free;
@@ -1408,118 +1428,6 @@ begin
     until FindNext(sr)<>0
   end;
 end;
-
-(*
-    TPreferredUnits
-                        *)
-procedure TPreferredUnits.DefineProperties(Filer: TFiler);
-begin
-  Filer.DefineProperty('data',ReadData,WriteData,Length(fFamily)>0);
-end;
-
-procedure TPreferredUnits.WriteData(Writer: TWriter);
-var i: Integer;
-    sFamily,sUnit: string;
-begin
-  Writer.WriteListBegin;
-  for i:=0 to Length(fFamily)-1 do
-    if FamilyToName(fFamily[i],sFamily) and ConvToName(fUnit[i],sUnit) then begin
-      Writer.WriteString(sFamily);
-      Writer.WriteString(sUnit);
-    end;
-  Writer.WriteListEnd;
-end;
-
-procedure TPreferredUnits.Add(aFamily: TConvFamily; aUnit: TConvType);
-begin
-  SetLength(fFamily,Length(fFamily)+1);
-  fFamily[Length(fFamily)-1]:=aFamily;
-  SetLength(fUnit,Length(fUnit)+1);
-  fUnit[Length(fUnit)-1]:=aUnit;
-end;
-
-procedure TPreferredUnits.ReadData(Reader: TReader);
-var sFamily,sUnit: string;
-    aFamily: TConvFamily;
-    aFamInt: Integer;
-    aUnit: TConvType;
-begin
-
-  Reader.ReadListBegin;
-  While not Reader.EndOfList do begin
-    sFamily:=Reader.ReadString;
-    sUnit:=Reader.ReadString;
-    if NameToFamily(sFamily,aFamInt) then begin
-      aFamily:=aFamInt;
-      if DescriptionToConvType(aFamily,sUnit,aUnit) then
-        Add(aFamily,aUnit);
-    end;
-  end;
-  Reader.ReadListEnd;
-
-end;
-
-function TPreferredUnits.ConvertToPreferredType(value: Real; aFamily: TConvFamily): string;
-var i: Integer;
-    uValue: Real;
-    fname: string;
-begin
-  for i:=0 to Length(fFamily)-1 do
-    if aFamily=fFamily[i] then begin
-      uValue:=ConvertTo(value,fUnit[i]);
-      Result:=ConvUnitToStr(uValue,fUnit[i]);
-      Exit;
-    end;
-  FamilyToName(aFamily,fname);
-  Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
-end;
-
-function TPreferredUnits.ConvertVariantToPreferredType(value: Variant; aFamily: TConvFamily): string;
-var i: Integer;
-    uReal,uImg: Real;
-    fname: string;
-begin
-  value:=VarComplexSimplify(value);
-  if VarIsNumeric(value) then Result:=ConvertToPreferredType(value,aFamily)
-  else begin
-//а ведь даже температура может быть комплексной, когда рассм. темп. волны
-//кроме того, возможно введение лог. величин типа dbV
-    for i:=0 to Length(fFamily)-1 do
-      if aFamily=fFamily[i] then
-        if VarIsComplex(value) then begin
-          uReal:=ConvertTo(value.Real,fUnit[i]);
-          uImg:=ConvertTo(value.Imaginary,fUnit[i]);
-          Result:=Format('%s %s',[VarComplexCreate(uReal,uImg), ConvTypeToDescription(fUnit[i])]);
-          Exit;
-        end
-        else
-          Raise Exception.CreateFMT('ConvertVariantToPreferredType: variable "%s" of unsupported variant type',[value]);
-  FamilyToName(aFamily,fname);
-  Raise Exception.CreateFMT('PreferredUnits.ConvertToPrefferedType: family %s not registered',[fname]);
-  end;
-end;
-
-function TPreferredUnits.getPreferredUnitName(aFamily: TConvFamily): string;
-var i: Integer;
-begin
-  for i:=0 to Length(fFamily)-1 do
-    if aFamily=fFamily[i] then begin
-      Result:=ConvTypeToDescription(fUnit[i]);
-      Exit;
-    end;
-end;
-
-function TPreferredUnits.GetPreferredType(aFamily: TConvFamily): TConvType;
-var i: Integer;
-begin
-  for i:=0 to Length(fFamily)-1 do
-    if aFamily=fFamily[i] then begin
-      Result:=fUnit[i];
-      Exit;
-    end;
-  Result:=CIllegalConvType;
-end;
-
 (*
       TBaseConvFamily
                           *)
@@ -1626,6 +1534,8 @@ initialization
   //новый тип Variant'а
   VarWithUnitType:=TVariantWithUnitType.Create;
 
+  BaseFamilyEntries:=TObjectList.create;
+
   //ключевые типы, их нужно задать в коде
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
@@ -1635,15 +1545,12 @@ initialization
 
   RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
 
-  RegisterClasses([TBaseConvFamily,TDerivedConvFamily]);
+  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants]);
   default_dir:=GetCurrentDir+'\data\PhysUnits\';
   NewConvFamilies;
 
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
-  RegisterClass(TPreferredUnits);
-  if FileExists('PreferredUnits.txt') then
-    PreferredUnits:=TPreferredUnits.LoadFromFile('PreferredUnits.txt');
   GConvUnitToStrFmt:='%g %s';
 
 
@@ -1654,8 +1561,5 @@ finalization
   FreeUnityConstants;
   FreeAndNil(VarWithUnitType);
   FreeUnits;
-
-  FreeAndNil(PreferredUnits);
-
 
 end.
