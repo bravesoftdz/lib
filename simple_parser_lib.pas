@@ -107,11 +107,6 @@ end;
 
 function TSimpleParser.isPhysIdentSymbol(ch: Char): Boolean;
 begin
-(*
-  result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
-    ((ch>='А') and (ch<='Я')) or ((ch>='а') and (ch<='я')) or (ch='_') or
-    (ch='$') or (ch='.') or (ch='%') or (ch='''') or (ch='"');
-    *)
 //проще сказать, чего нельзя: чисел, знаков +-*/, скобок
   result:=(ch<>'+') and (ch<>'-') and (ch<>'*') and (ch<>'/') and (ch<>'(') and
     (ch<>')') and not isSpace(ch) and (ch<>'[') and (ch<>']') and (ch<>'^');
@@ -318,11 +313,22 @@ begin
     Result:=CIllegalConvType;
 end;
 
+resourcestring
+  UnexpectedEndOfString = 'неожиданный конец строки: %s';
+  UnknownSymbolAfterExponent = 'неверный символ после "E" (разделителя мантиссы и показателя степени) в %s';
+  DigitExpected = 'ожидалась цифра в %s';
+  MinutesExpected = 'ожидался символ '' (минуты)';
+  SecondsExpected = 'ожидался символ " (секунды)';
+  DigitExpectedAfterDecimalSeparator = 'после запятой должна идти цифра в %s';
+  DigitExpectedAfterExponent = 'после символа E должно идти целое число в %s';
+
 function TSimpleParser.getVariantNum: Variant;
 var Ch: char;
   state: Integer;
   deg,min: Integer;
   sec: Real;
+
+
 
   function TryExponent: Boolean;
   begin
@@ -331,14 +337,14 @@ var Ch: char;
       inc(_pos);
       if _pos>Length(_str) then begin
         putBack;
-        Raise EParserError.CreateFmt('getVariantNum: unexpected end of string "%s"',[GetString]);
+        Raise EParserError.CreateFmt(UnexpectedEndOfString,[GetString]);
       end;
       ch:=_str[_pos];
       if (ch='-') or (ch='+') then state:=4
       else if IsNumberSymbol(ch) then state:=5
       else begin
         putBack;
-        Raise EParserError.CreateFmt('getVariantNum: unknown symbol after exponent, "%s"',[GetString]);
+        Raise EParserError.CreateFmt(UnknownSymbolAfterExponent,[GetString]);
       end;
     end;
   end;
@@ -361,7 +367,7 @@ begin
       0: begin
           if IsNumberSymbol(ch) then state:=1 else begin
             putBack;
-            Raise EParserError.CreateFmt('getVariantNum: digit expected in "%s"',[GetString]);
+            Raise EParserError.CreateFmt(DigitExpected,[GetString]);
           end;
         end;
       1: begin
@@ -374,10 +380,10 @@ begin
               deg:=StrToInt(MidStr(_str,fBackupPos,_pos-fBackupPos));
               getChar;
               min:=getInt;
-              if getChar<>'''' then Raise EParserError.Create(''' symbol (minutes) expected');
+              if getChar<>'''' then Raise EParserError.Create(MinutesExpected);
               sec:=getFloat;
               ch:=getChar;
-              if (ch<>'"') and (getChar<>'''') then Raise EParserError.Create('" symbol (seconds) expected');
+              if (ch<>'"') and (getChar<>'''') then Raise EParserError.Create(SecondsExpected);
               Result:=VarWithUnitCreateFromVariant(deg+min/60+sec/3600,auDMS);
               Exit;
             end
@@ -388,7 +394,7 @@ begin
         end;
       2: if IsNumberSymbol(ch) then state:=3 else begin
           putBack;
-          Raise EParserError.CreateFmt('getVariantNum: digit expected after decimal separator in "%s"',[GetString]);
+          Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
         end;
       3:  if not IsNumberSymbol(ch) then
             if not TryExponent then begin
@@ -397,7 +403,7 @@ begin
             end;
       4: if IsNumberSymbol(ch) then state:=5 else begin
           putBack;
-          Raise EParserError.CreateFmt('getVariantNum: digit expected after exponent in "%s"',[GetString]);
+          Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
         end;
       5: if not IsNumberSymbol(ch) then begin
           TryImaginary;
@@ -409,11 +415,11 @@ begin
   if state=0 then Raise EParserError.Create('getVariantNum: empty expression');
   if state=2 then begin
     PutBack;
-    Raise EParserError.CreateFmt('getVariantNum: digit expected after decimal separator in "%s"',[GetString]);
+    Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
   end;
   if state=4 then begin
     PutBack;
-    Raise EParserError.CreateFmt('getVariantNum: digit expected after exponent sign in "%s"',[GetString]);
+    Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
   end;
 
   if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then

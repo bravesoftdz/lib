@@ -984,6 +984,10 @@ var p: TSimpleParser;
     LIndex,i,brLevel: Integer;
     ch: char;
     str,str1: string;
+ResourceString
+  ConversionOperatorError = 'ошибочно записан оператор преобразования единицы измерения';
+  UnknownOperatorVertLine = 'неизвестный оператор "|"';
+  NoVariableBeforeAssign = 'отсутствует переменная перед знаком =';  
 begin
   LIndex:=-1;
   //первый проход - замена \deg на ° и добавление скобок для знака равенства
@@ -1029,7 +1033,7 @@ begin
                   if Lexems[LIndex].PhysUnit=CIllegalConvType then
                     Lexems[LIndex].PhysUnit:=duUnity;
                   if p.eof or (p.getChar<>']') then
-                    Raise ELexicalErr.CreateFmt('%s: [Unit] was expected',[fstring]);
+                    Raise ELexicalErr.Create(ConversionOperatorError);
                   //теперь ищем скобочку.
                   brLevel:=0; //условно
                   for i:=LIndex-2 downto 0 do begin //LIndex-1 еще не заполнен
@@ -1050,8 +1054,8 @@ begin
             '|': if (not p.eof) and (p.getChar='|') then
                     Lexems[LIndex].LType:=ltPar
                   else
-                    Raise ELexicalErr.Create('неизвестный оператор |');
-            '=':  if LIndex=0 then Raise ELexicalErr.Create('отсутствует переменная перед знаком =')
+                    Raise ELexicalErr.Create(UnknownOperatorVertLine);
+            '=':  if LIndex=0 then Raise ELexicalErr.Create(NoVariableBeforeAssign)
                   else begin
                     Lexems[LIndex]:=Lexems[LIndex-1];
                     Lexems[LIndex-1].LType:=ltLeftBracket;
@@ -1104,10 +1108,12 @@ end;
 
 procedure TVariantExpression.AssignOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var tmp: TEvaluationTreeNode;
+resourcestring
+  SomeCrapLeftOfAssign = 'Слева от = должна быть переменная';
 begin
   if (b+1<e) and (Lexems[b+1].LType=ltAssign) then begin
     if (Lexems[b].LType<>ltIdent) then
-      Raise ESyntaxErr.Create('Слева от = должна быть переменная');
+      Raise ESyntaxErr.Create(SomeCrapLeftOfAssign);
     TreeNode:=TAssignNode.Create(nil);
     ConstsAndVars(b,b,tmp);
     TreeNode.InsertComponent(tmp);  //переменную вставили
@@ -1120,6 +1126,8 @@ end;
 
 procedure TVariantExpression.UnitConversionOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var term: TEvaluationTreeNode;
+resourcestring
+  NoExpressionToConvertTo = 'отсутствует значение, которое надо сконвертировать в %s';
 begin
   if Lexems[e].LType=ltPhysUnitConversion then
     if e>b then begin
@@ -1127,7 +1135,7 @@ begin
       TreeNode:=TUnitConversionNode.Create(Lexems[e].PhysUnit,nil);
       TreeNode.InsertComponent(term);
     end
-    else Raise ESyntaxErr.CreateFmt('no expression to convert to %s',[ConvTypeToDescription(Lexems[e].PhysUnit)])
+    else Raise ESyntaxErr.CreateFmt(NoExpressionToConvertTo,[ConvTypeToDescription(Lexems[e].PhysUnit)])
   else
     PlusMinus(b,e,TreeNode);
 end;
@@ -1330,6 +1338,8 @@ end;
 
 procedure TVariantExpression.BracketsAndFuncs(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var temp: TEvaluationTreeNode;
+resourcestring
+  LeftBracketOnWrongPlace = 'закрывающая скобка не на своем месте';
 begin
   if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
   if Lexems[e].LType=ltRightBracket then begin
@@ -1347,7 +1357,7 @@ begin
       end;
       Exit;
     end
-    else Raise ESyntaxErr.CreateFmt('%s: left bracket on wrong place',[fstring]);
+    else Raise ESyntaxErr.Create(LeftBracketOnWrongPlace);
   end
   else ConstsAndVars(b,e,treeNode);
 end;
@@ -1357,10 +1367,13 @@ var fComponent: TComponent;
     buRoot: TComponent;
     i: Integer;
     s: string;
+resourcestring
+  TwoOrMoreLexemsError = '2 или более лексических единиц, не связанных между собой';
+  NumberOrIdentifierExpected = '%s не является числом или переменной';
 begin
 //должна остаться одна лексема
   if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
-  if b<e then raise ESyntaxErr.Create('2 or more lexems without operator in between');
+  if b<e then raise ESyntaxErr.Create(TwoOrMoreLexemsError);
   //остается b=e
   Case Lexems[b].LType of
     ltNumber: if IsVarWithUnit(Lexems[b].Num) then
@@ -1398,7 +1411,7 @@ begin
         end
       else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
     end;
-    else raise ESyntaxErr.CreateFmt('Number or identifier expected, %s found',[fstring]);
+    else raise ESyntaxErr.CreateFmt(NumberOrIdentifierExpected,[fstring]);
   end;
 end;
 

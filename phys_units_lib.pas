@@ -15,54 +15,6 @@ interface
 uses classes,VariantWrapper,ConvUtils,sysUtils,linear_eq,streaming_class_lib;
 
 type
-
-  TAbstractSavedConvFamily=class(TStreamingClass)
-  private
-    flang: string;
-    fBaseUnit: string;  //вообще, TConvType умеет записываться символьно,
-    //однако на момент считывания BaseUnit мы еще можем не знать такого юнита
-    UnitNames: array of string;
-    Multipliers: array of Real;
-    offsets: array of Real;
-    procedure ReadUnits(Reader: TReader);
-  protected
-    procedure DefineProperties(Filer: TFiler); override;
-  published
-    property Lang: string write flang;
-    property BaseUnit: string write fBaseUnit;
-  end;
-
-  TBaseConvFamily=class(TAbstractSavedConvFamily)
-  private
-    fLetter: string;
-    fAffine: boolean;
-  public
-    procedure Loaded; override;
-  published
-    property letter: string write fLetter;
-    property IsAffine: Boolean write fAffine;
-  end;
-
-  TDerivedConvFamily=class(TAbstractSavedConvFamily)
-  private
-    fFormula: string;
-  public
-    procedure Loaded; override;
-  published
-    property formula: string write fFormula;
-  end;
-
-(*
-TBaseFamilyEntry=record
-  ConvFamily: TConvFamily;  //ссылка на description здесь же
-  BaseConvType: TConvType;  //а все из-за базовой ед. изм времени 1 сутки в StdConvs
-  isAffine: boolean;  //false: векторная величина, true: афинная
-  letter: string;
-end;  //неужели больше ничего не нужно?
-*)
-
-  //а теперь одна из конкретных реализаций
-
   TUnitsWithExponent = class;
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponent; i,j: Integer) : Real of object;
   TShowName = function (const value: TConvType): string;
@@ -94,6 +46,43 @@ end;  //неужели больше ничего не нужно?
       function ShowFormula: string;
       function isAffine: Boolean;
   end;
+
+  TAbstractSavedConvFamily=class(TStreamingClass)
+  private
+    flang: string;
+    fStrBaseUnit: string;  //вообще, TConvType умеет записываться символьно,
+    //однако на момент считывания BaseUnit мы еще можем не знать такого юнита
+    fBaseConvType: TConvType;
+    fConvFamily: TConvFamily;
+    procedure ReadUnits(Reader: TReader);
+  protected
+    procedure DefineProperties(Filer: TFiler); override;
+  published
+    property Lang: string write flang;
+    property BaseUnit: string write fStrBaseUnit;
+  end;
+
+  TBaseConvFamily=class(TAbstractSavedConvFamily)
+  private
+    fLetter: string;
+    fAffine: boolean;
+  published
+    property letter: string write fLetter;
+    property IsAffine: Boolean read fAffine write fAffine;
+  end;
+
+  TDerivedConvFamily=class(TAbstractSavedConvFamily)
+  private
+    fStrFormula: string;
+    fFormula: TUnitsWithExponent;
+  public
+    constructor Create(owner: TComponent); override;
+    destructor Destroy; override;
+    procedure Loaded; override;
+  published
+    property formula: string write fStrFormula;
+  end;
+
 //пока что здесь - конкретный тип, для представления размерности данных
   TVariantWithUnit=class(TAbstractWrapperData)
     private
@@ -113,15 +102,6 @@ end;  //неужели больше ничего не нужно?
       procedure DoPower(pow: Real);
       function AsString: string; override;
       procedure Conversion(DestConv: TConvType);
-  end;
-
-  TDerivedFamilyEntry=class
-  public
-    ConvFamily: TConvFamily;  //всем нужна семья!
-    BaseConvType: TConvType;  //увы, в библиотеке ConvUtils нельзя из Family сослаться на базовую ед. измерения
-    formula: TUnitsWithExponent;
-    constructor Create;
-    destructor Destroy; override;
   end;
 
   TVariantWithUnitType = class (TAbstractWrapperVariantType)
@@ -194,12 +174,9 @@ end;  //неужели больше ничего не нужно?
 
   TLogConversionDetailsProc = procedure (line: string); //цвет сами придумаем
 
-//procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
-//уже была TConvFamily (например, из StdConvs), хотим занести ее в наш реестр
-//procedure RegisterBaseConversionFamily(
-procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
+//procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
 //этот вариант для регистрации вручную, formula - что-то вроде 'M*L/T^2'
-function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedFamilyEntry; overload;
+function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedConvFamily;
 
 function ConvTypeToBaseFamilyLetter(const value: TConvType): string;
 
@@ -224,49 +201,35 @@ function FamilyToName(Int: LongInt; var Ident: string): Boolean;
 function NameToConv(const Ident: string; var Int: LongInt): Boolean;
 function ConvToName(Int: LongInt; var Ident: string): Boolean;
 
+procedure InitializePhysUnitLib;
+procedure FinalizePhysUnitLib;
+
 var UnityPhysConstants: TFundamentalPhysConstants;
     LogConversionDetailsProc: TLogConversionDetailsProc;
     cbDimensionless,cbAngle: TConvFamily;
     duUnity,auDMS,auRadian: TConvType;
+    PhysUnitLanguage: string;
 implementation
 
 uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
   set_english_locale_if_not_sure,expression_lib,Contnrs;
 
 var BaseFamilyEntries: TObjectList;
-    DerivedFamilyEntries: array of TDerivedFamilyEntry;
+    DerivedFamilyEntries: TObjectList;
     VarWithUnitType: TVariantWithUnitType;
     UnitMultiplier: TUnitMultipliersArray;
     AffineUnits: array of TAffineUnitEntry;
     default_dir: string;
 
-procedure RegisterBaseConversionFamily(Family: TConvFamily; BaseType: TConvType; letter: string; isAffine: boolean=false);
-var L,i: Integer;
-  Types: TConvTypeArray;
-begin
-  L:=Length(BaseFamilyEntries);
-  SetLength(BaseFamilyEntries,L+1);
-  BaseFamilyEntries[L].ConvFamily:=Family;
-  BaseFamilyEntries[L].BaseConvType:=BaseType;
-  BaseFamilyEntries[L].letter:=letter;
-  BaseFamilyEntries[L].isAffine:=isAffine;
-  if isAffine then begin
-    GetConvTypes(Family,Types);
-    L:=Length(AffineUnits);
-    SetLength(AffineUnits,L+Length(Types));
-    for i:=0 to Length(Types)-1 do begin
-      AffineUnits[L+i].ConvType:=Types[i];
-      AffineUnits[L+i].BaseConvType:=Types[i];
-      AffineUnits[L+i].multiplier:=1;
-    end;
-  end;
-end;
+resourcestring
+  ConvFamilyNeitherBaseNorDerived = 'Размерность %s не является ни базовой, ни производной';
+
 
 function IndexOfBaseFamily(Family: TConvFamily): Integer;
 var i: Integer;
 begin
-  for i:=0 to Length(BaseFamilyEntries)-1 do
-    if BaseFamilyEntries[i].ConvFamily=Family then begin
+  for i:=0 to BaseFamilyEntries.Count-1 do
+    if (BaseFamilyEntries[i] as TBaseConvFamily).fConvFamily=Family then begin
       Result:=i;
       Exit;
     end;
@@ -278,41 +241,26 @@ var i: Integer;
 begin
   i:=IndexOfBaseFamily(ConvTypeToFamily(value));
   if i>=0 then
-    Result:=BaseFamilyEntries[i].letter
+    Result:=TBaseConvFamily(BaseFamilyEntries[i]).fLetter
   else
     Raise EPhysUnitError.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
+  //этот код вообще не используется пока
 end;
 
-procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string);
-var L: Integer;
-    modifier: string;
+function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedConvFamily;
 begin
-  L:=Length(DerivedFamilyEntries);
-  SetLength(DerivedFamilyEntries,L+1);
-  DerivedFamilyEntries[L]:=TDerivedFamilyEntry.Create;
-  DerivedFamilyEntries[L].formula.TakeFromString(formula,modifier);
-  if modifier<>'' then Raise Exception.CreateFmt('неоднозначно интерп. производная величина %s',[formula]);
-  DerivedFamilyEntries[L].ConvFamily:=Family;
-  DerivedFamilyEntries[L].BaseConvType:=BaseType;
-end;
-
-function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedFamilyEntry;
-var L: Integer;
-begin
-  L:=Length(DerivedFamilyEntries);
-  SetLength(DerivedFamilyEntries,L+1);
-  Result:=TDerivedFamilyEntry.Create;
-  Result.ConvFamily:=RegisterConversionFamily(formula.ShowFormula);
-  Result.BaseConvType:=RegisterConversionType(Result.ConvFamily,formula.AsString,1);
-  Result.formula.Assign(formula);
-  DerivedFamilyEntries[L]:=Result;
+  Result:=TDerivedConvFamily.Create(nil);
+  Result.fConvFamily:=RegisterConversionFamily(formula.ShowFormula);
+  Result.fBaseConvType:=RegisterConversionType(Result.fConvFamily,formula.AsString,1);
+  Result.fFormula.Assign(formula);
+  DerivedFamilyEntries.Add(Result);
 end;
 
 function IndexOfDerivedFamily(Family: TConvFamily): Integer;
 var i: Integer;
 begin
-  for i:=0 to Length(DerivedFamilyEntries)-1 do
-    if DerivedFamilyEntries[i].ConvFamily=Family then begin
+  for i:=0 to DerivedFamilyEntries.Count-1 do
+    if TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily=Family then begin
       Result:=i;
       Exit;
     end;
@@ -321,9 +269,9 @@ end;
 
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 begin
-  Result:=(LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
+  Result:=(Length(str)>2) and (LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
   if not Result then
-    Result:=(UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
+    Result:=(Length(str)>1) and (UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
     if not Result then
       Result:=DescriptionToConvType(str,CType);
 end;
@@ -334,39 +282,40 @@ var i: Integer;
 begin
   Result:=TUnitsWithExponent.Create;
   ConvFamily:=ConvTypeToFamily(ConvType);
-  for i:=0 to Length(BaseFamilyEntries)-1 do
-    if BaseFamilyEntries[i].ConvFamily=ConvFamily then begin
+  for i:=0 to BaseFamilyEntries.Count-1 do
+    if TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily=ConvFamily then begin
 //      Result.AddBaseUnit(ConvType,1); //а почему ConvType, а не BaseConvType?
-      Result.AddBaseUnit(BaseFamilyEntries[i].BaseConvType,1);
+      Result.AddBaseUnit(TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType,1);
       Exit;
     end;
   //среди базовых не нашли, поищем в производных
-  for i:=0 to Length(DerivedFamilyEntries)-1 do
-    if DerivedFamilyEntries[i].ConvFamily=ConvFamily then begin
-      Result.Assign(DerivedFamilyEntries[i].formula);
+  for i:=0 to DerivedFamilyEntries.Count-1 do
+    if TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily=ConvFamily then begin
+      Result.Assign(TDerivedConvFamily(DerivedFamilyEntries[i]).fformula);
       Exit;
     end;
-  Raise EPhysUnitError.CreateFMT('Couldn''t find unit %s among base or derived',[ConvTypeToDescription(ConvType)]);
+  Raise EPhysUnitError.CreateFMT(ConvFamilyNeitherBaseNorDerived,[ConvTypeToDescription(ConvType)]);
+  //так будет, если одну из станд. разм. не объявить в текст. файле.
 end;
 
 function FormulaToConvType(formula: TUnitsWithExponent): TConvType;
 var i: Integer;
 begin
   if (formula.fCount=1) and (formula.Exponents[0]=1) then begin  //базовая величина
-    for i:=0 to Length(BaseFamilyEntries) do
-      if BaseFamilyEntries[i].ConvFamily=ConvTypeToFamily(formula.UnitTypes[0]) then begin
-        Result:=BaseFamilyEntries[i].BaseConvType;
+    for i:=0 to BaseFamilyEntries.Count-1 do
+      if TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily=ConvTypeToFamily(formula.UnitTypes[0]) then begin
+        Result:=TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType;
         Exit;
       end
   end
   else
-    for i:=0 to Length(DerivedFamilyEntries)-1 do
-      if DerivedFamilyEntries[i].formula.SameFamily(formula) then begin
-        Result:=DerivedFamilyEntries[i].BaseConvType;
+    for i:=0 to DerivedFamilyEntries.Count-1 do
+      if TDerivedConvFamily(DerivedFamilyEntries[i]).fformula.SameFamily(formula) then begin
+        Result:=TDerivedConvFamily(DerivedFamilyEntries[i]).fBaseConvType;
         Exit;
       end;
   //если не найдено подх. семейства - мы создадим такое семейство и такой юнит!
-  Result:=RegisterDerivedConversionFamily(formula).BaseConvType;
+  Result:=RegisterDerivedConversionFamily(formula).fBaseConvType;
 end;
 
 function StrToConvType(str: string): TConvType;
@@ -386,21 +335,7 @@ begin
   finally
     f.Free;
   end;
-//end  
-end;
-
-(*
-  TDerivedFamilyEntry
-                        *)
-constructor TDerivedFamilyEntry.Create;
-begin
-  formula:=TUnitsWithExponent.Create;
-end;
-
-destructor TDerivedFamilyEntry.Destroy;
-begin
-  formula.Free;
-  inherited Destroy;
+//end
 end;
 
 (*
@@ -434,12 +369,12 @@ begin
   if i>=0 then begin
     u:=TUnitsWithExponent.Create;
     try
-      u.AddBaseUnit(BaseFamilyEntries[i].BaseConvType,Exponent);
+      u.AddBaseUnit(TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType,Exponent);
       Multiply(u);
-      if ConvType=BaseFamilyEntries[i].BaseConvType then
+      if ConvType=TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType then
         Result:=1
       else
-        Result:=Power(Convert(1,ConvType,BaseFamilyEntries[i].BaseConvType),Exponent);
+        Result:=Power(Convert(1,ConvType,TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType),Exponent);
     finally
       u.Free;
     end;
@@ -447,16 +382,16 @@ begin
   else begin
     //скребем по derived, находим и помножаем на его unit
     i:=IndexOfDerivedFamily(f);
-    if i=-1 then Raise EPhysUnitError.CreateFmt('Family %s is neither base nor derived',[ConvFamilyToDescription(f)]);
+    if i=-1 then Raise EPhysUnitError.CreateFmt(ConvFamilyNeitherBaseNorDerived,[ConvFamilyToDescription(f)]);
     u:=TUnitsWithExponent.Create;
     try
-      u.Assign(DerivedFamilyEntries[i].formula);
+      u.Assign(TDerivedConvFamily(DerivedFamilyEntries[i]).fformula);
       u.DoPower(Exponent); //возвести в нужную степень (может даже нулевую)
       Multiply(u);  //в этих формулах не должны появляться новые множители
-      if ConvType=DerivedFamilyEntries[i].BaseConvType then
+      if ConvType=TDerivedConvFamily(DerivedFamilyEntries[i]).fBaseConvType then
         Result:=1
       else
-        Result:=Power(Convert(1,ConvType,DerivedFamilyEntries[i].BaseConvType),Exponent);
+        Result:=Power(Convert(1,ConvType,TDerivedConvFamily(DerivedFamilyEntries[i]).fBaseConvType),Exponent);
     finally
       u.Free;
     end;
@@ -479,6 +414,8 @@ var p: TSimpleParser;
     isDivide: Boolean;
     nextDivide: Boolean;
     mul: Real;
+resourcestring
+  IsNotCorrectUnit = '%s не является единицей измерения';
 begin
   Clear;
   modifier:='';
@@ -500,7 +437,7 @@ begin
         end;
       end
       else if not DescriptionToConvType(term,convType) then
-        Raise EPhysUnitError.CreateFmt('%s is not correct unit',[term]);
+        Raise EPhysUnitError.CreateFmt(IsNotCorrectUnit,[term]);
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
@@ -666,7 +603,7 @@ begin
   Result:=false;
   for i:=0 to fCount-1 do begin
     j:=IndexOfBaseFamily(ConvTypeToFamily(UnitTypes[i]));
-    Result:=Result or BaseFamilyEntries[j].isAffine;
+    Result:=Result or TBaseConvFamily(BaseFamilyEntries[j]).isAffine;
     if Result=true then break;
   end;
 end;
@@ -730,6 +667,9 @@ var j,i,b: Integer;              //inst - это мы
     pow: Real;
     buConvType: TConvType;
     s: string;
+resourcestring
+  ToConvertFromAToB = 'Для преобразования из [%s] в [%s] выражение домножено на %s';
+  IncorrectUnitConversion = 'Некорректное приведение типов: [%s] в [%s]';
 begin
   if IsAffine(j) then begin
     if CompatibleConversionTypes(ConvType,DestConv) then begin
@@ -788,10 +728,10 @@ begin
                     s:=s+UnityPhysConstants.Names[UnityPhysConstants.GetActualIndex(i)];
                 end;
               end;
-              LogConversionDetailsProc(Format('Для преобразования из [%s] в [%s] выражение домножено на %s',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv),s]));
+              LogConversionDetailsProc(Format(ToConvertFromAToB,[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv),s]));
             end;
           end
-          else Raise EphysUnitError.CreateFmt('Некорректное приведение типов: [%s] в [%s]',[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
+          else Raise EphysUnitError.CreateFmt(IncorrectUnitConversion,[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
         finally
           new_formula.Free;
         end;
@@ -816,7 +756,7 @@ function TVariantWithUnit.IsAffine (out i: Integer): Boolean;
 var findex: Integer;
 begin
   findex:=indexOfBaseFamily(ConvTypeToFamily(convType));
-  Result:=(findex>=0) and BaseFamilyEntries[findex].isAffine;
+  Result:=(findex>=0) and TBaseConvFamily(BaseFamilyEntries[findex]).isAffine;
   if Result then begin
     Result:=false;
     for findex:=0 to Length(AffineUnits)-1 do
@@ -1114,13 +1054,16 @@ begin
   Result:=fActualIndex[i];
 end;
 
+resourcestring
+  NonConsistentConstraints = 'Добавление условия %s=1 приводит к противоречию';
+
 procedure TFundamentalPhysConstants.setEnabled(i: Integer; aValue: Boolean);
 begin
   if aValue<>fEnabled[i] then begin
     fEnabled[i]:=aValue;
     if not Recalculate then begin
       fEnabled[i]:=not aValue;
-      Raise EPhysUnitError.CreateFMT('Добавление условия %s=1 приводит к противоречию',[fNames[i]]);
+      Raise EPhysUnitError.CreateFMT(NonConsistentConstraints,[fNames[i]]);
     end;
   end;
 end;
@@ -1142,7 +1085,7 @@ begin
     fEnabled[fCount-1]:=true;
     if not Recalculate then begin
       fEnabled[fCount-1]:=false;
-      Raise EPhysUnitError.CreateFmt('Добавление условия %s=1 приводит к противоречию',[aName]);
+      Raise EPhysUnitError.CreateFmt(NonConsistentConstraints,[aName]);
     end;
   end;
 end;
@@ -1157,7 +1100,7 @@ var BaseUnitsCount,EqsCount,i,j,ind: Integer;
     formula: TUnitsWithExponent;
     V: TVariantWithUnit;
 begin
-  BaseUnitsCount:=Length(BaseFamilyEntries);
+  BaseUnitsCount:=BaseFamilyEntries.Count;
   EqsCount:=0;
   fActuallyUsedCount:=0;
   SetLength(fActualIndex,fcount);
@@ -1191,13 +1134,16 @@ var p: TSimpleParser;
     aname,adescr: string;
     aunit: Variant;
     aenabled: boolean;
+    expr: TVariantExpression;
 begin
   reader.ReadListBegin;
   p:=TSimpleParser.Create;
+  expr:=TVariantExpression.Create(nil);
   while not reader.EndOfList do begin
     p.AssignString(reader.ReadString);
     aname:=p.getString;
-    aunit:=VarWithUnitCreate(p.getString);
+    expr.SetString(p.getString);
+    aunit:=expr.GetVariantValue;
     adescr:=p.getString;
     if not p.eof then
       aenabled:=(p.getInt=1)
@@ -1206,6 +1152,7 @@ begin
     Add(aname,adescr,aunit,aenabled);
   end;
   p.Free;
+  expr.Free;
   reader.ReadListEnd;
 end;
 
@@ -1238,48 +1185,6 @@ begin
   u[Integer('Г')]:=1e9;
   u[Integer('T')]:=1e12;
   u[Integer('Т')]:=1e12;
-end;
-
-resourcestring
-  LightSpeedDescr = 'Скорость света в вакууме (3e8 м/с)';
-  PlanckDescr = 'Постоянная Планка (перечеркнутая, 1.054e-34 эрг*с)';
-  GravityConstantDescr = 'Гравитационная постоянная (6.67e-11 м^3*с^-2*кг^-1)';
-  BoltzmanConstantDescr = 'Постоянная Больцмана (1.38e-23 Дж/К)';
-  FreeSpaceDielectricConstDescr = 'Диэлектрическая постоянная (8.85e-12 Ф/м)';
-  ElementaryChargeDescr = 'Элементарный электрический заряд (1.6 Кл)';
-  RadianDescr = 'Объявить радиан безразмерной величиной';
-  pcsDescr = 'объявить ''шт'' безразмерной величиной';
-procedure RegisterUnityConstants;
-var eps0: Real;
-    streps0: String;
-begin
-  UnityPhysConstants:=TFundamentalPhysConstants.Create(nil);
-(*
-  with UnityPhysConstants do begin
-    Add('rad',RadianDescr,VarWithUnitCreate('1 rad'),true);
-    Add('шт',pcsDescr,VarWithUnitCreate('1 pcs'),true);
-    Add('c',LightSpeedDescr,VarWithUnitCreate('2,99792458e8 m/s'));
-    Add('h',PlanckDescr,VarWithUnitCreate('1,054571628e-34 J*s'));
-    Add('G',GravityConstantDescr,VarWithUnitCreate('6,67428e-11 m^3*s^-2*kg^-1'));
-    Add('k',BoltzmanConstantDescr,VarWithUnitCreate('1,3806488e-23 J/K'));
-    eps0:=1/299792458/299792458*1e7;
-    streps0:=FloatToStr(eps0);
-    Add('4pi*Epsilon0',FreeSpaceDielectricConstDescr,VarWithUnitCreate(streps0+' F/m'));
-    Add('e',ElementaryChargeDescr,VarWithUnitCreate('1,602176565e-19 C'));
-  end;
-  *)
-end;
-
-procedure FreeUnityConstants;
-begin
-  FreeAndNil(UnityPhysConstants);
-end;
-
-procedure FreeUnits;
-var i: Integer;
-begin
-  for i:=0 to Length(DerivedFamilyEntries)-1 do
-    DerivedFamilyEntries[i].Free;
 end;
 
 function VariantWithUnit: TVarType;
@@ -1315,6 +1220,8 @@ begin
 end;
 
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
+resourcestring
+  AlreadyHasDimension = '%s уже имеет размерность';
 begin
   if IsVarWithUnit(source) then
     if TVariantWithUnitVarData(source).Data.ConvType=duUnity then begin
@@ -1322,7 +1229,7 @@ begin
       TVariantWithUnitVarData(Result).Data.ConvType:=ConvType;
     end
     else
-      Raise EPhysUnitError.CreateFmt('%s already has dimension',[source])
+      Raise EPhysUnitError.CreateFmt(AlreadyHasDimension,[source])
   else
     VarWithUnitCreateInto(Result,TVariantWithUnit.CreateFromVariant(source,ConvType));
 end;
@@ -1401,10 +1308,14 @@ end;
 procedure NewConvFamilies;
 var comp: TComponent;
     consts: TFundamentalPhysConstants absolute comp;
+    baseconv: TBaseConvFamily absolute comp;
+    der: TDerivedConvFamily absolute comp;
 //  strStream: TStringStream;
   fileStream: TFileStream;
   BinStream: TMemoryStream;
   sr: TSearchRec;
+  i,j,L: Integer;
+  types: TConvTypeArray;
 begin
   if FindFirst(Default_Dir+'*.txt',0,sr)=0 then begin
     repeat
@@ -1417,16 +1328,48 @@ begin
       while BinStream.Position<BinStream.Size do begin
         comp:=BinStream.ReadComponent(nil);
         if (comp is TFundamentalPhysConstants) and
-         (uppercase(consts.Lang)=Uppercase(GetDefaultLanguageInEnglish)) then begin
+         (uppercase(consts.Lang)=Uppercase(PhysUnitLanguage)) then begin
           UnityPhysConstants.Free;
           UnityPhysConstants:=consts;
-        end;
-        comp.Free;
+        end
+        else if (comp is TBaseConvFamily) then begin
+          i:=IndexOfBaseFamily(baseconv.fConvFamily);
+          if (i>=0) then
+            if (Uppercase(PhysUnitLanguage)=Uppercase(baseconv.flang)) or (Uppercase(baseconv.flang)='ANY') then
+              BaseFamilyEntries[i]:=baseconv
+            else baseconv.Free
+          else
+            BaseFamilyEntries.Add(baseconv);
+        end
+        else if (comp is TDerivedConvFamily) then begin
+          i:=IndexOfDerivedFamily(der.fConvFamily);
+          if (i>=0) then
+            if (Uppercase(PhysUnitLanguage)=Uppercase(der.flang)) or (UpperCase(der.flang)='ANY') then
+              DerivedFamilyEntries[i]:=der
+            else der.Free
+          else
+            DerivedFamilyEntries.Add(der);
+        end
+        else
+          comp.Free;
       end;
       BinStream.Free;
       FileStream.Free;
     until FindNext(sr)<>0
   end;
+
+  for i:=0 to BaseFamilyEntries.Count-1 do
+    if TBaseConvFamily(BaseFamilyEntries[i]).fAffine then begin
+      GetConvTypes(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily,Types);
+      L:=Length(AffineUnits);
+      SetLength(AffineUnits,L+Length(Types));
+      for j:=0 to Length(Types)-1 do begin
+        AffineUnits[L+j].ConvType:=Types[j];
+        AffineUnits[L+j].BaseConvType:=Types[j];
+        AffineUnits[L+j].multiplier:=1;
+      end;
+    end;
+
 end;
 (*
       TBaseConvFamily
@@ -1437,74 +1380,65 @@ begin
 end;
 
 procedure TAbstractSavedConvFamily.ReadUnits(Reader: TReader);
-var i,L: Integer;
-    s: string;
-    p: TSimpleParser;
+var p: TSimpleParser;
     varexpr: TVariantExpression;
+    UnitName: string;
+    Multiplier,Offset: Real;
+resourcestring
+  UnitNotFound = 'Единица измерения %s не найдена';
 begin
+  if not DescriptionToConvFamily(name,fConvFamily) then
+      fConvFamily:=RegisterConversionFamily(name);
+
   varexpr:=TVariantExpression.Create(nil);
   Reader.ReadListBegin;
-  i:=0;
   p:=TSimpleParser.Create;
   while not Reader.EndOfList do begin
-    inc(i);
-    if Length(UnitNames)<i then begin
-      L:=i*2;
-      SetLength(UnitNames,L);
-      SetLength(Multipliers,L);
-      SetLength(offsets,L);
-    end;
-    s:=Reader.ReadString;
-    p.AssignString(s);
-    UnitNames[i-1]:=p.getString;
+    p.AssignString(Reader.ReadString);
+    UnitName:=p.getString;
     varexpr.SetString(p.getString);
-    Multipliers[i-1]:=varexpr.getVariantValue;
+    Multiplier:=varexpr.getVariantValue;
     if not p.eof then begin
       varexpr.SetString(p.getString);
-      offsets[i-1]:=varExpr.getVariantValue;
-    end;
+      offset:=varExpr.getVariantValue;
+      RegisterConversionType(TconvTypeAffine.Create(fConvFamily,UnitName,offset,multiplier),fBaseConvType)
+      //baseconvtype здесь подставлен, чтобы лишнюю перем. не вводить, знач. мы игнорируем
+    end
+    else
+      RegisterConversionType(fConvFamily,UnitName,multiplier);
   end;
-  SetLength(UnitNames,i);
-  SetLength(Multipliers,i);
-  SetLength(offsets,i);
   p.Free;
   varexpr.Free;
   Reader.ReadListEnd;
+  //на этом этапе уже должен считаться baseType
+  if not DescriptionToConvType(fStrBaseUnit,fBaseConvType) then
+    Raise Exception.CreateFMT(UnitNotFound,[fStrBaseUnit]);
+  //регистрацию оставим для Loaded
 end;
 
-procedure TBaseConvFamily.Loaded;
-var baseType: TConvType;
-    family: TConvFamily;
-    i: Integer;
+constructor TDerivedConvFamily.Create(owner: TComponent);
 begin
-  if not DescriptionToConvFamily(name,family) then
-    family:=RegisterConversionFamily(name);
-  for i:=0 to Length(UnitNames)-1 do
-    if fAffine then
-      RegisterConversionType(TconvTypeAffine.Create(family,UnitNames[i],offsets[i],multipliers[i]),baseType)
-    else
-      RegisterConversionType(family,UnitNames[i],multipliers[i]);
+  inherited Create(Owner);
+  fformula:=TUnitsWithExponent.Create;
+end;
 
-  if Uppercase(GetDefaultLanguageInEnglish)=Uppercase(flang) then
-    if DescriptionToConvType(fbaseUnit,baseType) then
-      RegisterBaseConversionFamily(family,baseType,fletter,fAffine)
-    else Raise Exception.CreateFmt('Couldn''t find BaseConvFamily''s baseType %s',[fBaseUnit]);
+destructor TDerivedConvFamily.Destroy;
+begin
+  fformula.Free;
+  inherited Destroy;
 end;
 
 procedure TDerivedConvFamily.Loaded;
-var family: TConvFamily;
-    baseType: TConvType;
-    i: Integer;
+var mul: Real;
+    modifier: string;
+resourcestring
+  NonCoherentUnit = '%s должна быть когерентной (с единичным безразмерным множителем) производной величиной';
+  CaseAmbiguity = 'в основной единице измерения данной размерности %s не должно быть приставок м/М';
 begin
-  if not DescriptionToConvFamily(name,family) then
-    family:=RegisterConversionFamily(name);
-  for i:=0 to Length(UnitNames)-1 do
-    RegisterConversionType(family,UnitNames[i],multipliers[i]);
-
-  if (Uppercase(GetDefaultLanguageInEnglish)=Uppercase(flang)) or (UpperCase(flang)='ANY') then
-    if DescriptionToConvType(fbaseUnit,baseType) then
-      RegisterDerivedConversionFamily(family,baseType,fformula)
-    else Raise Exception.CreateFmt('Couldn''t find DerivedConvFamily''s baseType %s',[fBaseUnit]);
+  mul:=fformula.TakeFromString(fStrFormula,modifier);
+  if abs(mul-1)>1e-10 then
+    Raise Exception.CreateFMT(NonCoherentUnit,[fStrFormula]);
+  if modifier<>'' then Raise Exception.CreateFMT(CaseAmbiguity,[fStrFormula]);
 end;
 
 
@@ -1528,38 +1462,62 @@ begin
   Result:=(AValue-foffset)/ffactor;
 end;
 
-initialization
+procedure InitializePhysUnitLib;
+var nodim: TDerivedConvFamily;
+begin
   //милли, микро, кило и пр.
   PopulateUnitMultiplier;
   //новый тип Variant'а
-  VarWithUnitType:=TVariantWithUnitType.Create;
+
 
   BaseFamilyEntries:=TObjectList.create;
-
+  DerivedFamilyEntries:=TObjectList.Create;
   //ключевые типы, их нужно задать в коде
+  UnityPhysConstants:=TFundamentalPhysConstants.Create(nil);
+  //пусть пустой, но он нам нужен, чтобы не проверять на nil
+
+  nodim:=TDerivedConvFamily.Create(nil);
+
   cbDimensionless:=RegisterConversionFamily('Dimensionless');
   duUnity:=RegisterConversionType(cbDimensionless,'',1);
+  nodim.fConvFamily:=cbDimensionless;
+  nodim.fBaseConvType:=duUnity;
+  nodim.Lang:='Any';
+  DerivedFamilyEntries.Add(nodim);
+
   cbAngle:=RegisterConversionFamily('Angle');
   auDMS:=RegisterConversionType(cbAngle,'dms',pi/180);
   auRadian:=RegisterConversionType(cbAngle,'rad',1);
 
-  RegisterDerivedConversionFamily(cbDimensionless,duUnity,'');
 
-  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants]);
   default_dir:=GetCurrentDir+'\data\PhysUnits\';
   NewConvFamilies;
+end;
 
+procedure FinalizePhysUnitLib;
+var i: Integer;
+begin
+  for i:=0 to DerivedFamilyEntries.Count-1 do
+    UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
+  for i:=0 to BaseFamilyEntries.Count-1 do
+    UnregisterConversionFamily(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily);
+  FreeAndNil(UnityPhysConstants);
+  FreeAndNil(DerivedFamilyEntries);
+  FreeAndNil(BaseFamilyEntries);
+end;
+
+
+initialization
+  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants]);
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
   GConvUnitToStrFmt:='%g %s';
-
-
-  RegisterUnityConstants;
-
+  VarWithUnitType:=TVariantWithUnitType.Create;
+  PhysUnitLanguage:='English';
 
 finalization
-  FreeUnityConstants;
+  FinalizePhysUnitLib;
   FreeAndNil(VarWithUnitType);
-  FreeUnits;
+
 
 end.
