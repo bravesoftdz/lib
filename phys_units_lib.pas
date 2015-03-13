@@ -193,6 +193,7 @@ function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
 function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant; overload;
 function VarWithUnitConvert(source: Variant; UnitName: string): Variant; overload;
 function StrToConvType(str: string): TConvType;
+function StrToConvFamily(str: string): TConvFamily;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 
@@ -336,6 +337,12 @@ begin
     f.Free;
   end;
 //end
+end;
+
+function StrToConvFamily(str: string): TConvFamily;
+begin
+  if not DescriptionToConvFamily(str,Result) then
+    Raise EPhysUnitError.CreateFmt('Couldn''t find conversion family %s',[str]);
 end;
 
 (*
@@ -1501,6 +1508,7 @@ begin
     UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
   for i:=0 to BaseFamilyEntries.Count-1 do
     UnregisterConversionFamily(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily);
+  SetLength(AffineUnits,0);  
   FreeAndNil(UnityPhysConstants);
   FreeAndNil(DerivedFamilyEntries);
   FreeAndNil(BaseFamilyEntries);
