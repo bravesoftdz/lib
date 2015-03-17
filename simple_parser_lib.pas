@@ -35,6 +35,7 @@ TSimpleParser=class
     function getString: string;   //считать остаток строки
     function getIdent: string; //считать символы, пока они укладываютс€ в диап. A..Z, a..z, 0..9, _, ј..я, а..€
     function getPhysUnitIdent: string;
+    function getVarPathIdent: string;
     function getHex: Integer;
     function getBinary: LongWord;
     function getPhysUnit: TConvType;
@@ -254,6 +255,17 @@ begin
   if (_pos<=Length(_str)) and IsFirstIdentSymbol(_str[_pos]) then begin
     inc(_pos);
     while (_pos<=Length(_str)) and IsIdentSymbol(_str[_pos]) do inc(_pos);
+  end;
+  Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
+end;
+
+function TSimpleParser.getVarPathIdent: string;
+begin
+  skip_spaces;
+  fBackupPos:=_pos;
+  if (_pos<=Length(_str)) and IsFirstIdentSymbol(_str[_pos]) then begin
+    inc(_pos);
+    while (_pos<=Length(_str)) and (IsIdentSymbol(_str[_pos]) or (_str[_pos]='.')) do inc(_pos);
   end;
   Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
 end;

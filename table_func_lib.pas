@@ -7,7 +7,7 @@ type
 
   TAbstractMathFunc=class(TStreamingClass)
     private
-      ftitle,fXname,fYname,fXunit,fYunit: string;
+      ftitle,fXname,fYname: string;
       fDescription: TStrings;
 
       procedure SetDescription(value: TStrings);
@@ -16,6 +16,8 @@ type
       function get_xmax: Real; virtual; abstract;
       function get_ymin: Real; virtual; abstract;
       function get_ymax: Real; virtual; abstract;
+    protected
+      fXunit,fYunit: string;
       function GetValue(xi: Real): Real; virtual; abstract;
     public
       constructor Create(owner: TComponent); override;
@@ -61,7 +63,6 @@ type
     fchart_series: TLineSeries;
 
     procedure plus_one; //приготовить место для еще одного числа
-    function Getvalue(xi:Real): Real; override;
     procedure update_spline();
     procedure update_order(new_value: Integer);
     function isen: Boolean;
@@ -79,7 +80,7 @@ type
     procedure read_from_stream(var F: TextFile);
 
       protected
-
+    function Getvalue(xi:Real): Real; override;
     procedure DefineProperties(Filer: TFiler); override;
     function IsNonZeroTolerance: boolean;
 

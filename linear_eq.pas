@@ -142,7 +142,7 @@ function GetLengthSquared(value: Variant): Real;
 
 implementation
 
-uses varCmplx,streaming_class_lib,sysUtils;
+uses varCmplx,streaming_class_lib,sysUtils,phys_units_lib;
 
 var ManySolutionsVariantType: TManySolutionsVariantType;
 
@@ -175,8 +175,10 @@ begin
    result:=Sqr(value)
   else if VarIsComplex(value) then
     result:=VarComplexAbsSqr(value)
+  else if IsVarWithUnit(value) then
+    result:=GetLengthSquared(TVariantWithUnitVarData(value).Data.instance)
   else
-    result:=0;
+    Raise Exception.Create('can''t find length of number with unit');
 end;
 
 (*

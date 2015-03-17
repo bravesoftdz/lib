@@ -192,6 +192,7 @@ function IsDimensionless(V: Variant): boolean;
 function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
 function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant; overload;
 function VarWithUnitConvert(source: Variant; UnitName: string): Variant; overload;
+function VarWithUnitGetNumberIn(source: Variant; UnitName: TConvType): Variant;
 function StrToConvType(str: string): TConvType;
 function StrToConvFamily(str: string): TConvFamily;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
@@ -696,7 +697,9 @@ begin
     end;
   end;
   if (ConvType<>DestConv) then begin
-    if CompatibleConversionTypes(ConvType,DestConv) then begin
+    if instance=0 then
+      ConvType:=DestConv
+    else if CompatibleConversionTypes(ConvType,DestConv) then begin
       instance:=instance*Convert(1,ConvType,DestConv);
       ConvType:=DestConv;
     end
@@ -1274,6 +1277,13 @@ begin
   Result:=VarWithUnitConvert(source,StrToConvType(UnitName));
 end;
 
+function VarWithUnitGetNumberIn(source: Variant; UnitName: TConvType): Variant;
+var tmp: Variant;
+begin
+  tmp:=VarWithUnitConvert(source,UnitName);
+  Result:=TVariantWithUnitVarData(tmp).Data.instance;
+end;
+
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
@@ -1392,7 +1402,7 @@ var p: TSimpleParser;
     UnitName: string;
     Multiplier,Offset: Real;
 resourcestring
-  UnitNotFound = 'Единица измерения %s не найдена';
+  UnitNotFound = 'Единица измерения %s не найдена или дублируется';
 begin
   if not DescriptionToConvFamily(name,fConvFamily) then
       fConvFamily:=RegisterConversionFamily(name);

@@ -215,6 +215,7 @@ TAssignValueToVariableProc = function (aname: string; avalue: Variant): Boolean;
 TVariantExpression=class(TAbstractExpression)  //
   private
     Lexems: array of TLexem;
+    fUnitRestriction: TConvType;
     procedure EnsureLexemsLen(i: Integer);
   protected
     function AddBracketsForAssign(text: string): string;
@@ -231,8 +232,15 @@ TVariantExpression=class(TAbstractExpression)  //
     procedure ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
   public
     AssignValueToVariableProc: TAssignValueToVariableProc;
+    constructor CreateZero(owner: TComponent; unitRestriction: string);reintroduce; overload;
+    procedure SetUnitRestriction(unitRestriction: string); 
     function GetVariantValue: Variant; override;
+    property UnitRestriction: TConvType read fUnitRestriction;
+end;
 
+TStandAloneVariantExpression=class(TVariantExpression)
+  public
+    constructor Create(Owner: TComponent); override;
 end;
 
 resourcestring
@@ -934,6 +942,17 @@ end;
 (*
     TVariantExpression
                               *)
+constructor TVariantExpression.CreateZero(Owner: TComponent; UnitRestriction: string);
+begin
+  CreateZero(Owner);
+  fUnitRestriction:=StrToConvType(UnitRestriction);
+end;
+
+procedure TVariantExpression.SetUnitRestriction(unitRestriction: string);
+begin
+  fUnitRestriction:=StrToConvType(unitRestriction);
+end;
+
 procedure TVariantExpression.EnsureLexemsLen(i: Integer);
 begin
   if Length(Lexems)<i then
@@ -1007,7 +1026,7 @@ begin
       if Lexems[LIndex].PhysUnit<>CIllegalConvType then
         Lexems[LIndex].LType:=ltPhysUnit
       else begin
-        Lexems[LIndex].Ident:=p.getIdent;
+        Lexems[LIndex].Ident:=p.getVarPathIdent;
         if Lexems[LIndex].Ident<>'' then
           Lexems[LIndex].LType:=ltIdent
         else begin
@@ -1387,7 +1406,7 @@ begin
       else if Assigned(fRootComponent) then begin
       //видать, переменная
         fComponent:=FindNestedComponent(fRootComponent,s);
-        if Assigned(fComponent) and (fComponent is TVariantExpression) then
+        if Assigned(fComponent) and (fComponent is TAbstractExpression) then
           treeNode:=TVariableNode.Create(fComponent,'',nil)
         else begin
           i:=Length(s);
@@ -1422,12 +1441,22 @@ begin
     if Assigned(fEvaluationTreeRoot) then begin
       if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
       fworking:=true;
-      Result:=fEvaluationTreeRoot.getVariantValue;
+      if fUnitRestriction<>0 then
+        Result:=VarWithUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
+      else
+        Result:=fEvaluationTreeRoot.getVariantValue;
       fworking:=false;
+
     end
     else Raise Exception.Create(EmptyEvaluationTreeErrStr);
   end
   else Raise Exception.Create(fLastErrorMsg);
+end;
+
+constructor TStandAloneVariantExpression.Create(Owner: TComponent);
+begin
+  inherited Create(Owner);
+  SetSubComponent(false);
 end;
 
 function TAbstractExpression.getValue: Real;
@@ -1439,5 +1468,8 @@ function TAbstractExpression.getIntegerValue: Integer;
 begin
   Result:=Round(GetValue);
 end;
+
+initialization
+  RegisterClasses([TVariantExpression,TStandAloneVariantExpression]);
 
 end.
