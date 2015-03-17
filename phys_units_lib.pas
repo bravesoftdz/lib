@@ -197,6 +197,7 @@ function StrToConvType(str: string): TConvType;
 function StrToConvFamily(str: string): TConvFamily;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
+function VarWithUnitSqrt(source: Variant): Variant;
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 function FamilyToName(Int: LongInt; var Ident: string): Boolean;
@@ -952,19 +953,7 @@ begin
       else
         instance:=VarComplexCreate(LeftStr(str,i-1));
       unitStr:=RightStr(str,Length(str)-i);
-      if not DescriptionToConvType(unitStr,ConvType) then begin
-        //сложное выражение, нужно создать экземпл€р TUnitsWithExponent,
-        //скормить ему размерность, он "выплюнет" множитель, домножаем на него
-        dimension:=TUnitsWithExponent.Create;
-        try
-          instance:=instance*dimension.TakeFromString(unitStr,modifier);
-          //а также ConvType - тот, что €вл€етс€ базовым дл€ данного семейства
-          //возможно, семейство придетс€ создать на ходу
-          ConvType:=FormulaToConvType(dimension);
-        finally
-          dimension.Free;
-        end;
-      end;
+      ConvType:=StrToConvType(unitStr);
     end;
   end;
 end;
@@ -1288,6 +1277,11 @@ function VarWithUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
   TVariantWithUnitVarData(Result).Data.DoPower(pow);
+end;
+
+function VarWithUnitSqrt(source: Variant): Variant;
+begin
+  Result:=VarWithUnitPower(source,0.5);
 end;
 
 (*

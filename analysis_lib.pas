@@ -2,7 +2,7 @@ unit analysis_lib;
 
 interface
 
-uses classes,linear_eq,streaming_class_lib,streamable_component_list;
+uses classes,linear_eq,streaming_class_lib,streamable_component_list,expression_lib;
 
 type
 
@@ -20,16 +20,17 @@ TSweep = class (TComponent)
   private
     fEnabled,fIsLog: Boolean;
     fVariable: IEquationNode;
-    fMinVal,fMaxVal,fIncr: Real;
+    fMinVal,fMaxVal,fIncr: TVariantExpression;
   public
+    constructor Create(Owner: TComponent); override;
     function NumberOfPoints: Integer;
-    function GetPoint(index: Integer): Real;
+    function GetPoint(index: Integer): Variant;
   published
     property Enabled: Boolean read fEnabled write fEnabled default false;
     property Variable: IEquationNode read fVariable write fVariable;
-    property MinVal: Real read fMinVal write fMinVal;
-    property MaxVal: Real read fMaxVal write fMaxVal;
-    property Incr: Real read fIncr write fIncr;
+    property MinVal: TVariantExpression read fMinVal write fMinVal;
+    property MaxVal: TVariantExpression read fMaxVal write fMaxVal;
+    property Incr: TVariantExpression read fIncr write fIncr;
     //если лог., то Incr имеет смысл точек на декаду или точек на октаву (тогда еще и отрицат)
     property isLog: Boolean read fIsLog write fIsLog default false;
 end;
@@ -121,28 +122,36 @@ end;
 (*
       TSweep
                     *)
+constructor TSweep.Create(Owner: TComponent);
+begin
+  inherited Create(Owner);
+  fMinVal:=TVariantExpression.CreateZero(self);
+  fMaxVal:=TVariantExpression.CreateZero(self);
+  fIncr:=TVariantExpression.CreateZero(self);
+end;
+
 function TSweep.NumberOfPoints: Integer;
 begin
   if enabled then
     if isLog then
-      if Incr>0 then  //точек на декаду
-        Result:=Ceil(log10(MaxVal/MinVal)*incr+1-1e-7)
+      if Incr.GetVariantValue>0 then  //точек на декаду
+        Result:=Ceil(log10(MaxVal.GetVariantValue/MinVal.GetVariantValue)*incr.GetVariantValue+1-1e-7)
       else
-        Result:=Ceil(log2(MaxVal/MinVal)*(-incr)+1-1e-7)
-    else Result:=Ceil((MaxVal-MinVal)/Incr+1)
+        Result:=Ceil(log2(MaxVal.GetVariantValue/MinVal.GetVariantValue)*(-incr.GetVariantValue)+1-1e-7)
+    else Result:=Ceil((MaxVal.GetVariantValue-MinVal.GetVariantValue)/Incr.GetVariantValue+1)
   else Result:=1; //чтобы не убить внутренние циклы
 end;
 
-function TSweep.GetPoint(index: Integer): Real;
+function TSweep.GetPoint(index: Integer): Variant;
 begin
   if enabled then
     if isLog then
-      if Incr>0 then
-        Result:=MinVal*power(10,index/incr)
+      if Incr.GetVariantValue>0 then
+        Result:=MinVal.GetVariantValue*power(10,index/incr.GetVariantValue)
       else
-        Result:=MinVal*power(2,index/(-incr))
+        Result:=MinVal.GetVariantValue*power(2,index/(-incr.GetVariantValue))
     else
-      Result:=MinVal+index*Incr
+      Result:=MinVal.GetVariantValue+index*Incr.GetVariantValue
   else Raise Exception.Create('TSweep.GetPoint: can''t return value when disabled');
 end;
 
@@ -199,12 +208,12 @@ begin
     clone:=TStreamingClass.CloneComponent(source) as TStreamingClass;
     //теперь ищем в нем себя и меняем интервалы
     our_copy:=clone.FindComponent(Name) as TAnalysis;
-    our_copy.fSweeps[fsweepIndex].MinVal:=fSweeps[fsweepIndex].GetPoint(i*pointsPerThread);
+    our_copy.fSweeps[fsweepIndex].MinVal.SetString(fSweeps[fsweepIndex].GetPoint(i*pointsPerThread));
     offsets[i]:=i*pointsPerThread;
     if i=count-1 then
-      our_copy.fSweeps[fsweepIndex].MaxVal:=fSweeps[fsweepIndex].GetPoint(NumOfPoints-1)
+      our_copy.fSweeps[fsweepIndex].MaxVal.SetString(fSweeps[fsweepIndex].GetPoint(NumOfPoints-1))
     else
-      our_copy.fSweeps[fsweepIndex].MaxVal:=fSweeps[fsweepIndex].GetPoint((i+1)*pointsPerThread-1);
+      our_copy.fSweeps[fsweepIndex].MaxVal.setString(fSweeps[fsweepIndex].GetPoint((i+1)*pointsPerThread-1));
 
     clone.saveFormat:=fCyr;
     clone.SaveToFile('clone'+IntToStr(i)+'.txt');
@@ -300,14 +309,14 @@ begin
     if SecondarySweep.Enabled then begin
       WriteLn(F,'Secondary sweep: enabled');
       WriteLn(F,'Variable: '+SecondarySweep.variable.ShowNodeName);
-      s:='Values: '+SecondarySweep.Variable.ShowValue(SecondarySweep.fMinVal)+'..'+SecondarySweep.Variable.ShowValue(SecondarySweep.MaxVal)+', step '+PrimarySweep.Variable.ShowValue(SecondarySweep.fIncr);
+      s:='Values: '+SecondarySweep.Variable.ShowValue(SecondarySweep.fMinVal.GetVariantValue)+'..'+SecondarySweep.Variable.ShowValue(SecondarySweep.MaxVal.GetVariantValue)+', step '+PrimarySweep.Variable.ShowValue(SecondarySweep.fIncr.GetVariantValue);
 //      s:='Values: '+FloatToStr(SecondarySweep.fMinVal)+' .. '+FloatToStr(SecondarySweep.fMaxVal)+', step '+FloatToStr(SecondarySweep.fIncr);
       if SecondarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
     end;
       WriteLn(F,'Primary sweep:');
       WriteLn(F,'Variable: '+PrimarySweep.variable.ShowNodeName);
-      s:='Values: '+PrimarySweep.Variable.ShowValue(PrimarySweep.fMinVal)+'..'+PrimarySweep.Variable.ShowValue(PrimarySweep.MaxVal)+', step '+PrimarySweep.Variable.ShowValue(PrimarySweep.fIncr);
+      s:='Values: '+PrimarySweep.Variable.ShowValue(PrimarySweep.fMinVal.GetVariantValue)+'..'+PrimarySweep.Variable.ShowValue(PrimarySweep.MaxVal.GetVariantValue)+', step '+PrimarySweep.Variable.ShowValue(PrimarySweep.fIncr.GetVariantValue);
 //      s:='Values: '+FloatToStr(PrimarySweep.fMinVal)+' .. '+FloatToStr(PrimarySweep.fMaxVal)+', step '+FloatToStr(PrimarySweep.fIncr);
       if PrimarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
@@ -369,11 +378,11 @@ begin
       ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.ShowNodeName;
       inc(rowCount);
       ExcelSht.Cells.Item[rowCount,1]:='Values:';
-      ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(SecondarySweep.fMinVal);
+      ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(SecondarySweep.fMinVal.GetVariantValue);
       ExcelSht.Cells.Item[rowCount,3]:='..';
-      ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(SecondarySweep.fMaxVal);
+      ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(SecondarySweep.fMaxVal.GetVariantValue);
       ExcelSht.Cells.Item[rowCount,5]:='Step:';
-      ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(SecondarySweep.Incr);
+      ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(SecondarySweep.Incr.GetVariantValue);
       if SecondarySweep.isLog then
         ExcelSht.Cells.Item[rowCount,7]:=', log.scale';
     end;
@@ -383,11 +392,11 @@ begin
     ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.ShowNodeName;
     inc(rowCount);
     ExcelSht.Cells.Item[rowCount,1]:='Values:';
-    ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(PrimarySweep.fMinVal);
+    ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(PrimarySweep.fMinVal.GetVariantValue);
     ExcelSht.Cells.Item[rowCount,3]:='..';
-    ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(PrimarySweep.fMaxVal);
+    ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(PrimarySweep.fMaxVal.GetVariantValue);
     ExcelSht.Cells.Item[rowCount,5]:='Step:';
-    ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(PrimarySweep.Incr);
+    ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(PrimarySweep.Incr.GetVariantValue);
     if PrimarySweep.isLog then
       ExcelSht.Cells.Item[rowCount,7]:=', log.scale';
   //заголовок готов
