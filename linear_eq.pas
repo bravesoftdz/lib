@@ -288,7 +288,7 @@ begin
     SwitchCols(j,col_num);
     //элем (j,j) - лучший из лучших!
     ratio:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
-    if GetLengthSquared(ratio-1)>ftolerance then begin
+    if (not IsDimensionless(ratio)) or (GetLengthSquared(ratio-1)>ftolerance) then begin
       ratio:=1/ratio;
       fmatrix[j,j]:=1;
       for i:=j+1 to fNumOfVars do

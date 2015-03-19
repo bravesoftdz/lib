@@ -19,7 +19,7 @@ end;
 TSweep = class (TComponent)
   private
     fEnabled,fIsLog: Boolean;
-    fVariable: IEquationNode;
+    fVariable: IExpression;
     fMinVal,fMaxVal,fIncr: TVariantExpression;
   public
     constructor Create(Owner: TComponent); override;
@@ -27,7 +27,7 @@ TSweep = class (TComponent)
     function GetPoint(index: Integer): Variant;
   published
     property Enabled: Boolean read fEnabled write fEnabled default false;
-    property Variable: IEquationNode read fVariable write fVariable;
+    property Variable: IExpression read fVariable write fVariable;
     property MinVal: TVariantExpression read fMinVal write fMinVal;
     property MaxVal: TVariantExpression read fMaxVal write fMaxVal;
     property Incr: TVariantExpression read fIncr write fIncr;
@@ -38,7 +38,8 @@ end;
 TAnalysis = class (TStreamingClass)
   private
     fSimulationType: TSimulationType;
-    fVarsOfInterest: TStreamableComponentList;
+    fVarsOfInterest: TStrings;
+    fExpressions: array of TVariantExpression;
     fSweeps: array [0..1] of TSweep;
     fOrigin: TAnalysis; //он создал свои копии
     fThread: TThread; //поток, к нам привязанный
@@ -64,7 +65,7 @@ TAnalysis = class (TStreamingClass)
     procedure ExportToExcel;
   published
     property SimulationType: TSimulationType read fSimulationType write fSimulationType;
-    property VarsOfInterest: TStreamableComponentList read fVarsOfInterest write fVarsOfInterest;
+    property VarsOfInterest: TStrings read fVarsOfInterest write fVarsOfInterest;
     property PrimarySweep: TSweep read fSweeps[0] write fSweeps[0];
     property SecondarySweep: TSweep read fSweeps[1] write fSweeps[1];
 end;
@@ -162,9 +163,7 @@ constructor TAnalysis.Create(Owner: TComponent);
 var i: Integer;
 begin
   inherited Create(Owner);
-  fVarsOfInterest:=TStreamableComponentList.Create(self);
-  fVarsOfInterest.SetSubComponent(true);
-  fVarsOfInterest.Name:='VarsOfInterest';
+  fVarsOfInterest:=TStringList.Create;
   for i:=0 to 1 do begin
     fSweeps[i]:=TSweep.Create(self);
     fSweeps[i].SetSubComponent(true);
@@ -180,6 +179,7 @@ begin
       fclones[i].fThread.Terminate;
 
   //но тут мы их должны дождаться!
+  fVarsOfInterest.Free;
   inherited Destroy;
 end;
 
@@ -308,39 +308,47 @@ begin
       WriteLn(F,'type: '+strType);
     if SecondarySweep.Enabled then begin
       WriteLn(F,'Secondary sweep: enabled');
-      WriteLn(F,'Variable: '+SecondarySweep.variable.ShowNodeName);
-      s:='Values: '+SecondarySweep.Variable.ShowValue(SecondarySweep.fMinVal.GetVariantValue)+'..'+SecondarySweep.Variable.ShowValue(SecondarySweep.MaxVal.GetVariantValue)+', step '+PrimarySweep.Variable.ShowValue(SecondarySweep.fIncr.GetVariantValue);
+      WriteLn(F,'Variable: '+SecondarySweep.variable.getString);
+      s:='Values: '+SecondarySweep.fMinVal.GetVariantValue+'..'+SecondarySweep.MaxVal.GetVariantValue+', step '+SecondarySweep.fIncr.GetVariantValue;
 //      s:='Values: '+FloatToStr(SecondarySweep.fMinVal)+' .. '+FloatToStr(SecondarySweep.fMaxVal)+', step '+FloatToStr(SecondarySweep.fIncr);
       if SecondarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
     end;
       WriteLn(F,'Primary sweep:');
-      WriteLn(F,'Variable: '+PrimarySweep.variable.ShowNodeName);
-      s:='Values: '+PrimarySweep.Variable.ShowValue(PrimarySweep.fMinVal.GetVariantValue)+'..'+PrimarySweep.Variable.ShowValue(PrimarySweep.MaxVal.GetVariantValue)+', step '+PrimarySweep.Variable.ShowValue(PrimarySweep.fIncr.GetVariantValue);
+      WriteLn(F,'Variable: '+PrimarySweep.variable.getString);
+      s:='Values: '+PrimarySweep.fMinVal.GetVariantValue+'..'+PrimarySweep.MaxVal.GetVariantValue+', step '+PrimarySweep.fIncr.GetVariantValue;
 //      s:='Values: '+FloatToStr(PrimarySweep.fMinVal)+' .. '+FloatToStr(PrimarySweep.fMaxVal)+', step '+FloatToStr(PrimarySweep.fIncr);
       if PrimarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
   //заголовок готов
   for i:=0 to SecondarySweep.NumberOfPoints-1 do begin
     if SecondarySweep.Enabled then
-      WriteLn(F,SecondarySweep.variable.ShowValue(SecondarySweep.GetPoint(i)));
+      WriteLn(F,SecondarySweep.GetPoint(i));
     //и напоминаем названия переменных
-    s:=PrimarySweep.Variable.ShowNodeName+','+PrimarySweep.Variable.ShowNodeUnit+#9;
+    s:=PrimarySweep.Variable.getString+#9;
     for k:=0 to VarsOfInterest.Count-1 do
+(*
       if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
         s:=s+IEqNode.ShowNodeName+','+IEqNode.ShowNodeUnit+#9
       else
         s:=s+VarsOfInterest[k].Name;
+        *)
+      s:=s+VarsOfInterest[k]+#9;
     WriteLn(F,s);
     for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
-      s:=FloatToStr(PrimarySweep.GetPoint(j))+#9;
+      s:=PrimarySweep.GetPoint(j);
+      s:=s+#9;
       for k:=0 to VarsOfInterest.Count-1 do begin
+(*
         if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
           s:=s+IEqNode.ShowValue(fdata[j,i,k])+#9
         else begin
           v:=fdata[j,i,k];
           s:=s+v+#9;
         end;
+        *)
+        v:=fdata[j,i,k];
+        s:=s+v+#9;
       end;
       WriteLn(F,s);
     end;
@@ -375,7 +383,7 @@ begin
       ExcelSht.Cells.Item[rowCount,1]:='Secondary sweep: enabled';
       inc(rowCount);
       ExcelSht.Cells.Item[rowCount,1]:='Variable:';
-      ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.ShowNodeName;
+      ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.getString;
       inc(rowCount);
       ExcelSht.Cells.Item[rowCount,1]:='Values:';
       ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(SecondarySweep.fMinVal.GetVariantValue);
@@ -389,34 +397,41 @@ begin
     ExcelSht.Cells.Item[rowCount,1]:='Primary sweep:';
     inc(rowCount);
     ExcelSht.Cells.Item[rowCount,1]:='Variable:';
-    ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.ShowNodeName;
+    ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.getString;
     inc(rowCount);
     ExcelSht.Cells.Item[rowCount,1]:='Values:';
-    ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(PrimarySweep.fMinVal.GetVariantValue);
+    s:=PrimarySweep.fMinVal.GetVariantValue;
+    ExcelSht.Cells.Item[rowCount,2]:=s;
     ExcelSht.Cells.Item[rowCount,3]:='..';
-    ExcelSht.Cells.Item[rowCount,4]:=FloatToStr(PrimarySweep.fMaxVal.GetVariantValue);
+    s:=PrimarySweep.fMaxVal.GetVariantValue;
+    ExcelSht.Cells.Item[rowCount,4]:=s;
     ExcelSht.Cells.Item[rowCount,5]:='Step:';
-    ExcelSht.Cells.Item[rowCount,6]:=FloatToStr(PrimarySweep.Incr.GetVariantValue);
+    s:=PrimarySweep.Incr.GetVariantValue;
+    ExcelSht.Cells.Item[rowCount,6]:=s;
     if PrimarySweep.isLog then
       ExcelSht.Cells.Item[rowCount,7]:=', log.scale';
   //заголовок готов
     inc(rowCount);
     for i:=0 to SecondarySweep.NumberOfPoints-1 do begin
       if SecondarySweep.Enabled then begin
-        ExcelSht.Cells.Item[rowCount,1]:=SecondarySweep.Variable.ShowValue(SecondarySweep.GetPoint(i));
+        ExcelSht.Cells.Item[rowCount,1]:=SecondarySweep.GetPoint(i);
         inc(rowCount);
       end;
       //и напоминаем названия переменных
-      ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.Variable.ShowNodeName;
+      ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.Variable.getString;
       for k:=0 to VarsOfInterest.Count-1 do
+(*
         if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
           ExcelSht.Cells.Item[rowCount,k+2]:=IEqNode.ShowNodeName
         else
           ExcelSht.Cells.Item[rowCount,k+2]:=VarsOfInterest[k].Name;
+          *)
+        ExcelSht.Cells.Item[rowCount,k+2]:=VarsOfInterest[k];
       inc(rowCount);
       for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
 //        ExcelSht.Cells.Item[rowCount,1]:=FloatToStr(PrimarySweep.GetPoint(j));
-        ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.GetPoint(j);
+        s:=PrimarySweep.GetPoint(j);
+        ExcelSht.Cells.Item[rowCount,1]:=s;
         for k:=0 to VarsOfInterest.Count-1 do begin
           s:=fdata[j,i,k];
           ExcelSht.Cells.Item[rowCount,k+2]:=s;
@@ -454,19 +469,28 @@ begin
   try
 //внешний цикл - по secondarySweep, если он есть
   with fAnalysis do begin
+    SetLength(fExpressions,VarsOfInterest.Count);
+    for i:=0 to VarsOfInterest.Count-1 do begin
+      fExpressions[i]:=TVariantExpression.Create(nil);
+      fExpressions[i].SetString(VarsOfInterest[i]);
+      fExpressions[i].SetRootComponent(fObject.Implementor);
+    end;
     SetLength(fData,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,VarsOfInterest.Count);
     for j:=0 to SecondarySweep.NumberOfPoints-1 do begin
       if SecondarySweep.Enabled then
-        SecondarySweep.Variable.SetValue(SecondarySweep.GetPoint(j));
+        SecondarySweep.Variable.SetString(SecondarySweep.GetPoint(j));
       for i:=0 to fAnalysis.PrimarySweep.NumberOfPoints-1 do begin
         if PrimarySweep.Enabled then
-          PrimarySweep.Variable.SetValue(PrimarySweep.GetPoint(i));
+          PrimarySweep.Variable.SetString(PrimarySweep.GetPoint(i));
         fObject.RunSimulation(SimulationType);
         for k:=0 to VarsOfInterest.Count-1 do
+          fData[i,j,k]:=fExpressions[k].GetVariantValue;
+(*
           if VarsOfInterest[k].GetInterface(IEquationNode,node) then begin
             if VarIsEmpty(node.value) then Raise Exception.CreateFMT('TAnalysisThread.Execute: unassigned value in node %s', [node.ShowNodeName]);
             fData[i,j,k]:=node.value;
           end;
+*)
         fPercentDone:=Round((j+i/PrimarySweep.NumberOfPoints)/SecondarySweep.NumberOfPoints*100);
         Synchronize(Progress);
       end;
@@ -496,7 +520,7 @@ initialization
   stTransient:=RegisterSimulationType('Transient');
   stAC:=RegisterSimulationType('AC');
   stDC:=RegisterSimulationType('DC');
-  NumberOfAnalysisThreads:=4;
+  NumberOfAnalysisThreads:=1;
 finalization
   FreeAndNil(AnalysisTypes);
 end.

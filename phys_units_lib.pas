@@ -18,12 +18,11 @@ type
   TUnitsWithExponent = class;
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponent; i,j: Integer) : Real of object;
   TShowName = function (const value: TConvType): string;
-  TUnitTypes = array of TConvType;  //из TConvType всегда получим TConvFamily
   TExponents = array of Real;
 
   TUnitsWithExponent = class(TPersistent)  //хватило бы и record'а и указателей и GetMem/FreeMem,
     private
-      UnitTypes: TUnitTypes;
+      UnitTypes: TConvTypeArray;
       Exponents: TExponents;
       fCount: Integer;
       procedure Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
@@ -108,6 +107,7 @@ type
   public
     procedure Cast(var Dest: TVarData; const Source: TVarData); override;
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
+    function CompareOp(const Left, Right: TVarData; const Operator: Integer): Boolean; override;
   end;
 
   TVariantWithUnitVarData = record
@@ -144,6 +144,7 @@ type
       procedure DefineProperties(filer: TFiler); override;
     public
       constructor Create(Owner: TComponent); override;
+      destructor Destroy; override;
       procedure Add(aname,adescr: string; aValue: Variant; aEnabled: boolean=false);
       function GetVar(i: Integer): Variant;
       function GetActualIndex(i: Integer): Integer;
@@ -174,10 +175,8 @@ type
 
   TLogConversionDetailsProc = procedure (line: string); //цвет сами придумаем
 
-//procedure RegisterDerivedConversionFamily(Family: TConvFamily; BaseType: TConvType; formula: string); overload;
 //этот вариант для регистрации вручную, formula - что-то вроде 'M*L/T^2'
 function RegisterDerivedConversionFamily(formula: TUnitsWithExponent): TDerivedConvFamily;
-
 function ConvTypeToBaseFamilyLetter(const value: TConvType): string;
 
 //тип VariantWithUnit
@@ -287,7 +286,6 @@ begin
   ConvFamily:=ConvTypeToFamily(ConvType);
   for i:=0 to BaseFamilyEntries.Count-1 do
     if TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily=ConvFamily then begin
-//      Result.AddBaseUnit(ConvType,1); //а почему ConvType, а не BaseConvType?
       Result.AddBaseUnit(TBaseConvFamily(BaseFamilyEntries[i]).fBaseConvType,1);
       Exit;
     end;
@@ -499,7 +497,7 @@ end;
 procedure TUnitsWithExponent.Merge(value: TUnitsWithExponent; proc: TUnitsWithExponentMergeProc);
 var i,j,k: Integer;
     L1,L2: Integer;
-    ResultUnits: TUnitTypes;
+    ResultUnits: TConvTypeArray;
     ResultExponents: TExponents;
     first,second: TConvFamily;
 begin
@@ -649,7 +647,7 @@ var i,L: Integer;
 begin
   L:=Length(AffineUnits);
   for i:=0 to L-1 do
-    if (AffineUnits[i].BaseConvType=BaseConvType) and (AffineUnits[i].multiplier=mul) then begin
+    if (AffineUnits[i].BaseConvType=BaseConvType) and (abs(AffineUnits[i].multiplier-mul)<1e-5) then begin
       Result:=AffineUnits[i].ConvType;
       Exit;
     end;
@@ -786,9 +784,6 @@ var v: TVariantWithUnit absolute value;
 begin
   if value is TVariantWithUnit then
     if CompatibleConversionTypes(v.ConvType,ConvType) then
-    //'этим я хочу сказать, что темп. и разность темп. принадлежит одной семье,
-    //но это разные типы и isAffine-это свойство типа, а не семьи!
-    //K и gradC - афинные, а Kdif и Cdif - нет!
       if IsAffine(j) and v.IsAffine(k) then begin
         //преобр правую часть в тип левой части
           offset:=Convert(0,AffineUnits[k].BaseConvType,AffineUnits[j].BaseConvType);
@@ -799,6 +794,10 @@ begin
       end
       else
         instance:=instance+v.instance*Convert(1,v.ConvType,ConvType)
+    else if instance=0 then begin
+      instance:=v.instance;
+      ConvType:=v.ConvType;
+    end
     else begin
       v.Conversion(ConvType);
       instance:=instance+v.instance;
@@ -856,8 +855,11 @@ begin
             end
           else begin
             //основная процедура
+            if ConvType<>FormulaToConvType(UL) then
+              Conversion(FormulaToConvType(UL));
             UL.Multiply(Ur);
-            instance:=instance*v.instance*Convert(1,v.ConvType,FormulaToConvType(Ur));
+            instance:=instance*v.instance;
+            instance:=instance*Convert(1,v.ConvType,FormulaToConvType(Ur));
             ConvType:=FormulaToConvType(UL);
           end;
       finally
@@ -924,9 +926,7 @@ end;
 procedure TVariantWithUnit.Assign(str: string);
 var unitStr: string;
     i: Integer;
-    dimension: TUnitsWithExponent;
     val: Extended;
-    modifier: string;
 begin
   for i:=1 to Length(str) do
     if (str[i]='.') or (str[i]=',') then str[i]:=DecimalSeparator;
@@ -1022,6 +1022,23 @@ begin
   else inherited; //нам дали пустой variant скорее всего
 end;
 
+function TVariantWithUnitType.CompareOp(const Left, Right: TVarData; const Operator: Integer): Boolean;
+var L,R: TVariantWithUnit;
+begin
+  Result:=false;
+  L:=TVariantWithUnitVarData(Left).Data;
+  R:=TVariantWithUnitVarData(Right).Data;
+  R.Conversion(L.ConvType); //при сравнении ожидаем, что их по кр. мере можно сравнивать!
+  case operator of
+    opCmpEQ: Result:=(L.instance=R.instance);
+    opCmpNE: Result:=(L.instance<>R.instance);
+    opCmpLT: Result:=(L.instance<R.instance);
+    opCmpLE: Result:=(L.instance<=R.instance);
+    opCmpGT: Result:=(L.instance>R.instance);
+    opCmpGE: Result:=(L.instance>=R.instance);
+  end;
+end;
+
 (*
     TFundamentalPhysConstants
                                 *)
@@ -1032,6 +1049,16 @@ begin
   fsolver.SetTolerance(1e-19);
   recalculate;
 end;
+
+destructor TFundamentalPhysConstants.Destroy;
+begin
+  //debug purpose
+  //Heisenbug: now it works without error
+  Finalize(fValues);
+  inherited Destroy;
+end;
+
+
 
 function TFundamentalPhysConstants.getName(i: Integer): string;
 begin
@@ -1508,12 +1535,12 @@ end;
 procedure FinalizePhysUnitLib;
 var i: Integer;
 begin
+  FreeAndNil(UnityPhysConstants);
   for i:=0 to DerivedFamilyEntries.Count-1 do
     UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
   for i:=0 to BaseFamilyEntries.Count-1 do
     UnregisterConversionFamily(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily);
-  SetLength(AffineUnits,0);  
-  FreeAndNil(UnityPhysConstants);
+  SetLength(AffineUnits,0);
   FreeAndNil(DerivedFamilyEntries);
   FreeAndNil(BaseFamilyEntries);
 end;

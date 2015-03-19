@@ -167,7 +167,15 @@ TVariableNode=class(TEvaluationTreeNode)
     function isIndependent: Boolean; override;
   end;
 
-TAbstractExpression=class(TComponent)
+IExpression = interface
+  procedure SetString(value: string);
+  function getString: string;
+  function getVariantValue: Variant;
+  function getValue: Real;
+  function getIntegerValue: Integer;
+end;
+
+TAbstractExpression=class(TComponent,IExpression)
   protected
     fWorking: boolean; //чтобы поймать циклическую ссылку
     fstring: string;
