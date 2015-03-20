@@ -102,6 +102,7 @@ TSimpleGaussLEQ=class(TInterfacedObject,IAbstractSLEQ)
     procedure SolveInvOneSolution;
     procedure SolveInvManySolutions;
   public
+    destructor Destroy; override; //for debug purposes
     procedure SetDimensions(NumOfVars,NumOfEqs: Integer);
     procedure SetMatrix(i,j: Integer; value: Variant);
     procedure SetTolerance(value: real);
@@ -184,6 +185,11 @@ end;
 (*
       TSimpleGaussLEQ
                               *)
+destructor TSimpleGaussLEQ.Destroy;
+begin
+  inherited Destroy;
+end;
+
 procedure TSimpleGaussLEQ.SetDimensions(NumOfVars,NumOfEqs: Integer);
 var i,j: Integer;
 begin

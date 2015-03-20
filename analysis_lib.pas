@@ -19,7 +19,7 @@ end;
 TSweep = class (TComponent)
   private
     fEnabled,fIsLog: Boolean;
-    fVariable: IExpression;
+    fVariable: TAbstractExpression;
     fMinVal,fMaxVal,fIncr: TVariantExpression;
   public
     constructor Create(Owner: TComponent); override;
@@ -27,12 +27,29 @@ TSweep = class (TComponent)
     function GetPoint(index: Integer): Variant;
   published
     property Enabled: Boolean read fEnabled write fEnabled default false;
-    property Variable: IExpression read fVariable write fVariable;
+    property Variable: TAbstractExpression read fVariable write fVariable;
     property MinVal: TVariantExpression read fMinVal write fMinVal;
     property MaxVal: TVariantExpression read fMaxVal write fMaxVal;
     property Incr: TVariantExpression read fIncr write fIncr;
     //если лог., то Incr имеет смысл точек на декаду или точек на октаву (тогда еще и отрицат)
     property isLog: Boolean read fIsLog write fIsLog default false;
+end;
+
+TChartDetails = record
+  LeftAxisGraphs: array of Integer; //номера в страшенной таблице fData
+  RightAxisEnabled: boolean;
+  RightAxisGraphs: array of Integer;
+end;
+
+TComplexNumbersDisplay = (cndAbsArg,cndReIm,cndGodograph);
+
+TAnalysisShowDetails = class (TStreamingClass)
+  private
+    fChartCount: Integer;
+    fChartDetails: array of TChartDetails;
+    fComplexDisplay: TComplexNumbersDisplay;
+  public
+    property ComplexDisplay: TComplexNumbersDisplay read fComplexDisplay write fComplexDisplay;
 end;
 
 TAnalysis = class (TStreamingClass)
@@ -51,6 +68,7 @@ TAnalysis = class (TStreamingClass)
 
     fData: array of array of array of Variant; //возможны комплексные числа, а также недоопред.
     fPrimaryCount,fSecondaryCount: Integer; //на чем мы остановились в одном и в другом
+    fShowDetails: TAnalysisShowDetails;
     procedure RunThread(Origin: TAnalysis; index: Integer);
     procedure AppendThreadResults(clone: TAnalysis; exMessage: string ='');
   protected
@@ -63,11 +81,15 @@ TAnalysis = class (TStreamingClass)
     procedure Run;  //создает клоны схемы, разбивает интервалы sweep для каждого и запускает в них потоки
     procedure SaveToTextFile(FileName: string);
     procedure ExportToExcel;
+    procedure ShowOnScreen;
+    property ShowDetails: TAnalysisShowDetails read fShowDetails write fShowDetails;
+    procedure HandleComplexNumbers;
   published
     property SimulationType: TSimulationType read fSimulationType write fSimulationType;
     property VarsOfInterest: TStrings read fVarsOfInterest write fVarsOfInterest;
     property PrimarySweep: TSweep read fSweeps[0] write fSweeps[0];
     property SecondarySweep: TSweep read fSweeps[1] write fSweeps[1];
+
 end;
 
 TAnalysisThread = class (TThread)
@@ -90,7 +112,8 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 
 implementation
 
-uses SysUtils,Math,command_class_lib,variants, ComObj;
+uses SysUtils,Math,command_class_lib,variants, ComObj, formShowAnalysisResults,
+phys_units_lib,VarCmplx;
 
 var AnalysisTypes: TStrings;
 
@@ -168,6 +191,8 @@ begin
     fSweeps[i]:=TSweep.Create(self);
     fSweeps[i].SetSubComponent(true);
   end;
+  fShowDetails:=TAnalysisShowDetails.Create(self);
+  fShowDetails.SetSubComponent(true);
 end;
 
 destructor TAnalysis.Destroy;
@@ -298,7 +323,6 @@ procedure TAnalysis.SaveToTextFile(FileName: string);
 var F: TextFile;
     s,v,strType: string;
     i,j,k: Integer;
-    IEqNode: IEquationNode;
 begin
   AssignFile(F,FileName);
   try
@@ -308,16 +332,14 @@ begin
       WriteLn(F,'type: '+strType);
     if SecondarySweep.Enabled then begin
       WriteLn(F,'Secondary sweep: enabled');
-      WriteLn(F,'Variable: '+SecondarySweep.variable.getString);
+      WriteLn(F,'Variable: '+SecondarySweep.variable.name);
       s:='Values: '+SecondarySweep.fMinVal.GetVariantValue+'..'+SecondarySweep.MaxVal.GetVariantValue+', step '+SecondarySweep.fIncr.GetVariantValue;
-//      s:='Values: '+FloatToStr(SecondarySweep.fMinVal)+' .. '+FloatToStr(SecondarySweep.fMaxVal)+', step '+FloatToStr(SecondarySweep.fIncr);
       if SecondarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
     end;
       WriteLn(F,'Primary sweep:');
-      WriteLn(F,'Variable: '+PrimarySweep.variable.getString);
+      WriteLn(F,'Variable: '+PrimarySweep.variable.name);
       s:='Values: '+PrimarySweep.fMinVal.GetVariantValue+'..'+PrimarySweep.MaxVal.GetVariantValue+', step '+PrimarySweep.fIncr.GetVariantValue;
-//      s:='Values: '+FloatToStr(PrimarySweep.fMinVal)+' .. '+FloatToStr(PrimarySweep.fMaxVal)+', step '+FloatToStr(PrimarySweep.fIncr);
       if PrimarySweep.fIsLog then s:=s+', log. scale';
       WriteLn(F,s);
   //заголовок готов
@@ -325,28 +347,14 @@ begin
     if SecondarySweep.Enabled then
       WriteLn(F,SecondarySweep.GetPoint(i));
     //и напоминаем названия переменных
-    s:=PrimarySweep.Variable.getString+#9;
+    s:=PrimarySweep.Variable.name+#9;
     for k:=0 to VarsOfInterest.Count-1 do
-(*
-      if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
-        s:=s+IEqNode.ShowNodeName+','+IEqNode.ShowNodeUnit+#9
-      else
-        s:=s+VarsOfInterest[k].Name;
-        *)
       s:=s+VarsOfInterest[k]+#9;
     WriteLn(F,s);
     for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
       s:=PrimarySweep.GetPoint(j);
       s:=s+#9;
       for k:=0 to VarsOfInterest.Count-1 do begin
-(*
-        if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
-          s:=s+IEqNode.ShowValue(fdata[j,i,k])+#9
-        else begin
-          v:=fdata[j,i,k];
-          s:=s+v+#9;
-        end;
-        *)
         v:=fdata[j,i,k];
         s:=s+v+#9;
       end;
@@ -366,7 +374,6 @@ var ExcelApp: Variant; //само приложение excel
     i,j,k: Integer;
     strType,s: string;
     rowCount: Integer;
-    IEqNode: IEquationNode;
 begin
   try
     ExcelApp:=CreateOleObject('Excel.Application');
@@ -383,7 +390,7 @@ begin
       ExcelSht.Cells.Item[rowCount,1]:='Secondary sweep: enabled';
       inc(rowCount);
       ExcelSht.Cells.Item[rowCount,1]:='Variable:';
-      ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.getString;
+      ExcelSht.Cells.Item[rowCount,2]:=SecondarySweep.Variable.name;
       inc(rowCount);
       ExcelSht.Cells.Item[rowCount,1]:='Values:';
       ExcelSht.Cells.Item[rowCount,2]:=FloatToStr(SecondarySweep.fMinVal.GetVariantValue);
@@ -397,7 +404,7 @@ begin
     ExcelSht.Cells.Item[rowCount,1]:='Primary sweep:';
     inc(rowCount);
     ExcelSht.Cells.Item[rowCount,1]:='Variable:';
-    ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.getString;
+    ExcelSht.Cells.Item[rowCount,2]:=PrimarySweep.Variable.name;
     inc(rowCount);
     ExcelSht.Cells.Item[rowCount,1]:='Values:';
     s:=PrimarySweep.fMinVal.GetVariantValue;
@@ -418,18 +425,12 @@ begin
         inc(rowCount);
       end;
       //и напоминаем названия переменных
-      ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.Variable.getString;
+      ExcelSht.Cells.Item[rowCount,1]:=PrimarySweep.Variable.name;
       for k:=0 to VarsOfInterest.Count-1 do
-(*
-        if VarsOfInterest[k].GetInterface(IEquationNode,IEqNode) then
-          ExcelSht.Cells.Item[rowCount,k+2]:=IEqNode.ShowNodeName
-        else
-          ExcelSht.Cells.Item[rowCount,k+2]:=VarsOfInterest[k].Name;
-          *)
         ExcelSht.Cells.Item[rowCount,k+2]:=VarsOfInterest[k];
       inc(rowCount);
       for j:=0 to PrimarySweep.NumberOfPoints-1 do begin
-//        ExcelSht.Cells.Item[rowCount,1]:=FloatToStr(PrimarySweep.GetPoint(j));
+
         s:=PrimarySweep.GetPoint(j);
         ExcelSht.Cells.Item[rowCount,1]:=s;
         for k:=0 to VarsOfInterest.Count-1 do begin
@@ -444,6 +445,101 @@ begin
     if not VarIsEmpty(ExcelApp) then ExcelApp.visible:=true;
     ExcelApp:=UnAssigned;
   end;
+
+end;
+
+procedure TAnalysis.HandleComplexNumbers;
+var i,j,k,L: Integer;
+begin
+  //первым делом с комплексными числами разберемся, если таковые есть
+  for i:=0 to VarsOfInterest.Count-1 do
+    if VarIsComplex(VarWithUnitGetNumber(fdata[0,0,i])) then
+      if fShowDetails.fComplexDisplay=cndAbsArg then begin
+        VarsOfInterest.Add('arg('+VarsOfInterest[i]+')');
+        VarsOfInterest[i]:='abs('+VarsOfInterest[i]+')';
+        L:=VarsOfInterest.Count-1;
+        SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,L+1);
+        for j:=0 to PrimarySweep.NumberOfPoints-1 do
+          for k:=0 to SecondarySweep.NumberOfPoints-1 do begin
+            fdata[j,k,L]:=VarWithUnitArg(fdata[j,k,i]);
+            fdata[j,k,i]:=VarWithUnitAbs(fdata[j,k,i]);
+          end;
+      end
+      else if fShowDetails.fComplexDisplay=cndReIm then begin
+        VarsOfInterest.Add('Im('+VarsOfInterest[i]+')');
+        VarsOfInterest[i]:='Re('+VarsOfInterest[i]+')';
+        L:=VarsOfInterest.Count-1;
+        SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,L+1);
+        for j:=0 to PrimarySweep.NumberOfPoints-1 do
+          for k:=0 to SecondarySweep.NumberOfPoints-1 do begin
+            fdata[j,k,L]:=VarWithUnitIm(fdata[j,k,i]);
+            fdata[j,k,i]:=VarWithUnitRe(fdata[j,k,i]);
+          end;
+      end;
+end;
+
+procedure TAnalysis.ShowOnScreen;
+var i,j,k,L: Integer;
+    VariousTypes: array of Variant;
+    graphscount: array of Integer;
+    chartnumbers: array of Integer;
+    found: boolean;
+begin
+
+
+  //пока что здесь придумаем, как лучше всего распихать кривые по графикам
+  if SecondarySweep.Enabled then begin
+    //каждый график на своем полотне, вдруг иначе не уместится
+    fShowDetails.fChartCount:=VarsOfInterest.Count;
+    SetLength(fShowDetails.fChartDetails,fShowDetails.fChartCount);
+    for i:=0 to fShowDetails.fChartCount-1 do begin
+      SetLength(fShowDetails.fChartDetails[i].LeftAxisGraphs,1);
+      fShowDetails.fChartDetails[i].LeftAxisGraphs[0]:=i;
+      fShowDetails.fChartDetails[i].RightAxisEnabled:=false;
+    end;
+  end
+  else begin
+    //пока что утрамбуем все величины одной размерности на одном полотне
+    k:=0;
+    SetLength(chartnumbers,VarsOfInterest.Count);
+    for i:=0 to VarsOfInterest.Count-1 do begin
+      found:=false;
+      for j:=0 to k-1 do
+        if IsVarWithUnitSameFamily(fdata[0,0,i],VariousTypes[j]) then begin
+          found:=true;
+          chartnumbers[i]:=j;
+          inc(graphsCount[j]);
+          break;
+        end;
+      if not found then begin
+        inc(k);
+        SetLength(VariousTypes,k);
+        SetLength(GraphsCount,k);
+        VariousTypes[k-1]:=fdata[0,0,i];
+        GraphsCount[k-1]:=1;
+        chartnumbers[i]:=k-1;
+      end;
+    end;
+    //нашли количество разных размерностей и "представителя" от каждой
+    fShowDetails.fChartCount:=k;
+    SetLength(fShowDetails.fChartDetails,k);
+    for i:=0 to fShowDetails.fChartCount-1 do begin
+      SetLength(fShowDetails.fChartDetails[i].LeftAxisGraphs,graphsCount[i]);
+      fShowDetails.fChartDetails[i].RightAxisEnabled:=false;
+    end;
+    //ага, распихиваем наши величины по разным местам
+    for i:=0 to k-1 do
+      graphsCount[i]:=0;
+    for i:=0 to VarsOfInterest.Count-1 do begin
+      fShowDetails.fChartDetails[chartnumbers[i]].LeftAxisGraphs[graphsCount[chartnumbers[i]]]:=i;
+      inc(graphsCount[chartnumbers[i]]);
+    end;
+  end;
+
+
+
+
+  frmShowAnalysisResults.ShowModal;
 
 end;
 
@@ -464,7 +560,6 @@ end;
 
 procedure TAnalysisThread.Execute;
 var i,j,k: Integer;
-    node: IEquationNode;
 begin
   try
 //внешний цикл - по secondarySweep, если он есть
@@ -485,12 +580,6 @@ begin
         fObject.RunSimulation(SimulationType);
         for k:=0 to VarsOfInterest.Count-1 do
           fData[i,j,k]:=fExpressions[k].GetVariantValue;
-(*
-          if VarsOfInterest[k].GetInterface(IEquationNode,node) then begin
-            if VarIsEmpty(node.value) then Raise Exception.CreateFMT('TAnalysisThread.Execute: unassigned value in node %s', [node.ShowNodeName]);
-            fData[i,j,k]:=node.value;
-          end;
-*)
         fPercentDone:=Round((j+i/PrimarySweep.NumberOfPoints)/SecondarySweep.NumberOfPoints*100);
         Synchronize(Progress);
       end;

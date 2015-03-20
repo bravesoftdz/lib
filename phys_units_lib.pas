@@ -192,11 +192,17 @@ function TryVarWithUnitCreate(text: string; out Res: Variant): boolean;
 function VarWithUnitConvert(source: Variant; DestConvType: TConvType): Variant; overload;
 function VarWithUnitConvert(source: Variant; UnitName: string): Variant; overload;
 function VarWithUnitGetNumberIn(source: Variant; UnitName: TConvType): Variant;
+function VarWithUnitGetNumber(source: Variant): Variant;
 function StrToConvType(str: string): TConvType;
 function StrToConvFamily(str: string): TConvFamily;
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 function VarWithUnitSqrt(source: Variant): Variant;
+function VarWithUnitAbs(source: Variant): Variant;
+function VarWithUnitArg(source: Variant): Variant;
+function VarWithUnitRe(source: Variant): Variant;
+function VarWithUnitIm(source: Variant): Variant;
+function IsVarWithUnitSameFamily(v1,v2: Variant): Boolean;
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 function FamilyToName(Int: LongInt; var Ident: string): Boolean;
@@ -1055,6 +1061,7 @@ begin
   //debug purpose
   //Heisenbug: now it works without error
   Finalize(fValues);
+  fsolver:=nil;
   inherited Destroy;
 end;
 
@@ -1245,6 +1252,28 @@ begin
   end;
 end;
 
+function TryVarWithUnitConvert(source: Variant; DestConvType: TConvType; out Res: Variant): boolean;
+begin
+  Result:=false;
+  try
+    Res:=VarWithUnitConvert(source,DestConvType);
+    Result:=true;
+  except
+    on E: Exception do
+      Res:=E.Message;
+  end;
+end;
+
+function IsVarWithUnitSameFamily(v1,v2: Variant): Boolean;
+var v3,v4: Variant;
+begin
+  if not IsVarWithUnit(v1) then
+    v3:=VarWithUnitCreateFromVariant(v1,duUnity)
+  else
+    v3:=v1;
+  Result:=TryVarWithUnitConvert(v3,TVariantWithUnitVarData(v2).Data.ConvType,v4);
+end;
+
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
 resourcestring
   AlreadyHasDimension = '%s уже имеет размерность';
@@ -1300,6 +1329,14 @@ begin
   Result:=TVariantWithUnitVarData(tmp).Data.instance;
 end;
 
+function VarWithUnitGetNumber(source: Variant): Variant;
+begin
+  if IsVarWithUnit(source) then
+    Result:=TVariantWithUnitVarData(source).Data.instance
+  else
+    Result:=source;
+end;
+
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
@@ -1309,6 +1346,44 @@ end;
 function VarWithUnitSqrt(source: Variant): Variant;
 begin
   Result:=VarWithUnitPower(source,0.5);
+end;
+
+function VarWithUnitAbs(source: Variant): Variant;
+begin
+  if IsVarWithUnit(source) then begin
+    Result:=source;
+    TVariantWithUnitVarData(Result).Data.instance:=VarComplexAbs(TVariantWithUnitVarData(source).Data.instance)
+  end
+  else
+    Result:=VarWithUnitCreateFromVariant(VarComplexAbs(source),duUnity);
+end;
+
+function VarWithUnitArg(source: Variant): Variant;
+begin
+  if isVarWithUnit(source) then
+    Result:=VarWithUnitCreateFromVariant(VarComplexAngle(TVariantWithUnitVarData(source).Data.instance),auRadian)
+  else
+    Result:=VarWithUnitCreateFromVariant(VarComplexAngle(source),auRadian);
+end;
+
+function VarWithUnitRe(source: Variant): Variant;
+begin
+  if isVarWithUnit(source) then begin
+    Result:=source;
+    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Re
+  end
+  else
+    Result:=VarWithUnitCreateFromVariant(source.Re,duUnity);
+end;
+
+function VarWithUnitIm(source: Variant): Variant;
+begin
+  if isVarWithUnit(source) then begin
+    Result:=source;
+    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Im
+  end
+  else
+    Result:=VarWithUnitCreateFromVariant(source.Im,duUnity);
 end;
 
 (*
@@ -1535,7 +1610,7 @@ end;
 procedure FinalizePhysUnitLib;
 var i: Integer;
 begin
-  FreeAndNil(UnityPhysConstants);
+//  FreeAndNil(UnityPhysConstants);
   for i:=0 to DerivedFamilyEntries.Count-1 do
     UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
   for i:=0 to BaseFamilyEntries.Count-1 do
