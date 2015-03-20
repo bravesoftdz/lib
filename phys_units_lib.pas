@@ -203,6 +203,8 @@ function VarWithUnitArg(source: Variant): Variant;
 function VarWithUnitRe(source: Variant): Variant;
 function VarWithUnitIm(source: Variant): Variant;
 function IsVarWithUnitSameFamily(v1,v2: Variant): Boolean;
+function VarWithUnitGetConvType(source: Variant): TConvType;
+function VarWithUnitGetConvFamily(source: Variant): TConvFamily;
 
 function NameToFamily(const Ident: string; var Int: Longint): Boolean;
 function FamilyToName(Int: LongInt; var Ident: string): Boolean;
@@ -684,6 +686,11 @@ resourcestring
   ToConvertFromAToB = 'Для преобразования из [%s] в [%s] выражение домножено на %s';
   IncorrectUnitConversion = 'Некорректное приведение типов: [%s] в [%s]';
 begin
+  buConvType:=ConvType;
+  ConvType:=DestConv;
+  if IsAffine(j) then DestConv:=AffineUnits[j].BaseConvType;
+  ConvType:=buConvType;
+
   if IsAffine(j) then begin
     if CompatibleConversionTypes(ConvType,DestConv) then begin
       offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
@@ -1337,6 +1344,19 @@ begin
     Result:=source;
 end;
 
+function VarWithUnitGetConvType(source: Variant): TConvType;
+begin
+  if IsVarWithUnit(source) then
+    Result:=TVariantWithUnitVarData(source).Data.ConvType
+  else
+    Result:=duUnity;
+end;
+
+function VarWithUnitGetConvFamily(source: Variant): TConvFamily;
+begin
+  Result:=ConvTypeToFamily(VarWithUnitGetConvType(source));
+end;
+
 function VarWithUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
@@ -1370,7 +1390,7 @@ function VarWithUnitRe(source: Variant): Variant;
 begin
   if isVarWithUnit(source) then begin
     Result:=source;
-    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Re
+    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Real
   end
   else
     Result:=VarWithUnitCreateFromVariant(source.Re,duUnity);
@@ -1380,7 +1400,7 @@ function VarWithUnitIm(source: Variant): Variant;
 begin
   if isVarWithUnit(source) then begin
     Result:=source;
-    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Im
+    TVariantWithUnitVarData(Result).Data.instance:=TVariantWithUnitVarData(Result).Data.instance.Imaginary
   end
   else
     Result:=VarWithUnitCreateFromVariant(source.Im,duUnity);
