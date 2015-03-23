@@ -46,7 +46,23 @@ type
       function isAffine: Boolean;
   end;
 
-  TAbstractSavedConvFamily=class(TStreamingClass)
+  TUnitPrefixes = class(TComponent)
+  private
+    flang: string;
+    fMaxLen: Integer;
+    fPrefixes: TStringList;
+    procedure ReadList(Reader: TReader);
+  protected
+    procedure DefineProperties(Filer: TFiler); override;
+  public
+    constructor Create(Owner: TComponent); override;
+    destructor Destroy; override;
+    function FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
+  published
+    property lang: string write flang;
+  end;
+
+  TAbstractSavedConvFamily=class(TComponent)
   private
     flang: string;
     fStrBaseUnit: string;  //вообще, TConvType умеет записываться символьно,
@@ -219,6 +235,7 @@ var UnityPhysConstants: TFundamentalPhysConstants;
     cbDimensionless,cbAngle: TConvFamily;
     duUnity,auDMS,auRadian: TConvType;
     PhysUnitLanguage: string;
+    UnitPrefixes: TUnitPrefixes;
 implementation
 
 uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
@@ -227,9 +244,10 @@ uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
 var BaseFamilyEntries: TObjectList;
     DerivedFamilyEntries: TObjectList;
     VarWithUnitType: TVariantWithUnitType;
-    UnitMultiplier: TUnitMultipliersArray;
+    UnitMultiplier: TUnitMultipliersArray;  //deprecated
     AffineUnits: array of TAffineUnitEntry;
     default_dir: string;
+    ListOfUnitsWithAllowedPrefixes: TBucketList;
 
 resourcestring
   ConvFamilyNeitherBaseNorDerived = 'Размерность %s не является ни базовой, ни производной';
@@ -279,11 +297,16 @@ end;
 
 function PrefixDescrToConvType(str: string; out CType: TConvType): boolean;
 begin
-  Result:=(Length(str)>2) and (LeftStr(str,2)='мк') and DescriptionToConvType(RightStr(str,Length(str)-2),CType);
+  Result:=(Length(str)>2) and (LeftStr(str,2)='мк') and
+    DescriptionToConvType(RightStr(str,Length(str)-2),CType) and
+      ListOfUnitsWithAllowedPrefixes.Exists(Pointer(CType));
   if not Result then
-    Result:=(Length(str)>1) and (UnitMultiplier[Integer(str[1])]<>0) and DescriptionToConvType(Rightstr(str,Length(str)-1),CType);
+    Result:=(Length(str)>1) and (UnitMultiplier[Integer(str[1])]<>0) and
+      DescriptionToConvType(Rightstr(str,Length(str)-1),CType) and
+        ListOfUnitsWithAllowedPrefixes.Exists(Pointer(CType));
+    //модификаторы только в уже измененных единицах, которым новый префикс не нужен!
     if not Result then
-      Result:=DescriptionToConvType(str,CType);
+      Result:=DescriptionToConvType(str,CType); //без префикса
 end;
 
 function FindPhysUnit(ConvType: TConvType): TUnitsWithExponent;
@@ -1406,6 +1429,26 @@ begin
     Result:=VarWithUnitCreateFromVariant(source.Im,duUnity);
 end;
 
+function VarWithUnitFindGoodPrefix(source: Variant): Variant;
+var v: TVariantWithUnitVarData absolute source;
+  ConvWithoutPrefix: TConvType;
+  v1: Variant;
+begin
+  //из 0.0001 г получит 100 мкг и т.д
+  if ListOfUnitsWithAllowedPrefixes.Exists(Pointer(v.Data.ConvType)) then
+    v1:=source
+  else
+    if UnitPrefixes.FindUnitWithPrefix(ConvTypeToDescription(v.Data.ConvType),ConvWithoutPrefix) then
+      v1:=VarWithUnitConvert(source,ConvWithoutPrefix)
+    else begin
+      Result:=source;
+      Exit;
+    end;
+  //если дошли до этого места, то все в порядке, можно дописать префикс. 
+      
+
+end;
+
 (*
     General procedures
                           *)
@@ -1517,6 +1560,7 @@ var p: TSimpleParser;
     varexpr: TVariantExpression;
     UnitName: string;
     Multiplier,Offset: Real;
+    prefixOk: Boolean;
 resourcestring
   UnitNotFound = 'Единица измерения %s не найдена или дублируется';
 begin
@@ -1527,15 +1571,28 @@ begin
   Reader.ReadListBegin;
   p:=TSimpleParser.Create;
   while not Reader.EndOfList do begin
+    prefixOk:=false;
     p.AssignString(Reader.ReadString);
     UnitName:=p.getString;
     varexpr.SetString(p.getString);
     Multiplier:=varexpr.getVariantValue;
     if not p.eof then begin
-      varexpr.SetString(p.getString);
-      offset:=varExpr.getVariantValue;
-      RegisterConversionType(TconvTypeAffine.Create(fConvFamily,UnitName,offset,multiplier),fBaseConvType)
-      //baseconvtype здесь подставлен, чтобы лишнюю перем. не вводить, знач. мы игнорируем
+      if Uppercase(p.getString)='PREFIXOK' then
+        prefixOk:=true
+      else
+        p.PutBack;
+      if not p.eof then begin
+        varexpr.SetString(p.getString);
+        offset:=varExpr.getVariantValue;
+        RegisterConversionType(TconvTypeAffine.Create(fConvFamily,UnitName,offset,multiplier),fBaseConvType);
+        //baseconvtype здесь подставлен, чтобы лишнюю перем. не вводить, знач. мы игнорируем
+        if not p.eof and (UpperCase(p.getString)='PREFIXOK') then
+          ListOfUnitsWithAllowedPrefixes.Add(Pointer(fBaseConvType),nil);
+      end
+      else begin
+        fBaseConvType:=RegisterConversionType(fConvFamily,UnitName,multiplier);  //можно префикс ставить
+        if prefixOk then ListOfUnitsWithAllowedPrefixes.Add(Pointer(fBaseConvType),nil);
+      end;
     end
     else
       RegisterConversionType(fConvFamily,UnitName,multiplier);
@@ -1595,6 +1652,65 @@ begin
   Result:=(AValue-foffset)/ffactor;
 end;
 
+(*
+    TUnitPrefixes
+                    *)
+procedure TUnitPrefixes.DefineProperties(Filer: TFiler);
+begin
+  filer.DefineProperty('list',ReadList,nil,true);
+end;
+
+constructor TUnitPrefixes.Create(Owner: TComponent);
+begin
+  inherited Create(Owner);
+  fPrefixes:=TStringList.Create;
+  fPrefixes.Sorted:=true;
+  fPrefixes.Duplicates:=dupError;
+  fPrefixes.CaseSensitive:=true;
+end;
+
+destructor TUnitPrefixes.Destroy;
+begin
+  fPrefixes.Free;
+  inherited Destroy;
+end;
+
+procedure TUnitPrefixes.ReadList(Reader: TReader);
+var p: TSimpleParser;
+  pname,pdescr: string;
+  pmult: Real;
+  pIsPreferred: boolean;
+begin
+  p:=TSimpleParser.Create;
+  Reader.ReadListBegin;
+  while not Reader.EndOfList do begin
+    p.AssignString(Reader.ReadString);
+    pname:=p.getString;
+    pdescr:=p.getString;
+    pmult:=p.getFloat;
+    pIsPreferred:=(not p.eof) and (UpperCase(p.getString)='preferred');
+    fMaxLen:=Max(fMaxLen,Length(pname));
+    fPrefixes.Add(pname); //описания пока игнорируем
+  end;
+  Reader.ReadListEnd;
+  p.Free;
+end;
+
+function TUnitPrefixes.FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
+var i,j: Integer;
+begin
+  Result:=DescriptionToConvType(str,CType);
+  if not Result then
+    for i:=1 to fMaxLen do
+      if fPrefixes.Find(LeftStr(str,i),j) and
+        DescriptionToConvType(RightStr(str,Length(str)-i),CType) and
+          ListOfUnitsWithAllowedPrefixes.Exists(Pointer(CType)) then begin
+        Result:=true;
+        Exit;
+      end;
+end;
+
+
 procedure InitializePhysUnitLib;
 var nodim: TDerivedConvFamily;
 begin
@@ -1642,14 +1758,16 @@ end;
 
 
 initialization
-  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants]);
+  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants,TUnitPrefixes]);
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
   GConvUnitToStrFmt:='%g %s';
   VarWithUnitType:=TVariantWithUnitType.Create;
   PhysUnitLanguage:='English';
+  ListOfUnitsWithAllowedPrefixes:=TBucketList.Create;
 
 finalization
+  ListOfUnitsWithAllowedPrefixes.Free;
   FinalizePhysUnitLib;
   FreeAndNil(VarWithUnitType);
 

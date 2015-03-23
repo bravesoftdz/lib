@@ -297,7 +297,7 @@ begin
     id:=GetPhysUnitIdent;
     //хотя у нас есть безразмерная величина, принимать
     //пустое место за нее не имеем права!
-    if (id='') or not PrefixDescrToConvType(id,CType) then begin
+    if (id='') or not UnitPrefixes.FindUnitWithPrefix(id,CType) then begin
       _pos:=TempPos;
       break;
     end
