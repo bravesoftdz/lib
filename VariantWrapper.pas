@@ -55,6 +55,8 @@ procedure TAbstractWrapperData.DoSubtract(Right: TAbstractWrapperData);
 begin
   Right.Negate;
   DoAdd(Right);
+  Right.Negate; //вернули, как было. Ќе очень красиво, лучше бы копию сделать,
+  //но тогда нужно уметь создавать клон TAbstractWrapperData
 end;
 
 (*

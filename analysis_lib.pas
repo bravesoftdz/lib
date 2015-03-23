@@ -472,11 +472,16 @@ begin
             fdata[j,k,L]:=VarWithUnitArg(fdata[j,k,i]);
 
             if j>0 then begin
-              incr:=VarWithUnitGetNumberIn(fdata[j,k,L]-fdata[j-1,k,L],auRadian);
-              if abs(incr)>pi then begin
-                if incr>0 then fdata[j,k,L]:=fdata[j,k,L]-fullturn
-                else fdata[j,k,L]:=fdata[j,k,L]+fullturn;
+              while true do begin
+                incr:=VarWithUnitGetNumberIn(fdata[j,k,L]-fdata[j-1,k,L],auRadian);
+
+                if abs(incr)>pi then begin
+                  if incr>0 then fdata[j,k,L]:=fdata[j,k,L]-fullturn
+                  else fdata[j,k,L]:=fdata[j,k,L]+fullturn;
+                end
+                else break;
               end;
+
             end;
 
             fdata[j,k,i]:=VarWithUnitAbs(fdata[j,k,i]);
