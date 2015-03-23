@@ -511,6 +511,7 @@ var i,j,k,col: Integer;
     fChart: TChart;
     fSeries: TLineSeries;
     XConv,YConv: TConvType;
+    fCenter,fWindowHeight: Real;
 begin
   //пока что здесь придумаем, как лучше всего распихать кривые по графикам
   if SecondarySweep.Enabled then begin
@@ -578,6 +579,8 @@ begin
     fChart.Color:=clWhite;
     fChart.View3D:=false;
     fChart.BottomAxis.Logarithmic:=PrimarySweep.isLog;
+//fChart.BottomAxis.StartPosition:=0.1
+//    fChart.BottomAxis.AxisValuesFormat:=
     if SecondarySweep.Enabled then begin
 
     end
@@ -591,9 +594,13 @@ begin
         YConv:=VarWithUnitGetConvType(fdata[0,0,col]);
         for k:=0 to PrimarySweep.NumberOfPoints-1 do
           fSeries.AddXY(VarWithUnitGetNumberIn(PrimarySweep.GetPoint(k),XConv),VarWithUnitGetNumberIn(fdata[k,0,col],YConv));
-
-
       end;
+      //теперь габариты знаем - пора чуть расширить область отрисовки
+    fChart.LeftAxis.AdjustMaxMin;
+    fCenter:=(fChart.LeftAxis.Maximum+fChart.LeftAxis.Minimum)/2;
+    fWindowHeight:=1.1*(fChart.LeftAxis.Maximum-fChart.LeftAxis.Minimum)/2;
+    fChart.LeftAxis.SetMinMax(fCenter-fWindowHeight,fCenter+fWindowHeight);
+
   end;
 
   frmShowAnalysisResults.ShowModal;
