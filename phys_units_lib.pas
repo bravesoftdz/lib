@@ -999,12 +999,17 @@ var deg,min: Variant;
     s: string;
     d: extended;
     i: Integer;
+    sgn: string;
 begin
   if ConvType=auDMS then begin
+    if instance<0 then begin
+      Result:='-';
+      instance:=-instance;
+    end;
     instance:=instance+1/7200000;
     deg:=Floor(instance);
     s:=deg;
-    Result:=s+'°';
+    Result:=Result+s+'°';
     min:=Floor((instance-deg)*60);
     s:=min;
     Result:=Result+s+'''';
@@ -1456,8 +1461,11 @@ var v: TVariantWithUnitVarData absolute source;
   s: string;
   InitConvType: TConvType;
 begin
+  if not IsVarWithUnit(source) then begin
+    Result:=source;
+    Exit;
+  end;
 //афинные величины, будь они неладны
-
   if v.Data.IsAffine(i) then
     if AffineUnits[i].BaseConvType=v.Data.ConvType then
       InitConvType:=AffineUnits[i].BaseConvType
@@ -1477,8 +1485,9 @@ begin
     i:=Pos('\',s);
     if i>0 then
       s:=LeftStr(s,i-1);
-    if UnitPrefixes.FindUnitWithPrefix(s,ConvWithoutPrefix) then
-      v1:=VarWithUnitConvert(source,ConvWithoutPrefix)
+    if UnitPrefixes.FindUnitWithPrefix(s,ConvWithoutPrefix) and
+      ListOfUnitsWithAllowedPrefixes.Exists(Pointer(ConvWithoutPrefix)) then
+        v1:=VarWithUnitConvert(source,ConvWithoutPrefix)
     else begin
       Result:=source;
       Exit;
@@ -1791,13 +1800,14 @@ end;
 function TUnitPrefixes.FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
 var i,j: Integer;
 begin
-  for i:=1 to fMaxLen do
+  for i:=1 to min(Length(str),fMaxLen) do
     if fPrefixes.Find(LeftStr(str,i),j) and
       DescriptionToConvType(RightStr(str,Length(str)-i),CType) and
         ListOfUnitsWithAllowedPrefixes.Exists(Pointer(CType)) then begin
       Result:=true;
       Exit;
     end;
+//  Result:=(str<>'') and DescriptionToConvType(str,CType);
   Result:=DescriptionToConvType(str,CType);
 end;
 
@@ -1809,7 +1819,7 @@ begin
 // - дает на выходе множитель для данного префикса
 // - добавляет к modifier символы l и u - lower/upper case
 // - указывает единицу измерения в CType
-  for i:=1 to fMaxLen do begin
+  for i:=1 to min(Length(term),fMaxLen) do begin
     if fPrefixes.Find(LeftStr(term,i),index) and
       DescriptionToConvType(RightStr(term,Length(term)-i),Ctype) and
         ListOfUnitsWithAllowedPrefixes.Exists(Pointer(CType)) then begin
