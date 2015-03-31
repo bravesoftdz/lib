@@ -458,20 +458,7 @@ begin
     while not p.eof do begin
       term:=p.getPhysUnitIdent;
       mul:=UnitPrefixes.PrefixDescrToMultiplier(term,Modifier,ConvType);
-(*
-      mul:=1;
-      if (Length(term)>2) and DescriptionToConvType(RightStr(term,Length(term)-2),ConvType) and (LeftStr(term,2)='לך') then
-        Mul:=1e-6
-      else if (Length(term)>1) and DescriptionToConvType(RightStr(term,Length(term)-1),ConvType) and (UnitMultiplier[Integer(term[1])]<>0) then begin
-        Mul:=UnitMultiplier[Integer(term[1])];
-        case term[1] of
-          'm': Modifier:=Modifier+'l';
-          'M': Modifier:=Modifier+'u';
-        end;
-      end
-      else if not DescriptionToConvType(term,convType) then
-        Raise EPhysUnitError.CreateFmt(IsNotCorrectUnit,[term]);
-        *)
+
       pow:=1;
       if not p.eof then begin
         ch:=p.getChar;
@@ -999,7 +986,6 @@ var deg,min: Variant;
     s: string;
     d: extended;
     i: Integer;
-    sgn: string;
 begin
   if ConvType=auDMS then begin
     if instance<0 then begin
@@ -1045,6 +1031,7 @@ begin
 end;
 
 procedure TVariantWithUnitType.CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType);
+var tmp: Variant;
 begin
   if Source.VType = VarType then begin
     case AVarType of
@@ -1054,9 +1041,8 @@ begin
         VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
       else
         with TVariantWithUnitVarData(Source).Data do begin
-          if ConvTypeToFamily(ConvType)<>cbDimensionless then
-            Raise Exception.CreateFmt('''%s'': can''t convert value with unit to non-string type',[AsString]);
-          VarDataCastTo(Dest,TVarData(instance),AVarType);
+          tmp:=VarWithUnitConvert(Variant(source),duUnity);
+          VarDataCastTo(Dest,TVarData(TVariantWithUnitVarData(tmp).Data.instance),AVarType);
         end;
     end;
   end
@@ -1229,34 +1215,6 @@ end;
     Initialization
                         *)
 
-(*
-procedure PopulateUnitMultiplier;
-var u: PUnitMultipliersArray;
-begin
-  u:=@UnitMultiplier;
-  u[Integer('d')]:=1e-1;
-  u[Integer('ה')]:=1e-1;
-  u[Integer('c')]:=1e-2;
-  u[Integer('ס')]:=1e-2;
-  u[Integer('m')]:=1e-3;
-  u[Integer('ל')]:=1e-3;
-  u[Integer('u')]:=1e-6;
-  u[Integer('n')]:=1e-9;
-  u[Integer('ם')]:=1e-9;
-  u[Integer('p')]:=1e-12;
-  u[Integer('ן')]:=1e-12;
-  u[Integer('f')]:=1e-15;
-  u[Integer('פ')]:=1e-15;
-  u[Integer('k')]:=1000;
-  u[Integer('ך')]:=1000;
-  u[Integer('M')]:=1e6;
-  u[Integer('ּ')]:=1e6;
-  u[Integer('G')]:=1e9;
-  u[Integer('ֳ')]:=1e9;
-  u[Integer('T')]:=1e12;
-  u[Integer('ׂ')]:=1e12;
-end;
-*)
 
 function VariantWithUnit: TVarType;
 begin
@@ -1316,7 +1274,6 @@ begin
   else
     fam2:=ConvTypeToFamily(dat2.Data.ConvType);
   Result:=(fam1=fam2);
-//  Result:=TryVarWithUnitConvert(v3,TVariantWithUnitVarData(v2).Data.ConvType,v4);
 end;
 
 function VarWithUnitCreateFromVariant(source: Variant; ConvType: TConvType): Variant;
@@ -1502,7 +1459,7 @@ begin
   if i>=0 then
     Result:=VarWithUnitCreateFromVariant(vdat.Data.instance/TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).multiplier,StrToConvType(TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).name+ConvTypeToDescription(vdat.Data.ConvType)))
   else
-    Result:=source;    
+    Result:=source;
 end;
 
 (*
@@ -1542,7 +1499,6 @@ var comp: TComponent;
     consts: TFundamentalPhysConstants absolute comp;
     baseconv: TBaseConvFamily absolute comp;
     der: TDerivedConvFamily absolute comp;
-//  strStream: TStringStream;
   fileStream: TFileStream;
   BinStream: TMemoryStream;
   sr: TSearchRec;
@@ -1755,7 +1711,6 @@ var p: TSimpleParser;
   pIsPreferred: boolean;
   PrefixEntry: TPrefixEntry;
   expr: TVariantExpression;
-  i: Integer;
 begin
   p:=TSimpleParser.Create;
   expr:=TVariantExpression.Create(nil);
@@ -1786,7 +1741,9 @@ var i,j: Integer;
 begin
   for i:=0 to source.fPrefixes.Count-1 do
     if not fPrefixes.Find(source.fPrefixes[i],j) then
-      fPrefixes.AddObject(source.fPrefixes[i],source.fPrefixes.Objects[i]);
+      fPrefixes.AddObject(source.fPrefixes[i],source.fPrefixes.Objects[i])
+    else
+      source.fPrefixes.Objects[i].Free;
   if source.lang=PhysUnitLanguage then begin
     fPreferredPrefixes.Clear;
     for i:=0 to source.fPreferredPrefixes.Count-1 do
@@ -1874,10 +1831,12 @@ procedure FinalizePhysUnitLib;
 var i: Integer;
 begin
   FreeAndNil(UnityPhysConstants);
-  for i:=0 to DerivedFamilyEntries.Count-1 do
-    UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
-  for i:=0 to BaseFamilyEntries.Count-1 do
-    UnregisterConversionFamily(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily);
+  if Assigned(DerivedFamilyEntries) then
+    for i:=0 to DerivedFamilyEntries.Count-1 do
+      UnregisterConversionFamily(TDerivedConvFamily(DerivedFamilyEntries[i]).fConvFamily);
+  if Assigned(DerivedFamilyEntries) then
+    for i:=0 to BaseFamilyEntries.Count-1 do
+      UnregisterConversionFamily(TBaseConvFamily(BaseFamilyEntries[i]).fConvFamily);
   SetLength(AffineUnits,0);
   FreeAndNil(DerivedFamilyEntries);
   FreeAndNil(BaseFamilyEntries);
