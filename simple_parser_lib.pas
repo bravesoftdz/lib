@@ -134,7 +134,8 @@ end;
 
 procedure TSimpleParser.skip_spaces;
 begin
-  while (_pos<=Length(_str)) and (isSpace(_str[_pos]) or isDelimiter(_str[_pos])) do inc(_pos);
+  while (_pos<=Length(_str)) and isSpace(_str[_pos]) do inc(_pos);
+//  while (_pos<=Length(_str)) and (isSpace(_str[_pos]) or isDelimiter(_str[_pos])) do inc(_pos);
 end;
 (*
 procedure TSimpleParser.find_next_space;
@@ -173,6 +174,8 @@ begin
   end;
 
   result:=StrToFloat(s);
+  if (_pos<=Length(_str)) and isDelimiter(_str[_pos]) then inc(_pos);
+  //    inc(_pos);
 end;
 
 function TSimpleParser.getInt: Integer;
@@ -188,6 +191,8 @@ begin
     inc(_pos);
   end;
   if s='' then result:=0 else result:=StrToInt(s);
+  if (_pos<=Length(_str)) and isDelimiter(_str[_pos]) then inc(_pos);
+//  inc(_pos);
 end;
 
 function TSimpleParser.getInt64: Int64;
@@ -212,6 +217,7 @@ begin
   fBackupPos:=_pos;
   while (_pos<=Length(_str)) and (not isDelimiter(_str[_pos])) do inc(_pos);
   Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
+  inc(_pos);
 end;
 
 function TSimpleParser.getHex: Integer;

@@ -2,7 +2,8 @@ unit analysis_lib;
 
 interface
 
-uses classes,linear_eq,streaming_class_lib,streamable_component_list,expression_lib;
+uses classes,linear_eq,streaming_class_lib,streamable_component_list,expression_lib,
+  chart,series,TeEngine,ConvUtils,graphics;
 
 type
 
@@ -37,6 +38,9 @@ end;
 
 TChartDetails = record
   LeftAxisGraphs: array of Integer; //номера в страшенной таблице fData
+  BottomAxisType: TConvType;
+  LeftAxisType: TConvType;
+  RightAxisType: TConvType;
   RightAxisEnabled: boolean;
   RightAxisGraphs: array of Integer;
   caption: string;
@@ -71,11 +75,14 @@ TAnalysis = class (TStreamingClass)
     fData: array of array of array of Variant; //возможны комплексные числа, а также недоопред.
     fPrimaryCount,fSecondaryCount: Integer; //на чем мы остановились в одном и в другом
     fShowDetails: TAnalysisShowDetails;
+    fDummyBtmp: TBitmap;
     procedure RunThread(Origin: TAnalysis; index: Integer);
     procedure AppendThreadResults(clone: TAnalysis; exMessage: string ='');
   protected
     procedure OnThreadTerminate(Sender: TObject); //достаточно иметь одну ссылочку на процесс
     procedure ShowProgress(index,value: Integer);
+    procedure ChartShowLabel (Sender:TChartAxis; Series:TChartSeries; ValueIndex: LongInt; Var LabelText: String);
+    procedure ButtonSaveBitmapClick(Sender: TObject);
   public
     onReady: TNotifyEvent;
     constructor Create(Owner: TComponent); override;
@@ -115,7 +122,7 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 implementation
 
 uses SysUtils,Math,command_class_lib,variants, ComObj, formShowAnalysisResults,
-phys_units_lib,VarCmplx,ComCtrls,StrUtils,ConvUtils, chart, controls,graphics,series;
+phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls;
 
 var AnalysisTypes: TStrings;
 
@@ -188,6 +195,7 @@ constructor TAnalysis.Create(Owner: TComponent);
 var i: Integer;
 begin
   inherited Create(Owner);
+  fDummyBtmp:=TBitmap.Create;
   fVarsOfInterest:=TStringList.Create;
   fTempVarsOfInterest:=TStringList.Create;
   for i:=0 to 1 do begin
@@ -209,6 +217,7 @@ begin
   //но тут мы их должны дождаться!
   fVarsOfInterest.Free;
   fTempVarsOfInterest.Free;
+  fDummyBtmp.free;
   inherited Destroy;
 end;
 
@@ -501,6 +510,31 @@ begin
   //если выбран вариант cndGodograph, то оставляем числа в покое, потом построим хитрый график
 end;
 
+procedure TAnalysis.ChartShowLabel(Sender: TChartAxis; Series:TChartSeries; ValueIndex: LongInt; Var LabelText: String);
+var str: string;
+    i: Integer;
+    tmpvar: Variant;
+begin
+  i:=Sender.ParentChart.Tag;
+  if Sender=Sender.ParentChart.LeftAxis then
+    tmpvar:=VarWithUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].LeftAxisType)
+  else if Sender=Sender.ParentChart.BottomAxis then
+    tmpvar:=VarWithUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].BottomAxisType);
+  LabelText:=VarWithUnitFindGoodPrefix(tmpvar);
+(*
+  fdummyBtmp.Canvas.Font:=Sender.labelsFont;
+  if fdummyBtmp.Canvas.TextWidth(LabelText)>Sender.LabelsSize then
+    Sender.LabelsSize:=fdummyBtmp.Canvas.TextWidth(LabelText);
+    *)
+//  LabelText:=tmpvar;
+end;
+
+procedure TAnalysis.ButtonSaveBitmapClick(Sender: TObject);
+begin
+  if frmShowAnalysisResults.SavePictureDialog1.Execute then
+    TChart((Sender as TButton).Tag).SaveToBitmapFile(frmShowAnalysisResults.SavePictureDialog1.FileName);
+end;
+
 procedure TAnalysis.ShowOnScreen;
 var i,j,k,col: Integer;
     VariousTypes: array of Variant;
@@ -512,7 +546,12 @@ var i,j,k,col: Integer;
     fSeries: TLineSeries;
     XConv,YConv: TConvType;
     fCenter,fWindowHeight: Real;
+    Button: TButton;
+    btmp: TBitmap;
+resourcestring
+  ButtonSaveBitmapCaption='Сохранить как изображение';
 begin
+  btmp:=TBitmap.Create;
   //пока что здесь придумаем, как лучше всего распихать кривые по графикам
   if SecondarySweep.Enabled then begin
     //каждый график на своем полотне, вдруг иначе не уместится
@@ -553,6 +592,8 @@ begin
     for i:=0 to fShowDetails.fChartCount-1 do begin
       SetLength(fShowDetails.fChartDetails[i].LeftAxisGraphs,graphsCount[i]);
       fShowDetails.fChartDetails[i].RightAxisEnabled:=false;
+      fShowDetails.fChartDetails[i].BottomAxisType:=VarWithUnitGetConvType(PrimarySweep.Variable.getVariantValue);
+      fShowDetails.fChartDetails[i].LeftAxisType:=VarWithUnitGetConvType(VariousTypes[i]);
       fShowDetails.fChartDetails[i].caption:=ConvFamilyToDescription(VarWithUnitGetConvFamily(VariousTypes[i]));
     end;
     //ага, распихиваем наши величины по разным местам
@@ -567,6 +608,7 @@ begin
   XConv:=VarWithUnitGetConvType(PrimarySweep.Variable.getVariantValue);
   //а теперь собственно построение графиков. Для начала создадим компоненты.
   for i:=0 to fShowDetails.fChartCount-1 do begin
+
     fTabSheet:=TTabSheet.Create(frmShowAnalysisResults);
     fTabSheet.PageControl:=frmShowAnalysisResults.PageControl1;
     fTabSheet.Caption:=fShowDetails.fChartDetails[i].caption;
@@ -578,7 +620,24 @@ begin
     fChart.Title.Font.Size:=-14;
     fChart.Color:=clWhite;
     fChart.View3D:=false;
+    fChart.Legend.Alignment:=laTop;
+    fChart.Legend.LegendStyle:=lsSeries;
     fChart.BottomAxis.Logarithmic:=PrimarySweep.isLog;
+    fChart.BottomAxis.AxisValuesFormat:='';
+    fChart.BottomAxis.Title.Caption:=PrimarySweep.Variable.Name;
+    fChart.LeftAxis.AxisValuesFormat:='';
+    fChart.OnGetAxisLabel:=ChartShowLabel;
+    fChart.Tag:=i;
+    fChart.LeftAxis.LabelsSize:=30;
+//    fChart.MarginLeft:=10;
+    fChart.BevelOuter:=bvNone;
+
+    Button:=TButton.Create(frmShowAnalysisResults);
+    Button.Parent:=fTabSheet;
+    Button.Caption:=ButtonSaveBitmapCaption;
+    Button.Width:=btmp.Canvas.TextWidth(ButtonSaveBitmapCaption)+10;
+    Button.OnClick:=ButtonSaveBitmapClick;
+    Button.Tag:=Integer(fChart);
 //fChart.BottomAxis.StartPosition:=0.1
 //    fChart.BottomAxis.AxisValuesFormat:=
     if SecondarySweep.Enabled then begin
@@ -600,11 +659,13 @@ begin
     fCenter:=(fChart.LeftAxis.Maximum+fChart.LeftAxis.Minimum)/2;
     fWindowHeight:=1.1*(fChart.LeftAxis.Maximum-fChart.LeftAxis.Minimum)/2;
     fChart.LeftAxis.SetMinMax(fCenter-fWindowHeight,fCenter+fWindowHeight);
-
+    for j:=0 to fChart.SeriesCount-1 do
+      if fChart.Series[j].SeriesColor=clYellow then
+        fChart.Series[j].SeriesColor:=clBlack;
   end;
 
   frmShowAnalysisResults.ShowModal;
-
+  btmp.Free;
 end;
 
 
@@ -673,7 +734,7 @@ initialization
   stTransient:=RegisterSimulationType('Transient');
   stAC:=RegisterSimulationType('AC');
   stDC:=RegisterSimulationType('DC');
-  NumberOfAnalysisThreads:=4;
+  NumberOfAnalysisThreads:=1;
 finalization
   FreeAndNil(AnalysisTypes);
 end.
