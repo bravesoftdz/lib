@@ -10,11 +10,14 @@ TVariantTableFunc = class (table_func)
   private
     fXUnitConv,fYUnitConv: TConvType;
     function GetVariantValue(xi: Variant): Variant;
+    function GetInverseVariantValue(yi: Variant): Variant;
     procedure SetXUnit(value: string);
     procedure SetYUnit(value: string);
   public
     function GetInverse: TVariantTableFunc; reintroduce; overload;
     property value[xi: Variant]: Variant read GetVariantValue; default;
+    property inverse[yi: Variant]: Variant read GetInverseVariantValue;
+  published
     property XUnit: string read fXUnit write SetXUnit;
     property YUnit: string read fYUnit write SetYUnit;
 end;
@@ -32,6 +35,26 @@ begin
   else Raise Exception.Create('argument of table function should be real');
   Result:=VarWithUnitCreateFromVariant(GetValue(axi),fYUnitConv);
 end;
+
+function TVariantTableFunc.GetInverseVariantValue(yi: Variant): Variant;
+var ayi,ax,ay: Real;
+    tmp: Variant;
+    i: Integer;
+begin
+  tmp:=VarWithUnitGetNumberIn(yi,fYUnitConv);
+  if VarIsNumeric(tmp) then
+    ayi:=tmp
+  else Raise Exception.Create('right now we work with real-valued table functions');
+  //первым делом интервал ищем
+  for i:=0 to count-1 do
+    if Y[i]>=ayi then begin
+      Result:=VarWithUnitCreateFromVariant(X[i],fXUnitConv);
+      Exit;
+    end;
+  Raise Exception.CreateFMT('didn''t find value %s in table',[yi]);
+end;
+
+//  Result:=VarWithUnitCreateFrom
 
 
 procedure TVariantTableFunc.SetXUnit(value: string);

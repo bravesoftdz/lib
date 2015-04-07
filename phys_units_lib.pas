@@ -921,9 +921,13 @@ begin
 end;
 
 procedure TVariantWithUnit.DoDivide(Right: TAbstractWrapperData);
+var tmp: TVariantWithUnit;
 begin
-  (Right as TVariantWithUnit).DoInverse;
-  DoMultiply(Right);
+  tmp:=TVariantWithUnit.Create;
+  tmp.Assign(Right);
+  tmp.DoInverse;
+  DoMultiply(tmp);
+  tmp.Free;
 end;
 
 procedure TVariantWithUnit.DoPower(pow: Real);

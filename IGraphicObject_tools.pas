@@ -3,7 +3,7 @@ unit IGraphicObject_tools;
 interface
 
 uses Controls,Classes,types,command_class_lib,messages,IGraphicObject_commands,
-  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit;
+  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit,FloatEdit;
 
 type
 

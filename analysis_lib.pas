@@ -122,7 +122,7 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 implementation
 
 uses SysUtils,Math,command_class_lib,variants, ComObj, formShowAnalysisResults,
-phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls;
+phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls,graphicEx;
 
 var AnalysisTypes: TStrings;
 
@@ -213,7 +213,8 @@ begin
   for i:=0 to Length(fclones)-1 do
     if Assigned(fclones[i]) and Assigned(fclones[i].fThread) then
       fclones[i].fThread.Terminate;
-
+  for i:=0 to Length(fExpressions)-1 do
+    fExpressions[i].Free;
   //но тут мы их должны дождаться!
   fVarsOfInterest.Free;
   fTempVarsOfInterest.Free;
@@ -511,8 +512,7 @@ begin
 end;
 
 procedure TAnalysis.ChartShowLabel(Sender: TChartAxis; Series:TChartSeries; ValueIndex: LongInt; Var LabelText: String);
-var str: string;
-    i: Integer;
+var i: Integer;
     tmpvar: Variant;
 begin
   i:=Sender.ParentChart.Tag;
@@ -530,9 +530,34 @@ begin
 end;
 
 procedure TAnalysis.ButtonSaveBitmapClick(Sender: TObject);
+var filename,extension: string;
+    chart: TChart;
+    btmp: TBitmap;
 begin
-  if frmShowAnalysisResults.SavePictureDialog1.Execute then
-    TChart((Sender as TButton).Tag).SaveToBitmapFile(frmShowAnalysisResults.SavePictureDialog1.FileName);
+  if frmShowAnalysisResults.SavePictureDialog1.Execute then begin
+    chart:=TChart((Sender as TButton).Tag);
+    filename:=frmShowAnalysisResults.SavePictureDialog1.FileName;
+//    extension:=frmShowAnalysisResults.SavePictureDialog1.
+    extension:=ExtractFileExt(FileName);
+    extension:=RightStr(extension,Length(extension)-1);
+    if extension='bmp' then
+      chart.SaveToBitmapFile(FileName)
+    else if extension='wmf' then
+      chart.SaveToMetafile(FileName)
+    else if extension='emf' then
+      chart.SaveToMetafileEnh(FileName)
+    else begin
+      btmp:=TBitmap.Create;
+      try
+        btmp.Width:=chart.ClientWidth;
+        btmp.Height:=chart.ClientHeight;
+        chart.Draw(btmp.Canvas,chart.ClientRect);
+        SaveBitmapToFile(btmp,FileName);
+      finally
+        btmp.Free;
+      end;
+    end;
+  end;
 end;
 
 procedure TAnalysis.ShowOnScreen;
@@ -734,7 +759,7 @@ initialization
   stTransient:=RegisterSimulationType('Transient');
   stAC:=RegisterSimulationType('AC');
   stDC:=RegisterSimulationType('DC');
-  NumberOfAnalysisThreads:=1;
+  NumberOfAnalysisThreads:=4;
 finalization
   FreeAndNil(AnalysisTypes);
 end.

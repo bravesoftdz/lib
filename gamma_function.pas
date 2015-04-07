@@ -5,12 +5,12 @@ uses math,graphics,windows;
 
 type
 
-RGBColor=record
+RGBColor=packed record
   case Integer of
-  0: (pad: byte;
-      B: byte;
+  0: (R: byte;
       G: byte;
-      R: byte);
+      B: byte;
+      pad: byte);
   1: (Color: TColor);
 end;
 
@@ -23,7 +23,7 @@ TColorScanline=array [0..32767] of TColor;
 function Real_from_monochrome (c: TColor): Real;
 function monochrome_from_Real (x: Real): TColor;
 function gamma(x: Real): Integer;
-//function inverse_gamma(x: Integer): Real;
+function inverse_gamma(x: Integer): Real;
 
 function ColorFromReals(R,G,B: Real): TColor;
 
@@ -61,6 +61,13 @@ begin
   else Result:=0;
 end;
 
+
+function inverse_gamma(x: Integer): Real;
+begin
+  assert(x>=0);
+  assert(x<=255);
+  Result:=inverseGammaTable[x];
+end;
 
 function honest_inverse_gamma(x: Integer): Real;
 begin

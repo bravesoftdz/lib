@@ -38,9 +38,12 @@ TVector=class(TStreamingClass)
     procedure rotateZ(angle: Real);
     procedure rotateY(angle: Real);
 
+    procedure GenerateTwoPerpVectors(av1,av2: TVector);
+
     procedure rotate_by_quat(q: TAbstractQuaternion);
 
     function getLength_squared: Real;
+
 
     class function scalar_product(M0,M1: TVector): Real;
     class function cos_between(M0,M1: TVector): Real;
@@ -237,19 +240,6 @@ begin
   y:=z*by.x-xt*by.z;
   z:=xt*by.y-yt*by.x;
 end;
-(*
-procedure TVector.Ortogonalize(axis: TVector);
-var a: Real;
-    v: TVector;
-begin
-  //вычитаем из вектора его проекцию на axis
-  a:=TVector.scalar_product(self,axis)/axis.Length_squared;
-  v:=TVector.CopyFrom(axis);
-  v.Mul(a);
-  Sub(v);
-  v.Free;
-end;
-*)  //хреновая версия - возится с памятью на ровном месте, надо сделать только в лок. перем.
 
 procedure TVector.Ortogonalize(axis: TVector);
 var a: Real;
@@ -300,6 +290,19 @@ begin
   x:=t*si+x*co;
 end;
 
+procedure TVector.GenerateTwoPerpVectors(av1,av2: TVector);
+begin
+  assert(abs(length_squared-1)<1e-5, 'GenerateTwoPerpVectors: v1 not normalized');
+  if abs(X)>0.577350269189626 then
+    av1.Assign(0,1,0)
+  else
+    av1.Assign(1,0,0);
+  av1.Vector_multiply(self);
+  av1.normalize;
+  av2.VectorAssign(self);
+  av2.Vector_multiply(av1);
+end;
+
 
 class function TVector.scalar_product(M0,M1: TVector): Real;
 begin
@@ -340,6 +343,8 @@ begin
     end;
   t.Free;
 end;
+
+
 
 procedure TVector.rotate_by_quat(q: TAbstractQuaternion);
 var t,n: TQuaternion;
