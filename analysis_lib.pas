@@ -82,6 +82,7 @@ TAnalysis = class (TStreamingClass)
     procedure OnThreadTerminate(Sender: TObject); //достаточно иметь одну ссылочку на процесс
     procedure ShowProgress(index,value: Integer);
     procedure ChartShowLabel (Sender:TChartAxis; Series:TChartSeries; ValueIndex: LongInt; Var LabelText: String);
+//    procedure ChartMouseMove(Sender: TObject; Shift: TShiftState; X,Y: Integer);
     procedure ButtonSaveBitmapClick(Sender: TObject);
   public
     onReady: TNotifyEvent;
@@ -122,7 +123,7 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 implementation
 
 uses SysUtils,Math,command_class_lib,variants, ComObj, formShowAnalysisResults,
-phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls,graphicEx;
+phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls,graphicEx,Types;
 
 var AnalysisTypes: TStrings;
 
@@ -652,6 +653,7 @@ begin
     fChart.BottomAxis.Title.Caption:=PrimarySweep.Variable.Name;
     fChart.LeftAxis.AxisValuesFormat:='';
     fChart.OnGetAxisLabel:=ChartShowLabel;
+    fChart.OnMouseMove:=frmShowAnalysisResults.ChartMouseMove;
     fChart.Tag:=i;
     fChart.LeftAxis.LabelsSize:=30;
 //    fChart.MarginLeft:=10;
@@ -692,7 +694,6 @@ begin
   frmShowAnalysisResults.ShowModal;
   btmp.Free;
 end;
-
 
 (*
         TAnalysisThread

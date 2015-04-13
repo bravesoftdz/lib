@@ -1012,12 +1012,17 @@ begin
     Result:=Result+s+'"';
   end
   else begin
-    Result:=instance;
-    s:=ConvTypeToDescription(ConvType);
-    i:=Pos('\',s);
-    if i>0 then
-      s:=LeftStr(s,i-1);
-    if s<>'' then Result:=Result+' '+s;
+
+//    if VarIsNumeric(instance) then
+//      Result:=ConvUnitToStr(instance,ConvType)
+//    else begin
+      Result:=instance;
+      s:=ConvTypeToDescription(ConvType);
+      i:=Pos('\',s);
+      if i>0 then
+        s:=LeftStr(s,i-1);
+      if s<>'' then Result:=Result+' '+s;
+//    end;
   end;
 end;
 (*
@@ -1421,6 +1426,8 @@ var v: TVariantWithUnitVarData absolute source;
   Ampl: Real;
   s: string;
   InitConvType: TConvType;
+  inst: Variant;
+//  nam: convtype;
 begin
   if not IsVarWithUnit(source) then begin
     Result:=source;
@@ -1460,8 +1467,14 @@ begin
   while (i>=0) and (Ampl<TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).multiplier) do
     dec(i);
 //  if i<0 then i:=0;
-  if i>=0 then
-    Result:=VarWithUnitCreateFromVariant(vdat.Data.instance/TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).multiplier,StrToConvType(TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).name+ConvTypeToDescription(vdat.Data.ConvType)))
+  if i>=0 then begin
+//    Result:=VarWithUnitCreateFromVariant(
+//    vdat.Data.instance/TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).multiplier,
+//    StrToConvType(TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).name+ConvTypeToDescription(vdat.Data.ConvType)))
+    inst:=vdat.Data.instance/TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).multiplier;
+    Result:=VarWithUnitCreateFromVariant(inst,
+    StrToConvType(TPrefixEntry(UnitPrefixes.fPreferredPrefixes[i]).name+ConvTypeToDescription(vdat.Data.ConvType)))
+  end
   else
     Result:=source;
 end;
@@ -1746,8 +1759,10 @@ begin
   for i:=0 to source.fPrefixes.Count-1 do
     if not fPrefixes.Find(source.fPrefixes[i],j) then
       fPrefixes.AddObject(source.fPrefixes[i],source.fPrefixes.Objects[i])
-    else
+    else begin
+      source.fPreferredPrefixes.Remove(source.fPrefixes.Objects[i]);
       source.fPrefixes.Objects[i].Free;
+    end;
   if source.lang=PhysUnitLanguage then begin
     fPreferredPrefixes.Clear;
     for i:=0 to source.fPreferredPrefixes.Count-1 do

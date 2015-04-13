@@ -44,6 +44,15 @@ TVector=class(TStreamingClass)
 
     function getLength_squared: Real;
 
+    //Monte-Carlo methods
+    procedure GenerateRandomVector_by_quat;
+    procedure GenerateRandomVector_by_ball;
+    procedure GenerateRandomVector_by_Marsalia;
+    procedure GenerateRandomVector_by_spheric;
+
+    procedure GenerateRandomPointInBall;
+    procedure GenerateRandomPointInBall_by_spheric;
+    
 
     class function scalar_product(M0,M1: TVector): Real;
     class function cos_between(M0,M1: TVector): Real;
@@ -92,6 +101,7 @@ function VectorMul(p1,p2: Variant): Variant;
 function VectorLength(p: Variant): Real;
 
 implementation
+uses math;
 
 var VectorVariantType: TVectorVariantType;
 
@@ -361,6 +371,89 @@ begin
   t.Free;
   n.Free;
 end;
+
+
+procedure TVector.GenerateRandomVector_by_quat;
+var a,x1,y1,z1,L: Real;
+begin
+  repeat
+    a:=2*random-1;
+    x1:=2*random-1;
+    y1:=2*random-1;
+    z1:=2*random-1;
+    L:=a*a+x1*x1+y1*y1+z1*z1;
+  until L<=1;
+  fx:=(a*a+x1*x1-y1*y1-z1*z1)/L;
+  fy:=2*(x1*y1-a*z1)/L;
+  fz:=2*(x1*z1+a*y1)/L;
+end;
+
+procedure TVector.GenerateRandomVector_by_ball;
+var L: Real;
+begin
+  repeat
+    fx:=2*random-1;
+    fy:=2*random-1;
+    fz:=2*random-1;
+    L:=fx*fx+fy*fy+fz*fz;
+  until L<=1;
+  L:=1/sqrt(L);
+  fx:=fx*L;
+  fy:=fy*L;
+  fz:=fz*L;
+end;
+
+procedure TVector.GenerateRandomVector_by_Marsalia;
+var L,alp: Real;
+begin
+  repeat
+    fx:=2*random-1;
+    fy:=2*random-1;
+    L:=fx*fx+fy*fy;
+  until L<=1;
+  alp:=2*sqrt(1-L);
+  fx:=fx*alp;
+  fy:=fy*alp;
+  fz:=2*L-1;
+end;
+
+procedure TVector.GenerateRandomVector_by_spheric;
+var theta,phi: Real;
+const twopi=6.28318530717959;
+begin
+  theta:=twopi*random;
+  phi:=arcsin(2*random-1);
+  fy:=sin(phi);
+  phi:=cos(phi);
+  fx:=cos(theta)*phi;
+  fy:=sin(theta)*phi;
+end;
+
+procedure TVector.GenerateRandomPointInBall;
+begin
+  repeat
+    fx:=random*2-1;
+    fy:=random*2-1;
+    fz:=random*2-1;
+  until fx*fx+fy*fy+fz*fz<=1;
+end;
+
+procedure TVector.GenerateRandomPointInBall_by_spheric;
+var theta,phi,r: Real;
+const twopi=6.28318530717959;
+begin
+  theta:=random*twopi;
+  phi:=arcsin(2*random-1);
+//  r:=power(random,0.3333333333);
+  r:=max(random,random);
+  r:=max(r,random);
+  fy:=r*sin(phi);
+  r:=r*cos(phi);
+  fx:=r*cos(theta);
+  fz:=r*sin(theta);
+end;
+
+
 
 (*
             TVectorVariantType

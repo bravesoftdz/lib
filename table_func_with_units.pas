@@ -46,12 +46,16 @@ begin
     ayi:=tmp
   else Raise Exception.Create('right now we work with real-valued table functions');
   //первым делом интервал ищем
+
+  Result:=VarWithUnitCreateFromVariant(InverseValue(ayi),fXUnitConv);
+(*
   for i:=0 to count-1 do
     if Y[i]>=ayi then begin
       Result:=VarWithUnitCreateFromVariant(X[i],fXUnitConv);
       Exit;
     end;
   Raise Exception.CreateFMT('didn''t find value %s in table',[yi]);
+  *)
 end;
 
 //  Result:=VarWithUnitCreateFrom

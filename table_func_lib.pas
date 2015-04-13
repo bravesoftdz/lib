@@ -60,6 +60,8 @@ type
 
     _oub: Boolean;
     changed: boolean;
+    fIsMonotonic: Boolean;
+    fIsIncreasing: Boolean;
     fchart_series: TLineSeries;
 
     procedure plus_one; //приготовить место для еще одного числа
@@ -81,8 +83,11 @@ type
 
       protected
     function Getvalue(xi:Real): Real; override;
+    function InverseValue(yi: Real): Real;
     procedure DefineProperties(Filer: TFiler); override;
     function IsNonZeroTolerance: boolean;
+    function IsMonotonic: Boolean;
+    function IsIncreasing: Boolean;
 
       public
     X,Y: array of Real;
@@ -119,6 +124,7 @@ type
     procedure derivative; overload;
     function derivative(xi: Real): Real; overload;
     function FindInterval(xi: Real): Integer; //между какими табл. значениями лежит нужное нам
+    function InverseFindInterval(yi: Real): Integer;
     function FindNearestPoint(ax,ay: Real;out dist: Real): Integer;  //точка, ближ. к данным коорд.
     function Average: Real;
     function RMSValue: Real;
@@ -289,6 +295,64 @@ begin
   Result:=k;
 end;
 
+function table_func.InverseFindInterval(yi: Real): Integer;
+var i,j,k: Integer;
+label inc_found,dec_found;
+begin
+  if changed then update_spline;
+  if not IsMonotonic then
+    Raise Exception.Create('table_func: function should be monotonic to find inverse interval');
+  i:=0;
+  j:=count-1;
+  //цикл может не выполниться, если массив пустой (High(X)=-1)
+  if j<i then begin
+    Result:=-2;
+    Exit;
+  end;
+
+  if IsIncreasing then begin
+    if yi>ymax then begin
+      Result:=count;
+      exit;
+    end
+    else if yi<ymin then begin
+      Result:=-1;
+      exit;
+    end;
+
+    k:=0;
+    while j>=i do begin
+      k:=(i+j) shr 1;
+      if yi<Y[k] then j:=k-1
+      else if yi>Y[k] then i:=k+1
+      else goto inc_found;
+    end;
+    if yi<Y[k] then dec(k);
+  inc_found:
+    Result:=k;
+  end
+  else begin
+    if yi<ymin then begin
+      Result:=count;
+      exit;
+    end
+    else if yi>ymax then begin
+      Result:=-1;
+      exit;
+    end;
+
+    k:=0;
+    while j>=i do begin
+      k:=(i+j) shr 1;
+      if yi>Y[k] then j:=k-1
+      else if yi<Y[k] then i:=k+1
+      else goto dec_found;
+    end;
+    if yi>Y[k] then dec(k);
+  dec_found:
+    Result:=k;
+  end;
+end;
 
 function table_func.GetValue(xi: Real): Real;
 var k: Integer;
@@ -304,6 +368,29 @@ begin
       else begin
         r:=xi-X[k];
         Result:=Y[k]+r*(b[k]+r*(c[k]+r*d[k]));
+      end;
+end;
+
+function table_func.InverseValue(yi: Real): Real;
+var k: Integer;
+begin
+  if not IsMonotonic then Raise Exception.Create('table_func: can''t inverse non-monotonic function');
+  k:=InverseFindInterval(yi);
+  if k=-2 then
+    if _oub then Result:=0 else Result:=NAN //вообще пустая функция, ни одного знач
+  else if (k=-1) then
+    if _oub then Result:=0 else Result:=X[0]
+    else if k>=count then
+      if _oub then Result:=0 else Result:=X[count-1]
+      else begin
+
+        //  if (k<0) or (k>=count) then Result:=NAN;  //плевать на zero_out_of_bounds, все равно
+        //по Y значения вне интервала недопустимы
+        if order=0 then
+          Result:=X[k]
+        else if order=1 then
+          Result:=X[k]+(yi-Y[k])/b[k]
+        else Raise Exception.Create('sorry');
       end;
 end;
 
@@ -370,6 +457,16 @@ begin
       c[i]:=0;
       d[i]:=0;
     end;
+    fisIncreasing:=Y[j]>Y[0];  //это будет верно в случае монотон. роста но не обязано, если не монотон
+    fisMonotonic:=true;
+    if (order and 2)=0 then begin //т.е order=0 или order=1
+      for i:=1 to j do
+        if (fIsIncreasing and (Y[i]<=Y[i-1])) or
+          (not fIsIncreasing and (Y[i]>=Y[i-1])) then begin
+            fIsMonotonic:=false;
+            break;
+        end;
+    end;
     if iorder=0 then exit
     else begin
       SetLength(h,count);
@@ -378,6 +475,7 @@ begin
         for i:=0 to j-1 do b[i]:=(Y[i+1]-Y[i])/h[i];
         exit;
       end;
+      fIsMonotonic:=false; //пока возможность инверсии отключим тем самым
       if iorder=2 then begin
         if j=0 then Exit;
 //        c[0]:=0; это и так выполняется
@@ -416,8 +514,8 @@ end;
 
 procedure table_func.update_order(new_value: Integer);
 begin
-iOrder:=new_value;
-changed:=true;
+  iOrder:=new_value;
+  changed:=true;
 end;
 
 function table_func.addpoint(Xn:Real;Yn:Real): boolean; //это для правильной работы undo
@@ -917,6 +1015,18 @@ function table_func.get_ymax :Real;
 begin
   if changed then update_spline;
   get_ymax:=iymax;
+end;
+
+function table_func.IsMonotonic: Boolean;
+begin
+  if changed then update_spline;
+  Result:=fIsMonotonic;
+end;
+
+function table_func.IsIncreasing: Boolean;
+begin
+  if changed then update_spline;
+  Result:=fIsIncreasing;
 end;
 
 procedure table_func.derivative;
