@@ -1760,8 +1760,10 @@ begin
     if not fPrefixes.Find(source.fPrefixes[i],j) then
       fPrefixes.AddObject(source.fPrefixes[i],source.fPrefixes.Objects[i])
     else begin
-      source.fPreferredPrefixes.Remove(source.fPrefixes.Objects[i]);
-      source.fPrefixes.Objects[i].Free;
+      fPreferredPrefixes.Remove(fPrefixes.Objects[j]);
+      fPrefixes.Objects[j].Free;
+      fPrefixes.Objects[j]:=source.fPrefixes.Objects[i];
+      fPreferredPrefixes.Add(fPrefixes.Objects[j]);
     end;
   if source.lang=PhysUnitLanguage then begin
     fPreferredPrefixes.Clear;
