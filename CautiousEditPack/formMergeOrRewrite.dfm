@@ -54,7 +54,7 @@ object frmMergeOrRewrite: TfrmMergeOrRewrite
   object lblMinus: TLabel
     Left = 8
     Top = 32
-    Width = 9
+    Width = 6
     Height = 13
     Caption = '0'
   end

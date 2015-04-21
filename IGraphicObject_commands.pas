@@ -45,15 +45,15 @@ TDocumentWithImage = class(TAbstractDocument)
     fGraphicObjectsIterator: TAbstractDocumentInterfaceIterator;
   public
     constructor Create(owner: TComponent); override;
-    function XPix2Val(X: Integer): Integer; virtual; abstract;
-    function YPix2Val(Y: Integer): Integer; virtual; abstract;
-    function XVal2Pix(X: Integer): Integer; virtual; abstract;
-    function YVal2Pix(Y: Integer): Integer; virtual; abstract;
-    function Get_square_size: Integer; virtual; abstract;
-    function Get_sensitivity: Integer; virtual; abstract;
-    function Get_duplicate_shift_x: Integer; virtual; abstract;
-    function Get_duplicate_shift_y: Integer; virtual; abstract;
-    function Get_scale: Real; virtual; abstract;
+    function XPix2Val(X: Integer): Integer; virtual;  //default: result:=x
+    function YPix2Val(Y: Integer): Integer; virtual;  //default: result:=y
+    function XVal2Pix(X: Integer): Integer; virtual;  //default: result:=x
+    function YVal2Pix(Y: Integer): Integer; virtual;  //default: result:=y
+    function Get_square_size: Integer; virtual; //default impl: 10
+    function Get_sensitivity: Integer; virtual; //default impl: 15
+    function Get_duplicate_shift_x: Integer; virtual; //default impl: 25
+    function Get_duplicate_shift_y: Integer; virtual; //default impl: 25
+    function Get_scale: Real; virtual;  //default impl: 1
     function Get_Image: TImage; virtual; abstract;
     property GraphicObjectsIterator: TAbstractDocumentInterfaceIterator read fGraphicObjectsIterator;
   end;
@@ -969,6 +969,51 @@ constructor TDocumentWithImage.Create(owner: TComponent);
 begin
   inherited Create(owner);
   fGraphicObjectsIterator:=TAbstractDocumentInterfaceIterator.Create(self,IGraphicObject);
+end;
+
+function TDocumentWithImage.XPix2Val(X: Integer): Integer;
+begin
+  Result:=X;
+end;
+
+function TDocumentWithImage.YPix2Val(Y: Integer): Integer;
+begin
+  Result:=Y;
+end;
+
+function TDocumentWithImage.XVal2Pix(X: Integer): Integer;
+begin
+  Result:=X;
+end;
+
+function TDocumentWithImage.YVal2Pix(Y: Integer): Integer;
+begin
+  Result:=Y;
+end;
+
+function TDocumentWithImage.Get_square_size: Integer;
+begin
+  Result:=10;
+end;
+
+function TDocumentWithImage.Get_sensitivity: Integer;
+begin
+  Result:=15;
+end;
+
+function TDocumentWithImage.Get_duplicate_shift_x: Integer;
+begin
+  Result:=25;
+end;
+
+function TDocumentWithImage.Get_duplicate_shift_y: Integer;
+begin
+  Result:=25;
+end;
+
+function TDocumentWithImage.Get_scale: Real;
+begin
+  Result:=1;
 end;
 
 

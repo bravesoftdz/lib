@@ -32,7 +32,7 @@ type
 
 
 
-procedure Register;
+//procedure Register;
 
 implementation
 

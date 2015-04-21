@@ -102,7 +102,7 @@ procedure Register;
 
 implementation
 
-uses expression_lib,phys_units_lib;
+uses expression_lib,phys_units_lib,floatEdit;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
@@ -468,7 +468,7 @@ procedure Register;
 begin
   RegisterComponents('CautiousEdit', [TCautiousEdit,
   TDisablingCheckBox,TDisablingRadioButton,TDisablingGroupBox,TCautiousExtender,
-  TVariantEdit]);
+  TVariantEdit, TIntegerEdit, TFloatEdit]);
 end;
 
 procedure free_em_all(AInfo, AItem, AData: Pointer; out AContinue: Boolean);

@@ -683,6 +683,8 @@ begin
       Exit;
   end;
   fSolver.SetDimensions(fSolver.fNumOfVars,fSolver.fNumOfEqs+1);
+//  for i:=0 to fSolver.fNumOfVars-1 do
+//    fSolver.SetMatrix(i,fSolver.fNumOfEqs-1,);
   for i:=0 to Length(vars)-1 do begin
     j:=fList.IndexOf(vars[i].reference);
     if j=-1 then begin
