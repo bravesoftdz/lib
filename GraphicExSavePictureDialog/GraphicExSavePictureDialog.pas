@@ -3,7 +3,8 @@ unit GraphicExSavePictureDialog;
 interface
 
 uses
-  SysUtils, Classes, Dialogs, ExtDlgs, graphics,controls,types, JPEG, buttons,extCtrls;
+  SysUtils, Classes, Dialogs, ExtDlgs, graphics,controls,types, JPEG, buttons,
+  extCtrls,pngImage;
 
 type
 
@@ -24,12 +25,14 @@ type
 
       procedure DoTypeChange; override;
       procedure DoShow; override;
+      procedure DoClose; override;
   public
     { Public declarations }
       constructor Create(Owner: TComponent); override;
       destructor Destroy; override;
       procedure DoSelectionChange; override;
       procedure ReloadPicture;
+      procedure Save;
     //graphic is not owned by SavePictureDialog, property is just a reference to it
       property GraphicToSave: TGraphic read FGraphic write FGraphic;
   published
@@ -44,6 +47,19 @@ type
   TGraphicExJPG = class(TJPEGImage, IGraphicPreferences)
     protected
       procedure CompressionRateChange(Sender: TObject);
+    public
+      procedure ShowPreferences(control: TWinControl; var aBoundsRect: TRect; aFilterIndex: Integer);
+  end;
+
+
+  TGraphicExPNG = class(TPNGObject, IGraphicPreferences)
+    public
+      procedure ShowPreferences(control: TWinControl; var aBoundsRect: TRect; aFilterIndex: Integer);
+  end;
+
+  TGraphicExBMP = class(TBitmap, IGraphicPreferences)
+    protected
+      procedure Monochromechange(Sender: TObject);
     public
       procedure ShowPreferences(control: TWinControl; var aBoundsRect: TRect; aFilterIndex: Integer);
   end;
@@ -115,14 +131,12 @@ begin
     FGraphicToCompress:=ConvertToGraphicType(FGraphic,ext);
     ReloadPicture;
     i:=0;
-    while i<CheatPicturePanel.ComponentCount do
-      if CheatPicturePanel.Components[i].Tag<>FilterIndex then
-        CheatPicturePanel.Components[i].Free
+    while i<CheatPaintPanel.ComponentCount do
+      if CheatPaintPanel.Components[i].Tag<>FilterIndex then
+        CheatPaintPanel.Components[i].Free
       else
         inc(i);
     if FGraphicToCompress.GetInterface(IGraphicPreferences,intf) then begin
-      PrefRect:=CheatPicturePanel.ClientRect;
-      PrefRect.Top:=30;
       intf.ShowPreferences(CheatPaintPanel,PrefRect,FilterIndex);
     end;
 
@@ -133,14 +147,14 @@ begin
   inherited DoTypeChange;
 end;
 
+resourcestring
+  KiBcaption = ' КиБ';
+
 procedure TGraphicExSavePictureDialog.ReloadPicture;
-var i: Integer;
 begin
     FMemoryStream.Clear;
-//    if FGraphicToCompress is TGraphicExJPG then
-//      TGraphicExJPG(FGraphicToCompress).CompressionQuality:=1;
     FGraphicToCompress.SaveToStream(FMemoryStream);
-    PictureLabel.Caption:=IntToStr(FMemoryStream.Size div 1024)+' KiB';
+    PictureLabel.Caption:=IntToStr(FMemoryStream.Size div 1024)+KiBcaption;
     FMemoryStream.Seek(0,soFromBeginning);
     ImageCtrl.Picture.Graphic:=FGraphicToCompress;
     ImageCtrl.Picture.Graphic.LoadFromStream(FMemoryStream);
@@ -151,6 +165,33 @@ begin
   inherited DoShow;
   DoTypeChange;
 end;
+
+procedure TGraphicExSavePictureDialog.Save;
+var FileStream: TFileStream;
+begin
+  if Execute then begin
+    FileStream:=TFileStream.Create(FileName,fmCreate);
+    try
+      FMemoryStream.Seek(0,soFromBeginning);
+      FileStream.CopyFrom(FMemoryStream,FMemoryStream.Size);
+    finally
+      FileStream.Free;
+    end;
+  end;
+end;
+
+procedure TGraphicExSavePictureDialog.DoClose;
+var i: Integer;
+begin
+  i:=0;
+  while i<CheatPaintPanel.ComponentCount do
+    if CheatPaintPanel.Components[i].Tag<>0 then
+      CheatPaintPanel.Components[i].Free
+    else
+      inc(i);
+  inherited DoClose;
+end;
+
 
 
 (*
@@ -184,24 +225,63 @@ begin
 end;
 
 procedure TGraphicExJPG.CompressionRateChange(Sender: TObject);
-var val: Integer;
-    labl: TLabel;
+var labl: TLabel;
     master: TGraphicExSavePictureDialog;
 begin
-  val:=(Sender as TTrackBar).Position;
+  CompressionQuality:=(Sender as TTrackBar).Position;
   labl:=(Sender as TTrackBar).Owner.FindComponent('lblCompressionRate') as TLabel;
 
   master:=(Sender as TTrackBar).Owner.Owner as TGraphicExSavePictureDialog;
-  master.FGraphicToCompress.Assign(master.FGraphic);
-  (master.FGraphicToCompress as TGraphicExJPG).CompressionQuality:=val;
-  (master.ImageCtrl.Picture.Graphic as TGraphicExJPG).Compress;
-//  labl.Caption:=JPEGCompressionCaption+IntToStr(val);
-  labl.Caption:=JPEGCompressionCaption+IntToStr((master.FGraphicToCompress as TGraphicExJPG).compressionQuality);
+  Assign(master.FGraphic);
+  Compress;
+  labl.Caption:=JPEGCompressionCaption+IntToStr(CompressionQuality);
 
   master.ReloadPicture;
 end;
 
-initialization
-  FileFormatList.RegisterFileFormat('jpg',gesJPGImages,'',[ftRaster,ftEnableSaving], true, False, TGraphicExJPG);
+(*
+    TGraphicExPNG
+                      *)
+procedure TGraphicExPNG.ShowPreferences(control: TWinControl; var aBoundsRect: TRect; aFilterIndex: Integer);
+begin
+  //we want maximum compression we can get (it's lossless, so no need to ask)
+  filters:=[pfNone, pfSub, pfUp, pfAverage, pfPaeth];
+  (control.Owner as TGraphicExSavePictureDialog).ReloadPicture;
+end;
 
+(*
+    TGraphicExBMP
+                      *)
+resourcestring
+  strIsMonochrome='Черно-белое';
+
+procedure TGraphicExBMP.ShowPreferences(control: TWinControl; var aBoundsRect: TRect; aFilterIndex: Integer);
+var chkBox: TCheckBox;
+begin
+  chkBox:=TCheckBox.Create(control);
+  with chkBox do begin
+    name:='chkMonochrome';
+    Parent:=control;
+    Align:=alTop;
+    Tag:=aFilterIndex;
+    caption:=strIsMonochrome;
+    OnClick:=MonochromeChange;
+  end;
+end;
+
+procedure TGraphicExBMP.Monochromechange(Sender: TObject);
+begin
+  Monochrome:=(Sender as TCheckBox).Checked;
+  ((Sender as TCheckBox).Owner.Owner as TGraphicExSavePictureDialog).ReloadPicture;
+end;
+
+initialization
+  with FileFormatList do begin
+    RegisterFileFormat('jpg',gesJPGImages,'',[ftRaster,ftEnableSaving], true, False, TGraphicExJPG);
+    RegisterFileFormat('jfif',gesJPGImages,'',[ftRaster,ftEnableSaving], true, False, TGraphicExJPG);
+    RegisterFileFormat('jpe',gesJPEImages,'',[ftRaster,ftEnableSaving], true, False, TGraphicExJPG);
+    RegisterFileFormat('jpeg',gesJPEGImages,'',[ftRaster,ftEnableSaving], true, False, TGraphicExJPG);
+    RegisterFileFormat('png', gesPortableNetworkGraphic, '', [ftRaster,ftEnableSaving], True, True, TGraphicExPNG);
+    RegisterFileFormat('bmp', gesBitmaps, '', [ftRaster,ftEnableSaving], true, False, TGraphicExBMP);
+  end;
 end.
