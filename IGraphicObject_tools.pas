@@ -3,7 +3,7 @@ unit IGraphicObject_tools;
 interface
 
 uses Controls,Classes,types,command_class_lib,messages,IGraphicObject_commands,
-  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit,FloatEdit;
+  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit;
 
 type
 
@@ -47,9 +47,10 @@ private
   fAngle: Real;
   fStartX,fstartY: Integer; //начало рамочки
   fCurX,fCurY: Integer; //второй угол
+  fMoveImageIndex,fResizeImageIndex,fRotateImageIndex: Integer;
 
   procedure DrawSelection;
-  procedure DeleteChosen(cut: boolean=false);
+  procedure DeleteChosen(cut: boolean=false; aImageIndex: Integer=-1);
   procedure CopyChosen;
   procedure FindSelRect;
   procedure ShowSquares;
@@ -69,6 +70,9 @@ public
   property Notifier: TObservableImplementor read fNotifier implements IObservable;
 published
   property PickedGroup: TGraphicObjectGroup read fPickedGroup write fPickedGroup;
+  property MoveImageIndex: Integer read fMoveImageIndex write fMoveImageIndex;
+  property ResizeImageIndex: Integer read fResizeImageIndex write fResizeImageIndex;
+  property RotateImageIndex: Integer read fRotateImageIndex write fRotateImageIndex;
 end;
 
 TProcessSelectedButton=class(TAbstractDocumentAction,IObserver)
@@ -231,9 +235,9 @@ end;
 (*
         TBFGPickTool
                       *)
-procedure TGraphicPickTool.DeleteChosen(cut: boolean=false);
+procedure TGraphicPickTool.DeleteChosen(cut: boolean=false; aImageIndex: Integer=-1);
 begin
-  doc.DispatchCommand(TDeleteGraphicCommand.New(fPickedGroup,cut));
+  doc.DispatchCommand(TDeleteGraphicCommand.New(fPickedGroup,cut,aImageIndex));
 end;
 
 procedure TGraphicPickTool.CopyChosen;
@@ -280,9 +284,13 @@ begin
 end;
 
 procedure TGraphicPickTool.Assign(source: TPersistent);
+var s: TGraphicPickTool absolute source;
 begin
   if source is TGraphicPickTool then begin
-    PickedGroup.Assign(TGraphicPickTool(source).PickedGroup);
+    PickedGroup.Assign(s.PickedGroup);
+    MoveImageIndex:=s.MoveImageIndex;
+    ResizeImageIndex:=s.ResizeImageIndex;
+    RotateImageIndex:=s.RotateImageIndex;
   end
   else inherited Assign(source);
 end;
@@ -706,7 +714,7 @@ begin
     sMove: begin
       x1:=Round((coords[0,0,0]-coords[0,0,1])/doc.get_Scale);
       y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.get_Scale);
-      if not doc.DispatchCommand(TMoveGraphicCommand.New(fPickedGroup,x1,y1)) then
+      if not doc.DispatchCommand(TMoveGraphicCommand.New(fPickedGroup,x1,y1,MoveImageIndex)) then
       //если не задалось, то не будет обновления - снова пунктирная рамка. Надо ее убрать
         fPwndSelection.Draw(doc.get_image.Canvas)
       else
@@ -716,7 +724,7 @@ begin
       selRect:=fPickedGroup.Rect;
       x1:=(selRect.Left+selRect.Right) div 2;
       y1:=(selRect.Bottom+selRect.Top) div 2;
-      if not doc.DispatchCommand(TRotateGraphicCommand.New(fPickedGroup,fangle,x1,y1)) then
+      if not doc.DispatchCommand(TRotateGraphicCommand.New(fPickedGroup,fangle,x1,y1,RotateImageIndex)) then
         fPwndSelection.Draw(doc.get_image.Canvas)
       else
         NeedsNotify:=true;
@@ -729,7 +737,7 @@ begin
       y1:=Round((coords[0,1,0]-coords[0,1,1])/doc.get_Scale);
       x2:=Round((coords[1,0,0]-coords[1,0,1])/doc.get_Scale);
       y2:=Round((coords[1,1,0]-coords[1,1,1])/doc.get_Scale);
-      if not doc.DispatchCommand(TResizeGraphicCommand.New(fPickedGroup,x1,y1,x2,y2)) then
+      if not doc.DispatchCommand(TResizeGraphicCommand.New(fPickedGroup,x1,y1,x2,y2,ResizeImageIndex)) then
         fPwndSelection.Draw(doc.get_image.Canvas)
       else
         NeedsNotify:=true;
@@ -744,8 +752,12 @@ end;
       TCustomAddLineTool
                             *)
 procedure TCustomAddLineTool.Assign(source: TPersistent);
+var s: TCustomAddLineTool absolute source;
 begin
-  if not (source is TCustomAddLineTool) then
+  if (source is TCustomAddLineTool) then begin
+    ImageIndex:=s.ImageIndex;
+  end
+  else
     inherited Assign(source);
 end;
 
@@ -849,7 +861,7 @@ end;
 
 procedure TDeleteButtonAction.ExecuteTarget(target: TObject);
 begin
-  PickTool.DeleteChosen;
+  PickTool.DeleteChosen(false,ImageIndex);
 end;
 
 (*
@@ -870,7 +882,7 @@ end;
 procedure TCutButtonAction.ExecuteTarget(Target: TObject);
 begin
   PickTool.CopyChosen;
-  PickTool.DeleteChosen(true);
+  PickTool.DeleteChosen(true,ImageIndex);
 end;
 
 (*
@@ -1485,7 +1497,7 @@ begin
   doc.RemoveComponent(gr);
   doc.CriticalSection.Release;  //перестали в свое удовольствие возиться с документом
   if gr.Count>0 then
-    doc.DispatchCommand(TAddGraphicCommand.NewGr(gr,true))
+    doc.DispatchCommand(TAddGraphicCommand.NewGr(gr,true,ImageIndex))
   else
     gr.Free;
 end;

@@ -95,8 +95,8 @@ TAddGraphicCommand=class(TGraphicCommands)
     procedure SetClipbd(value: boolean); virtual;
   public
     constructor Create(owner: TComponent); override;
-    constructor NewGr(aObjects: TGraphicObjectGroup; paste: Boolean=false);
-    constructor NewObj(aObject: IGraphicObject; paste: Boolean=false);
+    constructor NewGr(aObjects: TGraphicObjectGroup; paste: Boolean=false; aImageIndex: Integer=-1);
+    constructor NewObj(aObject: IGraphicObject; paste: Boolean=false; aImageIndex: Integer=-1);
     function Execute: boolean; override;
     function Undo: boolean; override;
     function Caption: string; override;
@@ -109,7 +109,7 @@ TDeleteGraphicCommand=class(TAddGraphicCommand)
     procedure SetClipbd(value: boolean); override;
   public
     constructor Create(owner: TComponent); override;
-    constructor New(aObjects: TGraphicObjectGroup; cut: Boolean=false);
+    constructor New(aObjects: TGraphicObjectGroup; cut: Boolean=false; aImageIndex: Integer=-1);
     function Execute: boolean; override;
     function Undo: boolean; override;
     function Caption: string; override;
@@ -121,8 +121,8 @@ TMoveGraphicCommand=class(TGraphicCommands)
     fx,fy: Integer;  //ну да, величина перемещени€
   public
     constructor Create(Owner: TComponent); override;
-    constructor New(aObjects: TGraphicObjectGroup;x,y: Integer); overload;
-    constructor New(aObject: IGraphicObject;x,y: Integer); overload;
+    constructor New(aObjects: TGraphicObjectGroup;x,y: Integer; aImageIndex: Integer=-1); overload;
+    constructor New(aObject: IGraphicObject;x,y: Integer; aImageIndex: Integer=-1); overload;
     function Execute: boolean; override;
     function Undo: boolean; override;
     function Caption: string; override;
@@ -138,7 +138,7 @@ TResizeGraphicCommand=class(TGraphicCommands)
     fCorrection: TGraphicResizeCorrector;
   public
     constructor Create(Owner: TComponent); override;
-    constructor New(aObjects: TGraphicObjectGroup;ax1,ay1,ax2,ay2: Integer);
+    constructor New(aObjects: TGraphicObjectGroup;ax1,ay1,ax2,ay2: Integer; aImageIndex: Integer=-1);
     destructor Destroy; override;
     function Execute: boolean; override;
     function Undo: boolean; override;
@@ -160,7 +160,7 @@ TRotateGraphicCommand=class(TGraphicCommands)
     fCorrection: TGraphicResizeCorrector;
   public
     constructor Create(Owner: TComponent); override;
-    constructor New(aObjects: TGraphicObjectGroup; aAlpha: Real; aXCenter,aYCenter: Integer);
+    constructor New(aObjects: TGraphicObjectGroup; aAlpha: Real; aXCenter,aYCenter: Integer; aImageIndex: Integer=-1);
     destructor Destroy; override;
     function Execute: boolean; override;
     function Undo: boolean; override;
@@ -556,34 +556,19 @@ begin
   proc('UseNotifications');
 end;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (*
-        TBFGCommands
+        TGraphicCommands
                                   *)
 procedure TGraphicCommands.ResolveMemory;
 begin
-  (Owner as TCommandTree).JumpToBranch(self);
+  if Assigned(Owner) then
+    (Owner as TCommandTree).JumpToBranch(self);
   fObjectNames:=fObjects.NamesAsString;
 end;
 
 
 (*
-        TBFGAddCommand
+        TAddGraphicCommand
                                   *)
 constructor TAddGraphicCommand.Create(owner: TComponent);
 begin
@@ -597,7 +582,7 @@ begin
   fFromClipbd:=value;
 end;
 
-constructor TAddGraphicCommand.NewGr(aObjects: TGraphicObjectGroup; paste: Boolean=false);
+constructor TAddGraphicCommand.NewGr(aObjects: TGraphicObjectGroup; paste: Boolean=false; aImageIndex: Integer=-1);
 var i: Integer;
 begin
 //нам передают только что созданную группу объектов, которой эти объекты принадлежат
@@ -605,6 +590,7 @@ begin
   fObjects.Free;
   fObjects:=aObjects;
   fFromClipbd:=paste;
+  fImageIndex:=aImageIndex;
   if Assigned(fObjects.Owner) then
     fObjects.Owner.RemoveComponent(fObjects);
   InsertComponent(fObjects);
@@ -618,7 +604,7 @@ begin
   fObjectNames:=fObjects.NamesAsString;
 end;
 
-constructor TAddGraphicCommand.NewObj(aObject: IGraphicObject; paste: Boolean=false);
+constructor TAddGraphicCommand.NewObj(aObject: IGraphicObject; paste: Boolean=false; aImageIndex: Integer=-1);
 begin
   Create(nil);
   fObjects.Add(aObject.Implementor);
@@ -626,6 +612,7 @@ begin
     aObject.Implementor.Owner.RemoveComponent(aObject.Implementor);
   InsertComponent(aObject.Implementor);
   fFromClipbd:=paste;
+  fImageIndex:=aImageIndex;
   fObjectNames:=fObjects.NamesAsString;
 end;
 
@@ -686,11 +673,13 @@ begin
   if value then fImageIndex:=14 else fImageIndex:=10;
 end;
 
-constructor TDeleteGraphicCommand.New(aObjects: TGraphicObjectGroup; cut: Boolean=false);
+constructor TDeleteGraphicCommand.New(aObjects: TGraphicObjectGroup; cut: Boolean=false; aImageIndex: Integer=-1);
 begin
   Create(nil);
-  fObjects.Assign(aObjects);
   FromClipbd:=cut;
+  fImageIndex:=aImageIndex;
+  fObjects.Assign(aObjects);
+  ResolveMemory;
   //не порем гор€чку, пусть у нас пока сидит только ссылочка и ничего больше!
 end;
 
@@ -728,18 +717,20 @@ begin
   fObjects.SetSubComponent(true);
 end;
 
-constructor TMoveGraphicCommand.New(aObjects: TGraphicObjectGroup; x,y: Integer);
+constructor TMoveGraphicCommand.New(aObjects: TGraphicObjectGroup; x,y: Integer; aImageIndex: Integer=-1);
 begin
   Create(nil);
+  fImageIndex:=aImageIndex;
   fObjects.Assign(aObjects);
   fObjectNames:=fObjects.NamesAsString;
   fx:=x;
   fy:=y;
 end;
 
-constructor TMoveGraphicCommand.New(aObject: IGraphicObject; x,y: Integer);
+constructor TMoveGraphicCommand.New(aObject: IGraphicObject; x,y: Integer; aImageIndex: Integer=-1);
 begin
   Create(nil);
+  fImageIndex:=aImageIndex;
   fObjects.Add(aObject.Implementor);
   fObjectNames:=fObjects.NamesAsString;
   fx:=x;
@@ -784,11 +775,12 @@ begin
   inherited Destroy;
 end;
 
-constructor TResizeGraphicCommand.New(aObjects: TGraphicObjectGroup;ax1,ay1,ax2,ay2: Integer);
+constructor TResizeGraphicCommand.New(aObjects: TGraphicObjectGroup;ax1,ay1,ax2,ay2: Integer; aImageIndex: Integer=-1);
 begin
   Create(nil);
   fObjects.Assign(aObjects);
   fObjectNames:=fObjects.NamesAsString;
+  fImageIndex:=aImageIndex;
   fx1:=ax1;
   fx2:=ax2;
   fy1:=ay1;
@@ -926,7 +918,7 @@ begin
   inherited Destroy;
 end;
 
-constructor TRotateGraphicCommand.New(aObjects: TGraphicObjectGroup; aalpha: Real; aXcenter,aYcenter: Integer);
+constructor TRotateGraphicCommand.New(aObjects: TGraphicObjectGroup; aalpha: Real; aXcenter,aYcenter: Integer; aImageIndex: Integer=-1);
 begin
   Create(nil);
   falpha:=aalpha;
@@ -934,6 +926,7 @@ begin
   fYcenter:=aYcenter;
   fObjects.Assign(aObjects);
   fObjectNames:=fObjects.NamesAsString;
+  fImageIndex:=aImageIndex;
 end;
 
 function TRotateGraphicCommand.Execute: boolean;

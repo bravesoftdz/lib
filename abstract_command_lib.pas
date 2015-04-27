@@ -13,7 +13,8 @@ TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хр
     function Execute: Boolean; virtual; abstract;
     function Undo: boolean; virtual; abstract;
     function caption: string; virtual;
-    property ImageIndex: Integer read fImageIndex;
+  published
+    property ImageIndex: Integer read fImageIndex write fImageIndex;
   end;
 //самые-самые "зайчатки", заработает даже в command_list
 

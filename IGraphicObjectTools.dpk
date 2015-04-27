@@ -22,7 +22,7 @@ package IGraphicObjectTools;
 {$WRITEABLECONST OFF}
 {$MINENUMSIZE 1}
 {$IMAGEBASE $400000}
-{$IMPLICITBUILD OFF}
+{$IMPLICITBUILD ON}
 
 requires
   rtl,
@@ -30,10 +30,10 @@ requires
   CautiousEditPack,
   tee,
   indy,
-  geofrac_tools_package,
   PNGImagePack;
 
 contains
-  IGraphicObject_tools in 'IGraphicObject_tools.pas';
+  IGraphicObject_tools in 'IGraphicObject_tools.pas',
+  IGraphicObject_primitives in 'IGraphicObject_primitives.pas';
 
 end.

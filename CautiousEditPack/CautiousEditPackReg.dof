@@ -88,13 +88,13 @@ RemoteSymbols=0
 MinStackSize=16384
 MaxStackSize=1048576
 ImageBase=4194304
-ExeDescription=
+ExeDescription=Persistent StringGrid allows to edit its contents at design-time and save/load them to file
 [Directories]
 OutputDir=
 UnitOutputDir=
 PackageDLLOutputDir=
 PackageDCPOutputDir=
-SearchPath=C:\Documents and Settings\1\lib;C:\Documents and Settings\1\lib\CautiousEditPack
+SearchPath=
 Packages=
 Conditionals=
 DebugSourceDirs=
@@ -134,6 +134,3 @@ OriginalFilename=
 ProductName=
 ProductVersion=1.0.0.0
 Comments=
-[Excluded Packages]
-C:\Documents and Settings\1\BPL\IGraphicObjectTools.bpl=(untitled)
-C:\Documents and Settings\1\BPL\ImageGraph2TxtActions.bpl=(untitled)

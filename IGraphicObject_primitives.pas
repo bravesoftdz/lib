@@ -172,7 +172,7 @@ begin
   //весьма условно - линия с теми параметрами pen, какие сидели по умолч.
   //в системе коорд., в которой заданы fx1,fy1 и пр.
   with Canvas do begin
-    Move(fx1,fy1);
+    MoveTo(fx1,fy1);
     LineTo(fx2,fy2);
   end;
 end;

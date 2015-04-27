@@ -537,7 +537,8 @@ begin
   tmpHash:=(fcommand.FindOwner as TAbstractDocument).Hash;
   if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
     if fIsUndo then fErrorString:='отмене' else fErrorString:='повторе';
-    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.Name+' ('+fcommand.ClassName+')';
+//    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.Name+' ('+fcommand.ClassName+')';
+    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.ClassName+',было '+TIDHash128.AsHex(fcommand.Hash)+', стало '+TIDHash128.AsHex(TmpHash);
   end
   else
     fcommand.fHash:=tmpHash;
@@ -965,11 +966,15 @@ end;
 
 function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
+    buSaveFormat: streamingClassSaveFormat;
     str: TMemoryStream;
+    filestr: TFileStream;
 begin
 //  fCriticalSection.Acquire;
   buSaveWithUndo:=SaveWithUndo; //потом вернем
+  buSaveFormat:=SaveFormat;
   SaveWithUndo:=false;  //чтобы найти хэш
+  SaveFormat:=fCyr;
   str:=TMemoryStream.Create;
   str.WriteComponent(self);
   str.Seek(0,soFromBeginning);
@@ -980,8 +985,17 @@ begin
     Free;
     end;
   end;
+//debug
+  filestr:=TFileStream.Create(TIDHash128.AsHex(Result)+'.txt',fmCreate);
+  str.Seek(0,soFromBeginning);
+  filestr.CopyFrom(str,str.Size);
+  filestr.Free;
+//end of debug
   str.Free;
+
+//  self.saveFormat:=fCyr;
 //  self.SaveToFile(TIDHash128.AsHex(Result)+'.txt');
+  SaveFormat:=buSaveFormat;
   SaveWithUndo:=buSaveWithUndo;
 //  fCriticalSection.Leave;
 end;
@@ -1402,6 +1416,7 @@ begin
       doc.Tool.Free;
       doc.Tool:=ToolClass.Create(doc);
       doc.Tool.Name:='Tool';
+      doc.Tool.Assign(self);
     end;
   end
   else begin

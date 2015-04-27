@@ -24,7 +24,7 @@ package CautiousEditPackReg;
 {$IMAGEBASE $400000}
 {$DESCRIPTION 'Persistent StringGrid allows to edit its contents at design-time and save/load them to file'}
 {$DESIGNONLY}
-{$IMPLICITBUILD OFF}
+{$IMPLICITBUILD ON}
 
 requires
   rtl,

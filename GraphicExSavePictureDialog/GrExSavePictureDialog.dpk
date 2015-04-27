@@ -22,12 +22,13 @@ package GrExSavePictureDialog;
 {$WRITEABLECONST OFF}
 {$MINENUMSIZE 1}
 {$IMAGEBASE $400000}
-{$IMPLICITBUILD OFF}
+{$IMPLICITBUILD ON}
 
 requires
   rtl,
   vcl,
-  vcljpg;
+  vcljpg,
+  PNGImagePack;
 
 contains
   GraphicExSavePictureDialog in 'GraphicExSavePictureDialog.pas';
