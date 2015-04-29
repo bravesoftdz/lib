@@ -2,8 +2,9 @@ unit IGraphicObject_tools;
 
 interface
 
-uses Controls,Classes,types,command_class_lib,messages,IGraphicObject_commands,
-  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit;
+uses windows,Controls,Classes,types,command_class_lib,messages,IGraphicObject_commands,
+  strUtils,observer_pattern_interfaces,typInfo,stdCtrls,dialogs,cautious_edit,
+  graphics;
 
 type
 
@@ -120,9 +121,12 @@ end;
 
 TPropertyEditor=class
   protected
+    testbmp: TBitmap;
     function DrawLabel(aowner: TWinControl;left,top: Integer; aPropInfo: TAdvPropInfo): TLabel;
     function AddCautiousEditor(aowner: TWinControl; EditorClass: TCautiousEditClass; left,top: Integer; aPropInfo: TAdvPropInfo): TCautiousEdit;
   public
+    constructor Create; virtual;
+    destructor Destroy; override;
     procedure AddEditor(aowner: TWinControl;left,top: Integer;out right,bottom: Integer;aPropInfo: TAdvPropInfo); virtual; abstract;
 end;
 
@@ -166,11 +170,18 @@ TNamePropertyEditor=class(TStringPropertyEditor)
     procedure fvalidateproc(Sender: TObject); override;
   end;
 
+TArbitraryEnumPropertyEditor=class(TIntegerPropertyEditor)
+  public
+    procedure AddEditor(aowner: TWinControl;left,top: Integer;
+      out right,bottom: Integer;aPropInfo: TAdvPropInfo); override;
+  end;
+
 TShowProperties=class(TProcessSelectedButton)
 private
   fControl: TWinControl; //куда вывести инфу
   fFullPropList: TStrings; //по кр. мере можно искать по имени
   fPropEditors: TStrings; //редакторы свойств
+  fArbitraryEnumEditor: TIntegerPropertyEditor;
   fLastObj: TPersistent;
   procedure SetControl(value: TWinControl);  //IDE однако - нужны notification на всяк пожарный
 //  procedure RegisterProperty(name,title,hint: string);
@@ -208,7 +219,7 @@ const //crRotate = crHandPoint;
 
 implementation
 
-uses actnList,extCtrls,windows,graphics,sysUtils,menus,clipbrd,
+uses actnList,extCtrls,sysUtils,menus,clipbrd,
   streaming_class_lib,math;
 
 procedure Register;
@@ -977,6 +988,18 @@ end;
 (*
       TPropertyEditor
                               *)
+constructor TPropertyEditor.Create;
+begin
+  inherited;
+  testbmp:=TBitmap.create;
+end;
+
+destructor TPropertyEditor.Destroy;
+begin
+  testbmp.free;
+  inherited Destroy;
+end;
+
 function TPropertyEditor.DrawLabel(aowner: TWinControl;Left,Top: Integer;aPropInfo: TAdvPropInfo): TLabel;
 var comp: TComponent absolute Result;
 begin
@@ -1020,6 +1043,7 @@ begin
     left:=left+lab.Width+5;
 
     intedit:=AddCautiousEditor(aowner,TIntegerEdit,Left,Top,aPropInfo) as TIntegerEdit;
+    intedit.TypeInfo:=aPropInfo.PropType;
     intedit.OnExit:=fChangeProc;
     intedit.value:=GetOrdProp(aPropInfo.instance,aPropInfo.Name);
 
@@ -1045,6 +1069,39 @@ begin
   end;
 end;
 
+
+(*
+        TArbitraryEnumPropertyEditor
+                                        *)
+procedure TArbitraryEnumPropertyEditor.AddEditor(aowner: TWinControl;left,top: Integer; out right,bottom: Integer;aPropInfo: TAdvPropInfo);
+var lab: TLabel;
+    intedit: TIntegerEdit;
+    typedata: PTypeData;
+    mi,ma: Longint;
+begin
+  lab:=DrawLabel(aowner,left,top+4,aPropInfo);
+  if Assigned(aPropInfo.SetProc) then begin
+    left:=left+lab.Width+5;
+
+    intedit:=AddCautiousEditor(aowner,TIntegerEdit,Left,Top,aPropInfo) as TIntegerEdit;
+    typedata:=GetTypeData(aPropInfo.Proptype^);
+    mi:=typedata^.MinValue;
+    ma:=typedata^.MaxValue;
+    testbmp.Canvas.Font:=intedit.Font;
+    intedit.ClientWidth:=max(testbmp.Canvas.TextWidth(IntToStr(ma)),testbmp.Canvas.TextWidth(IntToStr(mi)))+5;
+    intedit.OnExit:=fChangeProc;
+    intedit.value:=GetOrdProp(aPropInfo.instance,aPropInfo.Name);
+
+    left:=left+intedit.Width+5;
+  end
+  else begin
+    //только для чтения
+    lab.Caption:=lab.Caption+'='+IntToStr(GetOrdProp(aPropInfo.instance,aPropInfo.Name));
+    left:=left+lab.Width+5;
+  end;
+  right:=left;
+  bottom:=top+lab.Height;
+end;
 (*
       TFLoatPropertyEditor
                                 *)
@@ -1273,6 +1330,7 @@ begin
   inherited Create(Owner);
   fFullPropList:=TStringList.Create;
   fPropEditors:=TStringList.Create;
+  fArbitraryEnumEditor:=TIntegerPropertyEditor.Create;
   fPropEditors.AddObject('Integer',TIntegerPropertyEditor.Create);
   fPropEditors.AddObject('TColor',TColorPropertyEditor.Create);
   fPropEditors.AddObject('Boolean',TBooleanPropertyEditor.Create);
@@ -1290,6 +1348,7 @@ begin
   for i:=0 to fPropEditors.Count-1 do
     fPropEditors.Objects[i].Free;
   fPropEditors.Free;
+  fArbitraryEnumEditor.Free;
   inherited Destroy;
 end;
 
@@ -1404,8 +1463,9 @@ begin
     if j>=0 then begin
       propEditor:=TPropertyEditor(fPropEditors.Objects[j]);
       propEditor.AddEditor(fControl,curPos,4,curPos,j,aProp);
-    end;
-
+    end
+    else if (aProp.PropType^.Kind in [tkEnumeration,tkInteger]) then
+      fArbitraryEnumEditor.AddEditor(fControl,curPos,4,curPos,j,aProp);
   end;
 
 end;

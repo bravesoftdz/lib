@@ -3,7 +3,7 @@ unit Cautious_Edit;
 interface
 
 uses
-  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls;
+  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls,TypInfo;
 
 type
   TCautiousEditClass=class of TCautiousEdit;
@@ -43,12 +43,19 @@ type
 
   TIntegerEdit=class(TCautiousEdit)
   private
+    fTestBtmp: TBitmap;
+    fTypeData: PTypeData;
+    fTypeInfo: PPTypeInfo;
     function get_value: Integer;
     procedure set_value(value: Integer);
+    procedure SetTypeInfo(value: PPTypeInfo);
+    function WithinBounds(value: Integer; out errmsg: string): boolean;
   public
     procedure Change; override;
     function isValid: boolean;
     constructor Create(owner: TComponent); override;
+    destructor Destroy; override;
+    property TypeInfo: PPTypeInfo read fTypeInfo write SetTypeInfo;
   published
     property value: Integer Read get_value Write set_value stored false;
   end;
@@ -127,7 +134,7 @@ procedure Register;
 
 implementation
 
-uses expression_lib,phys_units_lib,float_expression_lib;
+uses expression_lib,phys_units_lib,float_expression_lib,math;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
@@ -574,22 +581,41 @@ end;
           TIntegerEdit
                               *)
 
+function TIntegerEdit.WithinBounds(value: Integer; out errmsg: string): boolean;
+resourcestring
+  IntegerNotWithinRange = 'допустимые значени€ дл€ %s: %d..%d';
+begin
+  if Assigned(fTypeInfo) then begin
+    Result:=(value>=fTypeData^.MinValue) and (value<=fTypeData^.MaxValue);
+    if not Result then
+      errmsg:=Format(IntegerNotWithinRange,[fTypeInfo^.Name,fTypeData^.MinValue,fTypeData^.MaxValue]);
+  end
+  else
+    Result:=true;
+end;
+
 function TIntegerEdit.get_value: Integer;
 var res: Integer;
     expr: TFloatExpression;
-    E: Exception;
+    errmsg: string;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
-    if expr.isCorrect then Result:=expr.getIntegerValue
+    if expr.isCorrect then begin
+      Result:=expr.getIntegerValue;
+      if not WithinBounds(Result,errmsg) and not (csDesigning in ComponentState) then begin
+        expr.Free;
+        Raise Exception.Create(errmsg);
+      end;
+    end
     else begin
       Result:=0;
       if not (csDesigning in ComponentState) then begin
-        E:=Exception.CreateFmt('TIntegerEdit: %s',[expr.errorMsg]);
+        errmsg:=expr.errorMsg;
         expr.Free;
-        raise E;
+        raise Exception.CreateFmt('TIntegerEdit: %s',[errMsg]);
       end;
     end;
     expr.Free;
@@ -608,21 +634,23 @@ end;
 function TIntegerEdit.isValid: boolean;
 var t: Integer;
     expr: TFloatExpression;
+    errmsg: String;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
-    Result:=expr.isCorrect;
+    Result:=expr.isCorrect and WithinBounds(expr.getIntegerValue,errmsg);
     expr.Free;
   end
   else
-    Result:=TryStrToInt(text,t);
+    Result:=TryStrToInt(text,t) and WithinBounds(t,errmsg);
 end;
 
 procedure TIntegerEdit.Change;
 var res: Integer;
     expr: TFloatExpression;
+    errMsg: string;
 resourcestring
   IntegerEditNotAnIntegerNumberMsg = 'Ќе €вл€етс€ целым числом';
 begin
@@ -630,12 +658,20 @@ begin
     expr:=TFloatExpression.Create(nil);
     expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
-    if expr.isCorrect then ReturnToNormal
+    if expr.isCorrect then
+      if WithinBounds(expr.getIntegerValue,errMsg) then
+       ReturnToNormal
+      else
+        TurnRed(errMsg)
     else TurnRed(expr.errorMsg);
     expr.Free;
   end
   else
-    if TryStrToInt(text,res) then ReturnToNormal
+    if TryStrToInt(text,res) then
+      if WithinBounds(res,errMsg) then
+        ReturnToNormal
+      else
+        TurnRed(errMsg)
     else TurnRed(IntegerEditNotAnIntegerNumberMsg);
   inherited Change;
 end;
@@ -648,7 +684,27 @@ end;
 constructor TIntegerEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
+  fTestBtmp:=TBitmap.Create;
   if (csDesigning in ComponentState) then value:=0;
+end;
+
+destructor TIntegerEdit.Destroy;
+begin
+  fTestBtmp.Free;
+  inherited Destroy;
+end;
+
+procedure TIntegerEdit.SetTypeInfo(value: PPTypeInfo);
+var mi,ma: Integer;
+begin
+  fTypeInfo:=value;
+  fTypeData:=GetTypeData(value^);
+  if Assigned(fTypeData) then begin
+    fTestBtmp.Canvas.Font:=Font;
+    mi:=fTestBtmp.Canvas.TextWidth(IntToStr(fTypeData^.MinValue));
+    ma:=fTestBtmp.Canvas.TextWidth(IntToStr(fTypeData^.MaxValue));
+    ClientWidth:=Max(mi,ma)+5;
+  end;
 end;
 
 

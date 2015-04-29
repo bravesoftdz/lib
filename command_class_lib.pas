@@ -615,12 +615,18 @@ end;
 function TChangeIntegerCommand.Caption: string;
 var IntToIdent: TIntToIdent;
     propInfo: PPropInfo;
+    typedata: PTypeData;
     s: string;
 begin
   propInfo:=NewGetPropInfo;
   IntToIdent:=FindIntToIdent(propInfo.PropType^);
-  if Assigned(IntToIdent) then
-    IntToIdent(fVal,s)
+  if Assigned(IntToIdent) then begin
+    IntToIdent(fVal,s);
+    if s='' then begin
+      typeData:=GetTypeData(propInfo^.PropType^);
+      s:='$'+IntToHex(fVal,typeData^.elSize*2);
+    end;
+  end
   else
     s:=IntToStr(fVal);
   Result:=fComponentNameStr+'.'+fPropName+'='+s;
@@ -1388,6 +1394,7 @@ end;
 function TAbstractDocumentAction.Update: boolean;
 var doc: TabstractDocument;
 begin
+  inherited Update;
 //это место будет вызыватьс€ когда не лень, чтобы вы€снить, не надо ль
 //отключить элем. управлени€ или еще что-нибудь в этом духе
   doc:=getDoc;

@@ -45,10 +45,10 @@ TDocumentWithImage = class(TAbstractDocument)
     fGraphicObjectsIterator: TAbstractDocumentInterfaceIterator;
   public
     constructor Create(owner: TComponent); override;
-    function XPix2Val(X: Integer): Integer; virtual;  //default: result:=x
-    function YPix2Val(Y: Integer): Integer; virtual;  //default: result:=y
-    function XVal2Pix(X: Integer): Integer; virtual;  //default: result:=x
-    function YVal2Pix(Y: Integer): Integer; virtual;  //default: result:=y
+    function XPix2Val(X: Integer): Integer; virtual; //implemented using Get_scale method
+    function YPix2Val(Y: Integer): Integer; virtual; //image is centered
+    function XVal2Pix(X: Integer): Integer; virtual;
+    function YVal2Pix(Y: Integer): Integer; virtual;
     function Get_square_size: Integer; virtual; //default impl: 10
     function Get_sensitivity: Integer; virtual; //default impl: 15
     function Get_duplicate_shift_x: Integer; virtual; //default impl: 25
@@ -56,6 +56,14 @@ TDocumentWithImage = class(TAbstractDocument)
     function Get_scale: Real; virtual;  //default impl: 1
     function Get_Image: TImage; virtual; abstract;
     property GraphicObjectsIterator: TAbstractDocumentInterfaceIterator read fGraphicObjectsIterator;
+  end;
+
+TDocumentWithCenteredImage = class (TDocumentWithImage)
+  public
+    function XPix2Val(X: Integer): Integer; override; //implemented using Get_scale method
+    function YPix2Val(Y: Integer): Integer; override; //image is centered
+    function XVal2Pix(X: Integer): Integer; override;
+    function YVal2Pix(Y: Integer): Integer; override;
   end;
 
 TGraphicObjectGroup=class(TStreamableComponentList,IGraphicObject,IAdvancedProperties)
@@ -964,26 +972,6 @@ begin
   fGraphicObjectsIterator:=TAbstractDocumentInterfaceIterator.Create(self,IGraphicObject);
 end;
 
-function TDocumentWithImage.XPix2Val(X: Integer): Integer;
-begin
-  Result:=X;
-end;
-
-function TDocumentWithImage.YPix2Val(Y: Integer): Integer;
-begin
-  Result:=Y;
-end;
-
-function TDocumentWithImage.XVal2Pix(X: Integer): Integer;
-begin
-  Result:=X;
-end;
-
-function TDocumentWithImage.YVal2Pix(Y: Integer): Integer;
-begin
-  Result:=Y;
-end;
-
 function TDocumentWithImage.Get_square_size: Integer;
 begin
   Result:=10;
@@ -1008,6 +996,60 @@ function TDocumentWithImage.Get_scale: Real;
 begin
   Result:=1;
 end;
+
+function TDocumentWithImage.XPix2Val(X: Integer): Integer;
+begin
+  Result:=Round(X/get_scale);
+end;
+
+function TDocumentWithImage.YPix2Val(Y: Integer): Integer;
+begin
+  Result:=Round(Y/get_scale);
+end;
+
+function TDocumentWithImage.XVal2Pix(X: Integer): Integer;
+begin
+  Result:=Round(X*get_scale);
+end;
+
+function TDocumentWithImage.YVal2Pix(Y: Integer): Integer;
+begin
+  Result:=Round(Y*get_scale);
+end;
+
+
+(*
+    TDocumentWithCenteredImage
+                                    *)
+
+function TDocumentWithCenteredImage.XPix2Val(X: Integer): Integer;
+var W: Integer;
+begin
+  W:=Get_image.Width div 2;
+  Result:=Round((X-W)/get_scale);
+end;
+
+function TDocumentWithCenteredImage.YPix2Val(Y: Integer): Integer;
+var H: Integer;
+begin
+  H:=Get_image.Height div 2;
+  Result:=Round((Y-H)/get_scale);
+end;
+
+function TDocumentWithCenteredImage.XVal2Pix(X: Integer): Integer;
+var W: Integer;
+begin
+  W:=Get_image.Width div 2;
+  Result:=W+Round(X*get_scale);
+end;
+
+function TDocumentWithCenteredImage.YVal2Pix(Y: Integer): Integer;
+var H: Integer;
+begin
+  H:=Get_image.Height div 2;
+  Result:=H+Round(Y*get_scale);
+end;
+
 
 
 initialization
