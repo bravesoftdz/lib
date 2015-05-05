@@ -170,12 +170,6 @@ TNamePropertyEditor=class(TStringPropertyEditor)
     procedure fvalidateproc(Sender: TObject); override;
   end;
 
-TArbitraryEnumPropertyEditor=class(TIntegerPropertyEditor)
-  public
-    procedure AddEditor(aowner: TWinControl;left,top: Integer;
-      out right,bottom: Integer;aPropInfo: TAdvPropInfo); override;
-  end;
-
 TShowProperties=class(TProcessSelectedButton)
 private
   fControl: TWinControl; //куда вывести инфу
@@ -185,8 +179,9 @@ private
   fLastObj: TPersistent;
   procedure SetControl(value: TWinControl);  //IDE однако - нужны notification на всяк пожарный
 //  procedure RegisterProperty(name,title,hint: string);
-  procedure AddTitleAndHint(name,title,hint: string);
+  procedure AddTitleAndHint(name,title,hint: string; aisAdditional: boolean=false);
   procedure UnregisterProperty(name: string);
+  procedure MorePropButtonClick(Sender: TObject);
 public
   constructor Create(Owner: TComponent); override;
   destructor Destroy; override;
@@ -1013,6 +1008,7 @@ begin
     else Result.Caption:=aPropInfo.Name;
     Result.Hint:=aPropInfo.hint;
     Result.Parent:=aowner;
+    Result.Visible:=not aPropInfo.isAdditional;
   end;
 end;
 
@@ -1027,6 +1023,7 @@ begin
     Result.Left:=left;
     Result.Top:=top;
     Result.ExpressionRootComponent:=aPropInfo.doc;
+    Result.Visible:=not aPropInfo.isAdditional;
   end;
   Result.Tag:=Integer(aPropInfo);
 end;
@@ -1069,39 +1066,6 @@ begin
   end;
 end;
 
-
-(*
-        TArbitraryEnumPropertyEditor
-                                        *)
-procedure TArbitraryEnumPropertyEditor.AddEditor(aowner: TWinControl;left,top: Integer; out right,bottom: Integer;aPropInfo: TAdvPropInfo);
-var lab: TLabel;
-    intedit: TIntegerEdit;
-    typedata: PTypeData;
-    mi,ma: Longint;
-begin
-  lab:=DrawLabel(aowner,left,top+4,aPropInfo);
-  if Assigned(aPropInfo.SetProc) then begin
-    left:=left+lab.Width+5;
-
-    intedit:=AddCautiousEditor(aowner,TIntegerEdit,Left,Top,aPropInfo) as TIntegerEdit;
-    typedata:=GetTypeData(aPropInfo.Proptype^);
-    mi:=typedata^.MinValue;
-    ma:=typedata^.MaxValue;
-    testbmp.Canvas.Font:=intedit.Font;
-    intedit.ClientWidth:=max(testbmp.Canvas.TextWidth(IntToStr(ma)),testbmp.Canvas.TextWidth(IntToStr(mi)))+5;
-    intedit.OnExit:=fChangeProc;
-    intedit.value:=GetOrdProp(aPropInfo.instance,aPropInfo.Name);
-
-    left:=left+intedit.Width+5;
-  end
-  else begin
-    //только для чтения
-    lab.Caption:=lab.Caption+'='+IntToStr(GetOrdProp(aPropInfo.instance,aPropInfo.Name));
-    left:=left+lab.Width+5;
-  end;
-  right:=left;
-  bottom:=top+lab.Height;
-end;
 (*
       TFLoatPropertyEditor
                                 *)
@@ -1331,7 +1295,7 @@ begin
   fFullPropList:=TStringList.Create;
   fPropEditors:=TStringList.Create;
   fArbitraryEnumEditor:=TIntegerPropertyEditor.Create;
-  fPropEditors.AddObject('Integer',TIntegerPropertyEditor.Create);
+  fPropEditors.AddObject('Integer',fArbitraryEnumEditor);
   fPropEditors.AddObject('TColor',TColorPropertyEditor.Create);
   fPropEditors.AddObject('Boolean',TBooleanPropertyEditor.Create);
   fPropEditors.AddObject('Real',TFloatPropertyEditor.Create);
@@ -1348,7 +1312,6 @@ begin
   for i:=0 to fPropEditors.Count-1 do
     fPropEditors.Objects[i].Free;
   fPropEditors.Free;
-  fArbitraryEnumEditor.Free;
   inherited Destroy;
 end;
 
@@ -1373,7 +1336,7 @@ begin
   Result:=inherited Update;
 end;
 
-procedure TShowProperties.AddTitleAndHint(name,title,hint: string);
+procedure TShowProperties.AddTitleAndHint(name,title,hint: string; aIsAdditional: boolean=false);
 var i: Integer;
   aprop: TAdvPropInfo;
 begin
@@ -1382,6 +1345,7 @@ begin
     aprop:=TAdvPropInfo(fFullPropList.Objects[i]);
     aprop.title:=title;
     aprop.hint:=hint;
+    aprop.isAdditional:=aIsAdditional;
   end;
 end;
 
@@ -1398,6 +1362,8 @@ end;
 procedure TShowProperties.ObserverUpdate;
 const
   tkSupported=[tkEnumeration, tkInteger, tkChar, tkSet, tkWChar,tkFloat,tkString,tkLString,tkWString];
+resourcestring
+  MorePropButtonCaption = 'Еще...';  
 var i,j,count: Integer;
     curPos: Integer;
     PropList: PPropList;
@@ -1405,6 +1371,7 @@ var i,j,count: Integer;
     advprop: IAdvancedProperties;
     aProp: TAdvPropInfo;
     propEditor: TPropertyEditor;
+    hasAdditionalProps: boolean;
 begin
   if fControl=nil then Exit;
   //свойство enabled не особенно актуально, можно и не вызывать inherited;
@@ -1456,9 +1423,10 @@ begin
       fFullPropList.Objects[i].Free;
     fFullPropList.Clear;  //не потерять бы память... пока не теряем
   end;
-
+  hasAdditionalProps:=false;
   for i:=0 to fFullPropList.Count-1 do begin
     aProp:=TAdvPropInfo(fFullPropList.Objects[i]);
+    hasAdditionalProps:=hasAdditionalProps or aProp.IsAdditional;
     j:=fPropEditors.IndexOf(aProp.PropType^.Name);
     if j>=0 then begin
       propEditor:=TPropertyEditor(fPropEditors.Objects[j]);
@@ -1467,7 +1435,29 @@ begin
     else if (aProp.PropType^.Kind in [tkEnumeration,tkInteger]) then
       fArbitraryEnumEditor.AddEditor(fControl,curPos,4,curPos,j,aProp);
   end;
+  if hasAdditionalProps then begin
+    for i:=0 to fControl.ControlCount-1 do
+      if not fControl.Controls[i].Visible then
+        dec(curPos,fControl.Controls[i].Width+5);
+    with TButton.Create(fControl) do begin
+      Parent:=fControl;
+      Left:=curPos;
+      Top:=4;
+      Caption:=MorePropButtonCaption;
+      onClick:=MorePropButtonClick;
+    end;
+  end;
+end;
 
+procedure TShowProperties.MorePropButtonClick(Sender: TObject);
+var i: Integer;
+begin
+  for i:=0 to fControl.ControlCount-1 do
+    if not fControl.Controls[i].Visible then begin
+      fControl.Controls[i].Visible:=true;
+    end;
+
+  (Sender as TControl).Visible:=false;
 end;
 
 

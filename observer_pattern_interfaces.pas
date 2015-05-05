@@ -8,6 +8,7 @@ type
   IObserver=interface
     procedure ObserverUpdate;
   end;
+  
   IObservable=interface
     procedure AddObserver(who: IObserver);
     procedure DeleteObserver(who: IObserver);
@@ -46,12 +47,13 @@ TAdvPropInfo=class
     Name: ShortString;
     instance: TPersistent; //кому принадл. свойство
     title,hint: string;
+    isAdditional: boolean;
     doc: TAbstractDocument;
 end;
 
 
   RegisterPropertyProc = procedure(PropInfo: TAdvPropInfo) of object;
-  AddTitleAndHintProc=procedure(name,title,hint: string) of object;
+  AddTitleAndHintProc=procedure(name,title,hint: string; aisAdditional: boolean=false) of object;
   UnRegisterPropertyProc = procedure(name: string) of object;
   IAdvancedProperties=interface
   ['{966861D4-EC7A-4900-9679-0BD30215B273}']
