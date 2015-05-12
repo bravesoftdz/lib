@@ -235,6 +235,7 @@ begin
     inc(_pos);
   end;
   Result:=x;
+  if (_pos<=Length(_str)) and isDelimiter(_str[_pos]) then inc(_pos);
 end;
 
 function TSimpleParser.getBinary: Cardinal;
