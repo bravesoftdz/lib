@@ -413,7 +413,7 @@ end;
 
 function TUnitConversionNode.getVariantValue: Variant;
 begin
-  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType);
+  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType,true);
 end;
 
 (*
@@ -503,9 +503,15 @@ begin
 end;
 
 function TMathFuncNode.HandleTrigFunc(V: Variant): Variant;
+var tmp: Variant;
+resourcestring
+  TrigFuncPrecisionLoss = 'Возможна потеря точности при выполнении триг. функции от %s = %s';
 begin
-  V:=VarWithUnitConvert(V,auRadian);
-  Result:=TVariantWithUnitVarData(V).Data.instance;
+  tmp:=VarWithUnitConvert(V,auRadian);
+  Result:=TVariantWithUnitVarData(tmp).Data.instance;
+  if Assigned(LogConversionWarningProc) and ((VarIsNumeric(Result) and abs(Result)>=1e8) or
+    (VarIsComplex(Result) and (VarComplexAbs(Result)>=1e8))) then
+    LogConversionWarningProc(Format(TrigFuncPrecisionLoss,[V,tmp]));
 end;
 
 function TMathFuncNode.Ln(x: Variant): Variant; //натуральный

@@ -193,6 +193,8 @@ published
 end;
 
 TPasteButtonAction=class(TAbstractDocumentAction)
+protected
+  function HasObjectsInClipboard: boolean;
 public
   constructor Create(owner: TComponent); override;
   function update: boolean; override;
@@ -1476,18 +1478,17 @@ begin
   ShortCut:=Menus.ShortCut(Word('V'),[ssCtrl]);
 end;
 
-function TPasteButtonAction.update: Boolean;
+function TPasteButtonAction.HasObjectsInClipboard: Boolean;
 var v: TComponent;
   intf: IGraphicObject;
-  e: boolean;
 begin
   v:=nil;
-  e:=false;
+  Result:=false;
   if Clipboard.HasFormat(CF_TEXT) then begin
     if Uppercase(LeftStr(Clipboard.AsText,7))='OBJECT ' then
       try
         v:=TStreamingClass.LoadComponentFromString(Clipboard.AsText);
-        e:=(v.GetInterface(IGraphicObject,intf));
+        Result:=(v.GetInterface(IGraphicObject,intf));
 //почему-то эта строчка вызывает access violation при открытии History (!!!)
 //больше нет, прояснилась ситуация
       finally
@@ -1496,7 +1497,11 @@ begin
         v.Free;
       end;
   end;
-  enabled:=e;
+end;
+
+function TPasteButtonAction.update: Boolean;
+begin
+  enabled:=HasObjectsInClipboard;
   Result:=true;
 end;
 

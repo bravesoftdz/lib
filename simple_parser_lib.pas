@@ -228,7 +228,7 @@ begin
   x:=0;
   skip_spaces;
   fBackupPos:=_pos;
-  while (_pos<=Length(_str)) and (_str[_pos]<='F') and (_str[_pos]>='0') do begin
+  while (_pos<=Length(_str)) and (_str[_pos]<='F') and (_str[_pos]>='0') and isIdentSymbol(_str[_pos]) do begin
     ch:=Integer(_str[_pos])-Int0;
     if ch>9 then ch:=ch-7;
     x:=(x shl 4) or ch;
