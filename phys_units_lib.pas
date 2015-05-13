@@ -53,7 +53,7 @@ type
       modifier: string;
     end;
 
-  TUnitPrefixes = class(TComponent)
+  TOldUnitPrefixes = class(TComponent)
   private
     flang: string;
     fMaxLen: Integer;
@@ -68,7 +68,7 @@ type
     destructor Destroy; override;
     function FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
     function PrefixDescrToMultiplier(term: string; var modifier: string; out CType: TConvType): Real;
-    procedure Assimilate(source: TUnitPrefixes);
+    procedure Assimilate(source: TOldUnitPrefixes);
   published
     property lang: string read flang write flang;
   end;
@@ -255,7 +255,7 @@ var UnityPhysConstants: TFundamentalPhysConstants;
     cbDimensionless,cbAngle: TConvFamily;
     duUnity,auDMS,auRadian: TConvType;
     PhysUnitLanguage: string;
-    UnitPrefixes: TUnitPrefixes;
+    UnitPrefixes: TOldUnitPrefixes;
 implementation
 
 uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
@@ -1575,8 +1575,8 @@ begin
               DerivedFamilyEntries.Add(der);
           end;
         end
-        else if (comp is TUnitPrefixes) then begin
-          UnitPrefixes.Assimilate(comp as TUnitPrefixes);  //comp уничтожается при этом
+        else if (comp is TOldUnitPrefixes) then begin
+          UnitPrefixes.Assimilate(comp as TOldUnitPrefixes);  //comp уничтожается при этом
         end
         else
           comp.Free;
@@ -1768,12 +1768,12 @@ end;
 (*
     TUnitPrefixes
                     *)
-procedure TUnitPrefixes.DefineProperties(Filer: TFiler);
+procedure TOldUnitPrefixes.DefineProperties(Filer: TFiler);
 begin
   filer.DefineProperty('list',ReadList,nil,true);
 end;
 
-constructor TUnitPrefixes.Create(Owner: TComponent);
+constructor TOldUnitPrefixes.Create(Owner: TComponent);
 begin
   inherited Create(Owner);
   fPrefixes:=TStringList.Create;
@@ -1783,7 +1783,7 @@ begin
   fPreferredPrefixes:=TList.Create;
 end;
 
-destructor TUnitPrefixes.Destroy;
+destructor TOldUnitPrefixes.Destroy;
 var i: Integer;
 begin
   for i:=0 to fPrefixes.Count-1 do
@@ -1802,7 +1802,7 @@ begin
   else Result:=0;
 end;
 
-procedure TUnitPrefixes.ReadList(Reader: TReader);
+procedure TOldUnitPrefixes.ReadList(Reader: TReader);
 var p: TSimpleParser;
   pname,pdescr: string;
   pmult: Real;
@@ -1834,7 +1834,7 @@ begin
   expr.Free;
 end;
 
-procedure TUnitPrefixes.Assimilate(source: TUnitPrefixes);
+procedure TOldUnitPrefixes.Assimilate(source: TOldUnitPrefixes);
 var i,j: Integer;
 begin
   for i:=0 to source.fPrefixes.Count-1 do
@@ -1856,7 +1856,7 @@ begin
   source.Free;
 end;
 
-function TUnitPrefixes.FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
+function TOldUnitPrefixes.FindUnitWithPrefix(str: string; out CType: TConvType): boolean;
 var i,j: Integer;
 begin
   for i:=1 to min(Length(str),fMaxLen) do
@@ -1870,7 +1870,7 @@ begin
   Result:=DescriptionToConvType(str,CType);
 end;
 
-function TUnitPrefixes.PrefixDescrToMultiplier(term: string; var modifier: string; out CType: TConvType): Real;
+function TOldUnitPrefixes.PrefixDescrToMultiplier(term: string; var modifier: string; out CType: TConvType): Real;
 var i,j,index: Integer;
 resourcestring
   IsNotCorrectUnit = '%s не является единицей измерения';
@@ -1902,7 +1902,7 @@ var nodim: TDerivedConvFamily;
 begin
   //новый тип Variant'а
   FreeAndNil(UnitPrefixes);
-  UnitPrefixes:=TUnitPrefixes.Create(nil);
+  UnitPrefixes:=TOldUnitPrefixes.Create(nil);
 
   BaseFamilyEntries:=TObjectList.create;
   DerivedFamilyEntries:=TObjectList.Create;
@@ -1947,11 +1947,11 @@ end;
 
 
 initialization
-  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants,TUnitPrefixes]);
+  RegisterClasses([TBaseConvFamily,TDerivedConvFamily,TFundamentalPhysConstants,TOldUnitPrefixes]);
   RegisterIntegerConsts(TypeInfo(TConvFamily),NameToFamily,FamilyToName);
   RegisterIntegerConsts(TypeInfo(TConvType),NameToConv,ConvToName);
   GConvUnitToStrFmt:='%g %s';
-  UnitPrefixes:=TUnitPrefixes.Create(nil);
+  UnitPrefixes:=TOldUnitPrefixes.Create(nil);
   VarWithUnitType:=TVariantWithUnitType.Create;
   PhysUnitLanguage:='English';
   ListOfUnitsWithAllowedPrefixes:=TBucketList.Create;

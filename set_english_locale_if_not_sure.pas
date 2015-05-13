@@ -82,6 +82,7 @@ type
       constructor Create;
       destructor Destroy; override;
       function Caption: string;
+      function MatchingString(Lang: TObject): string;
       procedure AddString(str, langName: string);
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
@@ -424,12 +425,14 @@ end;
 
 procedure TLocalizedName.ReadData(reader: TReader);
 var p: TSimpleParser;
+    str: string;
 begin
   reader.ReadListBegin;
   p:=TSimpleParser.Create;
   while not reader.EndOfList do begin
     p.AssignString(reader.ReadString);
-    AddString(p.getString,p.getString);
+    str:=p.getString;
+    AddString(str,p.getString);
   end;
   p.Free;
   reader.ReadListEnd;
@@ -450,11 +453,16 @@ begin
   fStrings.AddObject(str,TObject(LocalePreferences.LangID.NameToId(langName)));
 end;
 
-function TLocalizedName.Caption: string;
-//var p: TSimpleParser;
+function TLocalizedName.MatchingString(Lang: TObject): string;
+var i: Integer;
 begin
-//  read
+  i:=fstrings.IndexOfObject(Lang);
+  Result:=fstrings[i];
+end;
 
+function TLocalizedName.Caption: string;
+begin
+  Result:=MatchingString(TObject(LocalePreferences.languageID));
 end;
 
 
