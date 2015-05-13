@@ -362,24 +362,16 @@ var f: TUnitsWithExponent;
     BaseConvType: TConvType;
     modifier: string;
 begin
-  if UnitPrefixes.FindUnitWithPrefix(str,BaseConvType) then begin
-    multiplier:=UnitPrefixes.PrefixDescrToMultiplier(str,modifier,BaseConvType);
-    if modifier<>'' then modifier:='\'+modifier;
-    if not DescriptionToConvType(str+modifier,Result) then
+  f:=TUnitsWithExponent.Create;
+  try
+    multiplier:=f.TakeFromString(str,modifier);
+    BaseConvType:=FormulaToConvType(f); //эта штука может создать на лету новую единицу
+    if not DescriptionToConvType(str+modifier,Result) then begin
+      multiplier:=multiplier*ConvertFrom(BaseConvType,1);
       Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str+modifier,multiplier);
-  end
-  else begin
-    f:=TUnitsWithExponent.Create;
-    try
-      multiplier:=f.TakeFromString(str,modifier);
-      BaseConvType:=FormulaToConvType(f); //эта штука может создать на лету новую единицу
-      if not DescriptionToConvType(str+modifier,Result) then begin
-        multiplier:=multiplier*ConvertFrom(BaseConvType,1);
-        Result:=RegisterConversionType(ConvTypeToFamily(BaseConvType),str+modifier,multiplier);
-      end;
-    finally
-      f.Free;
     end;
+  finally
+    f.Free;
   end;
 end;
 

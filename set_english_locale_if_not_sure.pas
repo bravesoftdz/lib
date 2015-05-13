@@ -59,6 +59,8 @@ type
       procedure Loaded; override;
       function GetAppropriateLang(list: TListWithID): Integer;
       function GetLanguageList: TStringList;  //string:название языка, object: его ID
+      function ChangeLanguageID(value: Integer): Boolean;
+      function ChangeLanguage(value: string): Boolean;
       property languageID: Integer read fCurLang write SetLanguageID;
     published
       property LangID: TLangId read fLangId write fLangId;
@@ -73,11 +75,16 @@ type
     private
       fStrings: TStringList;
       procedure ReadData(reader: TReader);
+      procedure WriteData(writer: TWriter);
     protected
       procedure DefineProperties(filer: TFiler); override;
     public
       constructor Create;
       destructor Destroy; override;
+      function Caption: string;
+      procedure AddString(str, langName: string);
+      property strings: TStringList read fstrings;
+//      function EqualsTo(value: string): Boolean;
   end;
 
 procedure SetEnglishLocaleIfNotSure;
@@ -316,14 +323,15 @@ begin
 end;
 
 procedure TLocalePreferences.Loaded;
-var i: Integer;
+// var i: Integer;
 begin
   inherited Loaded;
   fAvailLanguageList.Clear;
+(*
   for i:=0 to LangId.fStrings.Count-1 do
     if (Cardinal(LangId.fStrings.Objects[i])<>0) and (LoadNewResourceModule(Cardinal(LangId.fStrings.Objects[i]))<>0) then
       fAvailLanguageList.Add(LangId.fStrings.Objects[i]);
-
+*)
   if fCurLang=0 then
 //    LanguageID:=GetDefaultLanguageID;
     Language:=GetDefaultLanguageInEnglish;
@@ -334,17 +342,29 @@ begin
   SetLanguageID(LangID.NameToID(value));
 end;
 
-procedure TLocalePreferences.SetLanguageID(value: integer);
+procedure TLocalePreferences.SetLanguageID(value: Integer);
+begin
+  ChangeLanguageID(value);
+end;
+
+function TLocalePreferences.ChangeLanguage(value: string): Boolean;
+begin
+  Result:=ChangeLanguageID(LangID.NameToID(value));
+end;
+
+function TLocalePreferences.ChangeLanguageID(value: integer): Boolean;
 var i: Integer;
     preflist: TListWithID;
 begin
+  Result:=false;
   if value<>fCurLang then begin
     preflist:=LangPrefMatrix.GetPrefList(value);
     if Assigned(preflist) then
       for i:=0 to preflist.Count-1 do
-        if LoadNewResourceModule(Cardinal(preflist[i]))<>0 then begin
+        if (Cardinal(preflist[i])<>0) and (LoadNewResourceModule(Cardinal(preflist[i]))<>0) then begin
           fCurLang:=value;
           ReinitializeForms;
+          Result:=true;
           break;
         end;
   end;
@@ -399,12 +419,41 @@ end;
 
 procedure TLocalizedName.DefineProperties(filer: TFiler);
 begin
-  filer.DefineProperty('data',ReadData,nil,fStrings.Count>0);
+  filer.DefineProperty('data',ReadData,WriteData,fStrings.Count>0);
 end;
 
 procedure TLocalizedName.ReadData(reader: TReader);
+var p: TSimpleParser;
 begin
-  
+  reader.ReadListBegin;
+  p:=TSimpleParser.Create;
+  while not reader.EndOfList do begin
+    p.AssignString(reader.ReadString);
+    AddString(p.getString,p.getString);
+  end;
+  p.Free;
+  reader.ReadListEnd;
+end;
+
+procedure TLocalizedName.WriteData(writer: TWriter);
+var i: Integer;
+begin
+  writer.WriteListBegin;
+  for i:=0 to fStrings.Count-1 do
+    writer.WriteString(Format('%s;%s',
+      [fStrings[i],LocalePreferences.LangID.IDToName(Integer(fstrings.Objects[i]))]));
+  writer.WriteListEnd;
+end;
+
+procedure TLocalizedName.AddString(str,langName: string);
+begin
+  fStrings.AddObject(str,TObject(LocalePreferences.LangID.NameToId(langName)));
+end;
+
+function TLocalizedName.Caption: string;
+//var p: TSimpleParser;
+begin
+//  read
 
 end;
 
