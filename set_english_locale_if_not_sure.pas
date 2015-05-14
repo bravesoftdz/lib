@@ -86,6 +86,7 @@ type
       function MatchingString(Lang: TObject): string;
       function TryMatchingString(Lang: TObject; out val: string): Boolean;
       function InEnglish: string;
+      function Enabled: Boolean;
       procedure AddString(str, langName: string);
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
@@ -485,6 +486,7 @@ begin
 //  i:=fstrings.IndexOfObject(Lang);
 //  Result:=fstrings[i];
   if not TryMatchingString(Lang,Result) then
+    if fstrings.Count=0 then Raise Exception.Create('empty locale string') else
     Raise Exception.CreateFMT('Couldn''t find string matching %s',[localePreferences.LangID.IDToName(Integer(Lang))]);
 end;
 
@@ -498,8 +500,10 @@ begin
   Result:=MatchingString(Tobject(1033));
 end;
 
-
-
+function TLocalizedName.Enabled: Boolean;
+begin
+  Result:=(fstrings.Count>0);
+end;
 
 initialization
 
