@@ -1,10 +1,11 @@
 unit new_phys_unit_lib;
 
 interface
-uses set_english_locale_if_not_sure,streaming_class_lib,classes;
+uses set_english_locale_if_not_sure,streaming_class_lib,classes,
+  command_class_lib,iterator_lib;
 
 type
-  TStreamableConvFamily=class(TComponent) //можно будет и к TComponent вернуться
+  TStreamableConvFamily=class(TStreamingClass) //можно будет и к TComponent вернуться
     private
       fIsBase: Boolean;
       fCaption,fShortName,fDescription: TLocalizedName;
@@ -21,9 +22,9 @@ type
   TAbstractStreamableConvType=class(TStreamingClass)
     private
       fShortName,fCaption: TLocalizedName;
-      fFamily: TStreamableConvFamily;
       fScaledUp,fScaledDown: TAbstractStreamableConvType;
       fPrefixOK: boolean;
+      fIsScaled: boolean;
     public
       constructor Create(aOwner: TComponent); override;
       destructor Destroy; override;
@@ -34,8 +35,8 @@ type
     published
       property ShortName: TLocalizedName read fShortName write fShortName;
       property Caption: TLocalizedName read fCaption write fCaption;
-      property Family: TStreamableConvFamily read fFamily write fFamily;
-      property PrefixOk: Boolean read fPrefixOk write fPrefixOk;
+      property PrefixOk: Boolean read fPrefixOk write fPrefixOk default false;
+      property IsScaled: Boolean read fIsScaled write fIsScaled default false;
       property ScaledUp: TAbstractStreamableConvType read fScaledUp write fScaledUp;
       property ScaledDown: TAbstractStreamableConvType read fScaledDown write fScaledDown;
     end;
@@ -97,10 +98,16 @@ type
     destructor Destroy; override;
   end;
 
-  TPhysUnitData = class(TStreamingClass)
+  TPhysUnitData = class(TAbstractDocument)
+  private
+    fConvUnitsIterator,fConvFamiliesIterator: TAbstractDocumentClassIterator;
+    fMegaList: TStringList;
+    fWarningList: TStringList;
   protected
 //    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
+    constructor Create(aOwner: TComponent); override;
+    destructor Destroy; override;
     procedure Loaded; override;
   published
     UnitPrefixes: TUnitPrefixes;
@@ -110,7 +117,27 @@ type
 
 implementation
 
-uses Variants,math,sysUtils;
+uses Variants,math,sysUtils,strUtils;
+(*
+      General procedures
+                            *)
+function NoSpaces(str: string): String;
+var i,j,prev: Integer;
+begin
+  Result:='';
+  prev:=1;
+  for i:=1 to Length(str) do
+    if (str[i]=' ') and (prev<i) then begin
+      Result:=Result+MidStr(str,prev,i-prev);
+      j:=i+1;
+      while (j<=Length(str)) and (str[j]=' ') do inc(j);
+      prev:=j;
+      if j<=Length(str) then str[j]:=AnsiUppercase(MidStr(str,j,1))[1]
+      else Exit;
+    end;
+    Result:=Result+RightStr(str,Length(str)-prev+1);
+end;
+
 
 (*
       TStreamableConvFamily
@@ -182,6 +209,8 @@ function TNormalConvType.CreateScaled(mult: Real): TAbstractStreamableConvType;
 var cpy: TNormalConvType absolute Result;
 begin
   Result:=TNormalConvType.Clone(self);
+  Result.PrefixOk:=false;
+  Result.IsScaled:=true;
   cpy.Multiplier:=Multiplier*mult;
 end;
 
@@ -211,6 +240,8 @@ function TLogarithmicConvType.CreateScaled(mult: Real): TAbstractStreamableConvT
 var cpy: TLogarithmicConvType absolute Result;
 begin
   Result:=TLogarithmicConvType.Clone(self);
+  Result.PrefixOk:=false;
+  Result.IsScaled:=true;  
   cpy.Log10Multiplier:=Log10Multiplier/mult;
 end;
 
@@ -282,13 +313,32 @@ end;
 (*
         TPhysUnitData
                             *)
+constructor TPhysUnitData.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  fConvFamiliesIterator:=TAbstractDocumentClassIterator.Create(self,TStreamableConvFamily);
+  fConvUnitsIterator:=TAbstractDocumentClassIterator.Create(self,TAbstractStreamableConvType);
+  fMegaList:=TStringList.Create;
+  fMegaList.CaseSensitive:=true;
+  fMegaList.Sorted:=true;
+  fMegaList.Duplicates:=dupAccept;
+  fWarningList:=TStringList.Create;
+end;
+
+destructor TPhysUnitData.Destroy;
+begin
+  fMegaList.Free;
+  fWarningList.Free;
+  inherited Destroy;
+end;
+
 procedure TPhysUnitData.Loaded;
-var i,j: Integer;
-    comp: TComponent;
-    ct: TAbstractStreamableConvType absolute comp;
+var j: Integer;
+    ct: TAbstractStreamableConvType;
     cpy: TAbstractStreamableConvType;
     pref: TUnitPrefix;
-    m1,m0: Real;
+    m1: Real;
+    fn: string;
 
     procedure HandleCreatedCopy;
     var k: Integer;
@@ -299,10 +349,20 @@ var i,j: Integer;
           pref.Prefix.MatchingString(cpy.fShortName.strings.Objects[k])+
             cpy.fShortName.strings[k];
 
-//      for k:=0 to cpy.f
+      for k:=0 to cpy.fCaption.strings.Count-1 do
+        cpy.fCaption.strings[k]:=
+          pref.FullName.MatchingString(cpy.fCaption.strings.Objects[k])+
+            cpy.fCaption.strings[k];
 
-      cpy.EnsureCorrectName(cpy.Name,self);
-      InsertComponent(cpy);
+      cpy.EnsureCorrectName(cpy.fCaption.InEnglish,self);
+      ct.Owner.InsertComponent(cpy);
+    end;
+
+    procedure AddToList(str: string; obj: TObject);
+    begin
+      if fMegaList.IndexOf(str)>=0 then
+        fWarningList.Add(Format('%s ident ambiguity',[str]));
+      fMegaList.AddObject(str,obj);
     end;
 
 
@@ -310,25 +370,21 @@ begin
   inherited Loaded;
   UnitPrefixes.PrepareLists;
 //создадим физ. величины с приставками
-  for i:=0 to ComponentCount-1 do begin
-    comp:=Components[i];
-    if (comp is TAbstractStreamableConvType) and ct.PrefixOk then begin
+  fConvUnitsIterator.First(ct);
+  while Assigned(ct) do begin
+    if ct.PrefixOk then begin
       //нашли новую жертву
-      m0:=1;
       for j:=0 to UnitPrefixes.fHigher.Count-1 do begin
         pref:=TUnitPrefix(UnitPrefixes.fHigher[j]);
         m1:=pref.Multiplier;
-        cpy:=ct.CreateAndConnectScaled(m1/m0);
+        cpy:=ct.CreateAndConnectScaled(m1);
         HandleCreatedCopy;
-        m0:=m1;
       end;
-      m0:=1;
       for j:=UnitPrefixes.fLower.Count-1 downto 0 do begin
         pref:=TUnitPrefix(UnitPrefixes.fLower[j]);
         m1:=pref.Multiplier;
-        cpy:=ct.CreateAndConnectScaled(m1/m0);
+        cpy:=ct.CreateAndConnectScaled(m1);
         HandleCreatedCopy;
-        m0:=m1;
       end;
       //остальные приставки нам не нравятся!
       for j:=0 to UnitPrefixes.fOther.Count-1 do begin
@@ -338,8 +394,39 @@ begin
         HandleCreatedCopy;
       end;
     end;
+    fConvUnitsIterator.Next(ct);
   end;
+  //все величины введены, теперь можно составить гигантский список, чтобы быстрее искать
+  //(по алфавиту) и определять повторяющиеся названия
+  fConvUnitsIterator.First(ct);
+  while Assigned(ct) do begin
+    //family.unit
+    for j:=0 to ct.fShortName.strings.Count-1 do begin
+      if (ct.Owner as TStreamableConvFamily).ShortName.TryMatchingString(
+        ct.ShortName.strings.Objects[j],fn) then
+        AddToList(NoSpaces(fn)+'.'+ct.ShortName.strings[j],ct);
+      if (ct.Owner as TStreamableConvFamily).Caption.TryMatchingString(
+        ct.ShortName.strings.Objects[j],fn) then
+        AddToList(NoSpaces(fn)+'.'+ct.ShortName.strings[j],ct);
+      //самое "хрупкое" - короткие названия без нифига, очень возможен повтор
+      AddToList(ct.ShortName.strings[j],ct);
+    end;
 
+    for j:=0 to ct.Caption.strings.Count-1 do begin
+      if (ct.Owner as TStreamableConvFamily).ShortName.TryMatchingString(
+        ct.caption.strings.Objects[j],fn) then
+        AddToList(NoSpaces(fn)+'.'+ct.Caption.strings[j],ct);
+      if (ct.Owner as TStreamableConvFamily).Caption.TryMatchingString(
+        ct.caption.strings.Objects[j],fn) then
+        AddToList(NoSpaces(fn)+'.'+ct.Caption.strings[j],ct);
+      AddToList(ct.Caption.strings[j],ct);
+    end;
+
+
+    fConvUnitsIterator.Next(ct);
+  end;
+  fMegaList.SaveToFile('megalist.txt');
+  fWarningList.SaveToFile('warnings.txt');
 end;
 
 initialization

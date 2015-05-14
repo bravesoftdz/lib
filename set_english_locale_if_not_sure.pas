@@ -58,6 +58,7 @@ type
       destructor Destroy; override;
       procedure Loaded; override;
       function GetAppropriateLang(list: TListWithID): Integer;
+      function TryGetMatchingString(ID: Integer; strings: TStrings; out str: string): Boolean;
       function GetLanguageList: TStringList;  //string:название языка, object: его ID
       function ChangeLanguageID(value: Integer): Boolean;
       function ChangeLanguage(value: string): Boolean;
@@ -83,6 +84,8 @@ type
       destructor Destroy; override;
       function Caption: string;
       function MatchingString(Lang: TObject): string;
+      function TryMatchingString(Lang: TObject; out val: string): Boolean;
+      function InEnglish: string;
       procedure AddString(str, langName: string);
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
@@ -393,6 +396,24 @@ begin
   raise Exception.CreateFmt('Didn''t find appropriate replacement for %s language',[LangId.IDToName(list.ID)]);
 end;
 
+function TLocalePreferences.TryGetMatchingString(ID: Integer;
+  strings: TStrings; out str: string): Boolean;
+var preflist: TListWithID;
+    i,j: Integer;
+begin
+  preflist:=LangPrefMatrix.GetPrefList(ID);
+  Result:=false;
+  if assigned(preflist) then
+    for i:=0 to preflist.Count-1 do begin
+      j:=strings.IndexOfObject(preflist[i]);
+      if j>=0 then begin
+        Result:=true;
+        str:=strings[j];
+        Exit;
+      end;
+    end;
+end;
+
 function TLocalePreferences.GetLanguageList: TStringList;
 var i: Integer;
 begin
@@ -453,17 +474,31 @@ begin
   fStrings.AddObject(str,TObject(LocalePreferences.LangID.NameToId(langName)));
 end;
 
-function TLocalizedName.MatchingString(Lang: TObject): string;
-var i: Integer;
+function TLocalizedName.TryMatchingString(Lang: TObject; out val: string): Boolean;
 begin
-  i:=fstrings.IndexOfObject(Lang);
-  Result:=fstrings[i];
+  Result:=localePreferences.TryGetMatchingString(Integer(Lang),fstrings,val);
+end;
+
+function TLocalizedName.MatchingString(Lang: TObject): string;
+//var i: Integer;
+begin
+//  i:=fstrings.IndexOfObject(Lang);
+//  Result:=fstrings[i];
+  if not TryMatchingString(Lang,Result) then
+    Raise Exception.CreateFMT('Couldn''t find string matching %s',[localePreferences.LangID.IDToName(Integer(Lang))]);
 end;
 
 function TLocalizedName.Caption: string;
 begin
   Result:=MatchingString(TObject(LocalePreferences.languageID));
 end;
+
+function TLocalizedName.InEnglish: string;
+begin
+  Result:=MatchingString(Tobject(1033));
+end;
+
+
 
 
 initialization
