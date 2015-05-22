@@ -17,7 +17,7 @@ type
     public
       constructor Create(aOwner: TComponent); override;
       destructor Destroy; override;
-      procedure Loaded; override;
+      procedure SetupFormula;
       function index: Integer;
     published
       property IsBase: Boolean read fIsBase write fIsBase;
@@ -128,19 +128,25 @@ type
     destructor Destroy; override;
   end;
 
+  TPhysUnitMessagesProc = procedure (line: string); //цвет сами придумаем
+
   TPhysUnitData = class(TAbstractDocument)
   private
     fConvUnitsIterator: TAbstractDocumentClassIterator;
     fFamilyList: TObjectList;
     fMegaList: TStringList;
     fWarningList: TStringList;
+    fUnity,fDMS: TAbstractStreamableConvType;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
+    warningproc: TPhysUnitMessagesProc;
     constructor Create(aOwner: TComponent); override;
     destructor Destroy; override;
     procedure Loaded; override;
     function StrToConvType(str: string): TAbstractStreamableConvType;
+    property Unity: TAbstractStreamableConvType read fUnity;
+    property DMS: TAbstractStreamableConvType read fDMS;
   published
     UnitPrefixes: TUnitPrefixes;
 //    FundamentalPhysConstants: TFundamentalPhysConstants;
@@ -178,6 +184,7 @@ type
       procedure Divide(right: TUnitsWithExponents);
       function AsString: string;
       function ShowFormula: string;
+      function GetConvType: TAbstractStreamableConvType;
   end;
 
 
@@ -217,11 +224,13 @@ type
     Reserved4: LongInt;
   end;
 
-  EPhysUnitError = class (Exception);  
+  EPhysUnitError = class (Exception);
+
+  var PhysUnitData: TPhysUnitData;
 
 implementation
 
-uses Variants,math,strUtils,Simple_Parser_lib;
+uses Variants,math,strUtils,Simple_Parser_lib,VarCmplx;
 (*
       General procedures
                             *)
@@ -246,8 +255,9 @@ end;
 
 function ConvTypeToStr(ConvType: TAbstractStreamableConvType): string;
 begin
-  Result:=ConvType.ShortName.Caption;
-  if Result='' then Result:=ConvType.Caption.Caption;
+  if not ConvType.ShortName.TryCaption(Result) and
+    not ConvType.Caption.TryCaption(Result) then
+      Result:=ConvType.Name;
 end;
 
 function ConvTypeToFamilyLetter(ConvType: TAbstractStreamableConvType): string;
@@ -280,9 +290,8 @@ begin
   Result:=(Owner as TPhysUnitData).fFamilyList.IndexOf(self);
 end;
 
-procedure TStreamableConvFamily.Loaded;
+procedure TStreamableConvFamily.SetupFormula;
 begin
-  inherited Loaded;
   if IsBase then fFormula.SetBaseType(BaseType)
   else fFormula.TakeFromString(formula);
 end;
@@ -587,20 +596,44 @@ var j: Integer;
     pref: TUnitPrefix;
     m1: Real;
     fn: string;
+    dimensionless: TUnitsWithExponents;
 
     procedure HandleCreatedCopy;
-    var k: Integer;
+    var k,i,neut: Integer;
+        temp: TLocalizedName;
     begin
+      temp:=TLocalizedName.Create;
     //для каждого языка нашей величины мы должны найти подходящий язык приставки
       for k:=0 to cpy.fShortName.strings.Count-1 do
-        cpy.fShortName.strings[k]:=
-          pref.Prefix.MatchingString(cpy.fShortName.strings.Objects[k])+
-            cpy.fShortName.strings[k];
-
+        if cpy.fShortName.isNeutral(k) then begin
+          neut:=pref.Prefix.strings.IndexOfObject(nil);
+          if neut<0 then
+            for i:=0 to pref.Prefix.strings.Count-1 do
+              temp.strings.AddObject(pref.Prefix.strings[i]+cpy.fShortName.strings[k],
+                pref.Prefix.strings.Objects[i])
+          else
+            temp.strings.AddObject(pref.Prefix.strings[neut]+cpy.fShortName.strings[k],nil);
+        end
+        else
+          temp.strings.AddObject(pref.Prefix.MatchingString(cpy.fShortName.strings.Objects[k])
+            +cpy.fShortName.strings[k],cpy.fShortname.strings.Objects[k]);
+      cpy.fShortName.Assign(temp);
+      temp.clear;
       for k:=0 to cpy.fCaption.strings.Count-1 do
-        cpy.fCaption.strings[k]:=
-          pref.FullName.MatchingString(cpy.fCaption.strings.Objects[k])+
-            cpy.fCaption.strings[k];
+        if cpy.Caption.isNeutral(k) then begin
+          neut:=pref.FullName.strings.IndexOfObject(nil);
+          if neut<0 then
+            for i:=0 to pref.FullName.strings.Count-1 do
+              temp.strings.AddObject(pref.FullName.strings[i]+cpy.Caption.strings[k],
+              pref.FullName.strings.Objects[i])
+          else
+            temp.strings.AddObject(pref.FullName.strings[neut]+cpy.Caption.strings[k],nil);
+        end
+        else
+          temp.strings.AddObject(pref.FullName.MatchingString(cpy.fCaption.strings.Objects[k])
+            +cpy.fCaption.strings[k],cpy.Caption.strings.Objects[k]);
+      cpy.Caption.Assign(temp);
+      temp.Free;
       if cpy.Caption.enabled then
         cpy.EnsureCorrectName(NoSpaces(cpy.fCaption.InEnglish),self)
       else
@@ -666,16 +699,28 @@ begin
     for j:=0 to ct.Caption.strings.Count-1 do begin
       if (ct.Owner as TStreamableConvFamily).ShortName.TryMatchingString(
         ct.caption.strings.Objects[j],fn) then
-        AddToList(NoSpaces(fn)+'.'+ct.Caption.strings[j],ct);
+        AddToList(NoSpaces(fn)+'.'+NoSpaces(ct.Caption.strings[j]),ct);
       if (ct.Owner as TStreamableConvFamily).Caption.TryMatchingString(
         ct.caption.strings.Objects[j],fn) then
-        AddToList(NoSpaces(fn)+'.'+ct.Caption.strings[j],ct);
-      AddToList(ct.Caption.strings[j],ct);
+        AddToList(NoSpaces(fn)+'.'+NoSpaces(ct.Caption.strings[j]),ct);
+      AddToList(NoSpaces(ct.Caption.strings[j]),ct);
     end;
 
 
     fConvUnitsIterator.Next(ct);
   end;
+
+  //на этом этапе TUnitsWithExponents должна стать работоспособной
+  for j:=0 to fFamilyList.Count-1 do
+    (fFamilyList[j] as TStreamableConvFamily).SetupFormula; 
+  //осталось
+  //найти Unity, а именно - стандартную безразм. величину
+  dimensionless:=TUnitsWithExponents.Create(self);
+  funity:=dimensionless.GetConvType;
+  dimensionless.Free;
+  //и еще DMS отыскать, ну пусть он будет тупо в семье Angle и под именем DMS
+  fDMS:=FindComponent('Angle').FindComponent('DMS') as TAbstractStreamableConvType;
+
   fMegaList.SaveToFile('megalist.txt');
   fWarningList.SaveToFile('warnings.txt');
 end;
@@ -689,10 +734,54 @@ begin
 end;
 
 function TPhysUnitData.StrToConvType(str: string): TAbstractStreamableConvType;
-var i: Integer;
+var i,j,k: Integer;
+    obj: TAbstractStreamableConvType;
+    fml: TUnitsWithExponents;
+    multiplier: Real;
+    NormalRslt: TNormalConvType absolute Result;
 begin
   i:=fMegaList.IndexOf(str);
-  Result:=TAbstractStreamableConvType(fMegaList.Objects[i]);
+  if i>=0 then begin
+    j:=i+1;
+    while (j<fMegaList.Count) and (fMegaList[j]=str) do inc(j);
+    if j>i+1 then begin //неоднозначность
+    //выведем в warning разные варианты
+      if Assigned(warningProc) then begin
+        warningProc(Format('%s can refer to:',[str]));
+        for k:=i to j-1 do
+          warningProc(TAbstractStreamableConvType(fMegaList.Objects[k]).Caption.Caption);
+      end;
+    //выбираем либо ед. измерения без приставки
+      for k:=i to j-1 do begin
+        Result:=TAbstractStreamableConvType(fMegaList.Objects[k]);
+        if not Result.IsScaled then begin
+          if Assigned(warningProc) then
+            warningProc(Format('we used %s',[Result.Caption.Caption]));
+          Exit;
+        end
+      end;
+    //если дошли до этого места, значит он все с приставками, выберем наобум
+      warningProc(Format('we used %s',[Result.Caption.Caption]));
+    end
+    else
+      Result:=TAbstractStreamableConvType(fMegaList.Objects[i])
+  end
+  else begin
+  //ничего не нашли, это вестимо что-то составное
+    fml:=TUnitsWithExponents.Create(self);
+    multiplier:=fml.TakeFromString(str);
+    obj:=fml.GetConvType; //возможно, сейчас на лету была создана подходящая величина
+                          //но в тек. реализации она ничего не добавляет в megalist
+                          //obj может отличаться только множителем от правильной разм
+    if multiplier=1 then
+      Result:=obj
+    else begin
+      Result:=TNormalConvType.Create(obj.Owner);
+      Result.Name:=NoSpaces(str);
+      NormalRslt.Multiplier:=multiplier;
+    end;
+  end;
+
 end;
 
 (*
@@ -709,13 +798,71 @@ begin
 end;
 
 procedure TVarWithUnit.Assign(str: string);
+var unitStr: string;
+    i: Integer;
+    val: Extended;
 begin
-
+  for i:=1 to Length(str) do
+    if (str[i]='.') or (str[i]=',') then str[i]:=DecimalSeparator;
+  i:=Length(str);
+  while (i>=1) and (str[i]<>' ') do dec(i);
+  if i=0 then begin
+    //либо только ед. измерения, без числа,
+    //либо тот или иной Variant, но мы заранее не знаем, какой.
+    //в этом проблема всех этих произволов. Попробуем в комплексную вел. преобразовать что ль
+    instance:=VarComplexCreate(str);
+    instance:=VarComplexSimplify(instance);
+    ConvType:=PhysUnitData.Unity;  //безразм.
+  end
+  else begin
+    //посерединке пробел
+    //либо часть справа от пробела-ед. изм., либо например разделенные действ и мним. части
+    if AnsiUppercase(str[Length(str)])='I' then begin
+      Instance:=VarComplexCreate(str);
+      ConvType:=PhysUnitData.Unity;
+    end
+    else begin
+      if TryStrToFloat(LeftStr(str,i-1),val) then
+        instance:=val
+      else
+        instance:=VarComplexCreate(LeftStr(str,i-1));
+      unitStr:=RightStr(str,Length(str)-i);
+      ConvType:=PhysUnitData.StrToConvType(unitStr);
+    end;
+  end;
 end;
 
 function TVarWithUnit.AsString: string;
+var deg,min: Variant;
+    s: string;
+    d: extended;
 begin
-
+  if ConvType=PhysUnitData.DMS then begin
+    if instance<0 then begin  //потенциальная ошибка - комплексные нельзя сравн
+      Result:='-';
+      instance:=-instance;
+    end;
+    instance:=instance+1/7200000;
+    deg:=Floor(instance);
+    s:=deg;
+    Result:=Result+s+'°';
+    min:=Floor((instance-deg)*60);
+    s:=min;
+    Result:=Result+s+'''';
+    deg:=(instance-deg-min/60)*3600;
+    if VarIsNumeric(deg) then begin
+      d:=deg;
+      s:=Format('%2.2f',[d]);
+    end
+    else s:=deg;
+    Result:=Result+s+'"';
+  end
+  else begin
+    Result:=instance;
+    if not ConvType.ShortName.TryCaption(s) and not ConvType.Caption.TryCaption(s)
+      then s:=ConvType.Name;
+    if s<>'' then Result:=Result+' '+s;
+  end;
 end;
 
 procedure TVarWithUnit.Conversion(DestConv: TAbstractStreamableConvType);
@@ -1176,6 +1323,37 @@ begin
 
 end;
 
+
+function TUnitsWithExponents.GetConvType: TAbstractStreamableConvType;
+var boss: TPhysUnitData;
+    i: Integer;
+    fam: TStreamableConvFamily;
+    un: TNormalConvType;
+begin
+  boss:=PhysData;
+  for i:=0 to boss.fFamilyList.Count-1 do begin
+    fam:=boss.fFamilyList[i] as TStreamableConvFamily;
+    if SameFamily(fam.fFormula) then begin
+      Result:=fam.BaseType;
+      Exit;
+    end;
+  end;
+  //не нашли подходящую семью - придется создать!
+  fam:=TStreamableConvFamily.Create(boss);
+  fam.fFormula.Assign(self);
+  fam.Name:=NoSpaces(ShowFormula);
+  //и еще подходящую единицу измерения создадим
+  //нормальную, других нельзя
+  un:=TNormalConvType.Create(fam);
+  un.Name:=NoSpaces(AsString);
+  un.Multiplier:=1;
+  //нужно ей и название сформировать, чтоб находить на всех языках
+  //или хотя бы на одном
+  //shortname или caption - пофиг по большому счету!
+  un.ShortName.AddInCurrentLang(AsString);
+  fam.BaseType:=un;
+  Result:=un;
+end;
 
 initialization
   RegisterClasses([TAffineConvType,TLogarithmicConvType,TNormalConvType,

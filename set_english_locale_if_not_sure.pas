@@ -82,12 +82,17 @@ type
     public
       constructor Create;
       destructor Destroy; override;
+      procedure Assign(source: TPersistent); override;
+      procedure Clear;
       function Caption: string;
+      function TryCaption(out Caption: string): Boolean;
       function MatchingString(Lang: TObject): string;
       function TryMatchingString(Lang: TObject; out val: string): Boolean;
       function InEnglish: string;
       function Enabled: Boolean;
+      function isNeutral(index: Integer): Boolean;
       procedure AddString(str, langName: string);
+      procedure AddInCurrentLang(str: string);
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
   end;
@@ -475,6 +480,11 @@ begin
   fStrings.AddObject(str,TObject(LocalePreferences.LangID.NameToId(langName)));
 end;
 
+procedure TLocalizedName.AddInCurrentLang(str: string);
+begin
+  fstrings.AddObject(str,TObject(LocalePreferences.fCurLang));
+end;
+
 function TLocalizedName.TryMatchingString(Lang: TObject; out val: string): Boolean;
 begin
   Result:=localePreferences.TryGetMatchingString(Integer(Lang),fstrings,val);
@@ -495,6 +505,11 @@ begin
   Result:=MatchingString(TObject(LocalePreferences.languageID));
 end;
 
+function TLocalizedName.TryCaption(out Caption: string): Boolean;
+begin
+  Result:=TryMatchingString(TObject(LocalePreferences.languageID),Caption);
+end;
+
 function TLocalizedName.InEnglish: string;
 begin
   Result:=MatchingString(Tobject(1033));
@@ -503,6 +518,25 @@ end;
 function TLocalizedName.Enabled: Boolean;
 begin
   Result:=(fstrings.Count>0);
+end;
+
+function TLocalizedName.isNeutral(index: Integer): Boolean;
+begin
+  Result:=Integer(fstrings.Objects[index])=0;
+end;
+
+procedure TLocalizedName.Assign(source: TPersistent);
+var s: TLocalizedName absolute source;
+begin
+  if source is TLocalizedName then begin
+    fstrings.Assign(s.fStrings);
+  end
+  else inherited Assign(source);
+end;
+
+procedure TLocalizedName.Clear;
+begin
+  strings.Clear;
 end;
 
 initialization
