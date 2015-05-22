@@ -2,7 +2,7 @@ unit new_phys_unit_lib;
 
 interface
 uses set_english_locale_if_not_sure,streaming_class_lib,classes,
-  command_class_lib,iterator_lib,variantWrapper,Contnrs;
+  command_class_lib,iterator_lib,variantWrapper,Contnrs,sysUtils;
 
 type
   TAbstractStreamableConvType =class;
@@ -152,7 +152,7 @@ type
   TExponents = array of Real;
   TUnitTypes = array of TAbstractStreamableConvType;
 
-  TUnitsWithExponents = class(TPersistent)  //хватило бы и record'а и указателей и GetMem/FreeMem,
+  TUnitsWithExponents = class(TComponent)
     private
       UnitTypes: TUnitTypes;
       Exponents: TExponents;
@@ -161,9 +161,13 @@ type
       function MergeMul(value: TUnitsWithExponents; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponents; i,j: Integer): Real;
       function ShowSomething(proc: TShowName): string;
+      procedure WriteData(writer: TWriter);
     protected
+      procedure DefineProperties(filer: TFiler); override;
       function AddArbitraryUnit(ConvType: TAbstractStreamableConvType; Exponent: Real): Real;
+      function PhysData: TPhysUnitData;
     public
+      constructor Create(aOwner: TComponent); override;
       procedure Clear;
       procedure Assign(source: TPersistent); override;
       procedure SetBaseType(value: TAbstractStreamableConvType);
@@ -213,9 +217,11 @@ type
     Reserved4: LongInt;
   end;
 
+  EPhysUnitError = class (Exception);  
+
 implementation
 
-uses Variants,math,sysUtils,strUtils,Simple_Parser_lib;
+uses Variants,math,strUtils,Simple_Parser_lib;
 (*
       General procedures
                             *)
@@ -240,7 +246,8 @@ end;
 
 function ConvTypeToStr(ConvType: TAbstractStreamableConvType): string;
 begin
-  Result:=ConvType.Caption.Caption;
+  Result:=ConvType.ShortName.Caption;
+  if Result='' then Result:=ConvType.Caption.Caption;
 end;
 
 function ConvTypeToFamilyLetter(ConvType: TAbstractStreamableConvType): string;
@@ -257,7 +264,7 @@ begin
   fCaption:=TLocalizedName.Create;
   fShortName:=TLocalizedName.Create;
   fDescription:=TLocalizedName.Create;
-  fFormula:=TUnitsWithExponents.Create;
+  fFormula:=TUnitsWithExponents.Create(self);
 end;
 
 destructor TStreamableConvFamily.Destroy;
@@ -265,7 +272,6 @@ begin
   fCaption.Free;
   fShortName.Free;
   fDescription.Free;
-  fFormula.Free;
   inherited Destroy;
 end;
 
@@ -596,9 +602,9 @@ var j: Integer;
           pref.FullName.MatchingString(cpy.fCaption.strings.Objects[k])+
             cpy.fCaption.strings[k];
       if cpy.Caption.enabled then
-        cpy.EnsureCorrectName(cpy.fCaption.InEnglish,self)
+        cpy.EnsureCorrectName(NoSpaces(cpy.fCaption.InEnglish),self)
       else
-        cpy.ensureCorrectName(cpy.ShortName.InEnglish,self);
+        cpy.ensureCorrectName(NoSpaces(cpy.ShortName.InEnglish),self);
       ct.Owner.InsertComponent(cpy);
     end;
 
@@ -923,7 +929,7 @@ var u: TUnitsWithExponents;
 begin
   Assert(ConvType.Family<>nil,'Unit '+ConvType.Name+'don''t have a parent');
   Assert(ConvType.Family.BaseType<>nil,'Family '+ConvType.Family.Name+'don''t have baseType');
-  u:=TUnitsWithExponents.Create;
+  u:=TUnitsWithExponents.Create(owner);
   try
     u.Assign(ConvType.Family.fformula);
     u.DoPower(Exponent); //возвести в нужную степень (может даже нулевую)
@@ -959,6 +965,31 @@ begin
   fCount:=0;
   SetLength(UnitTypes,0);
   SetLength(Exponents,0);
+end;
+
+constructor TUnitsWithExponents.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+end;
+
+procedure TUnitsWithExponents.DefineProperties(filer: TFiler);
+begin
+  filer.DefineProperty('data',nil,WriteData,true);
+end;
+
+procedure TUnitsWithExponents.WriteData(writer: TWriter);
+begin
+  writer.WriteString(AsString);
+end;
+
+function TUnitsWithExponents.PhysData: TPhysUnitData;
+var comp: TComponent;
+begin
+  comp:=Owner;
+  while Assigned(comp) and not (comp is TPhysUnitData) do
+    comp:=comp.Owner;
+  Result:=TPhysUnitData(comp);
+  if Result=nil then raise Exception.Create('UnitsWithExponents didn''t find its PhysData parent');
 end;
 
 procedure TUnitsWithExponents.Divide(right: TUnitsWithExponents);
@@ -1109,18 +1140,18 @@ var p: TSimpleParser;
     pow: Real;
     isDivide: Boolean;
     nextDivide: Boolean;
-    mul: Real;
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
   Result:=1;
   isDivide:=false;
   nextDivide:=false;
-(*
+
   try
     while not p.eof do begin
       term:=p.getPhysUnitIdent;
-      mul:=UnitPrefixes.PrefixDescrToMultiplier(term,Modifier,ConvType);
+//      mul:=UnitPrefixes.PrefixDescrToMultiplier(term,Modifier,ConvType);
+      ConvType:=PhysData.StrToConvType(term);
 
       pow:=1;
       if not p.eof then begin
@@ -1135,15 +1166,14 @@ begin
         else nextDivide:=(ch='/');
       end;
       if IsDivide then pow:=-pow;
-      Result:=Result*AddArbitraryUnit(ConvType,pow)*Power(mul,pow);
+      Result:=Result*AddArbitraryUnit(ConvType,pow);
       IsDivide:=nextDivide;
-
 //      чтобы он к примеру Джоули преобр. в кг*м^2/с^2
     end;
   finally
     p.Free;
   end;
-  *)
+
 end;
 
 

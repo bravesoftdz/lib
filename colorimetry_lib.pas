@@ -67,6 +67,8 @@ CIE1931=record
 end;
 
 TSpectrum=class(table_func)
+  protected
+    function GetWeighedBy(func: table_func): Real;
   public
     procedure NormalizeByPower(pow: Real);
     procedure NormalizeByLuminance(lum: Real);
@@ -75,6 +77,11 @@ TSpectrum=class(table_func)
     function luminance: Real;
     function average_wavelength: Real;
     function quants: Real;
+    function CIE1931X: Real;
+    function CIE1931Z: Real;
+    function color_x: Real;
+    function color_y: Real;
+    function color: TColor;
   end;
 
 
@@ -120,14 +127,48 @@ begin
   Result:=CalculateArea;
 end;
 
-function TSpectrum.luminance: Real;
+function TSpectrum.GetWeighedBy(func: table_func): Real;
 var tmp: table_func;
 begin
   tmp:=table_func.Create;
   tmp.assign(self);
-  tmp.multiply(yt);
-  Result:=683*tmp.CalculateArea;
+  tmp.multiply(func);
+  Result:=tmp.CalculateArea;
   tmp.Free;
+end;
+
+function TSpectrum.luminance: Real;
+begin
+  Result:=GetWeighedBy(yt)*683;
+end;
+
+function TSpectrum.CIE1931X: Real;
+begin
+  Result:=GetWeighedBy(xt);
+end;
+
+function TSpectrum.CIE1931Z: Real;
+begin
+  Result:=GetWeighedBy(zt);
+end;
+
+function TSpectrum.color_x: Real;
+var x: Real;
+begin
+  x:=CIE1931X;
+  Result:=x/(x+GetWeighedBy(yt)+CIE1931Z);
+end;
+
+function TSpectrum.color_y: Real;
+var y: Real;
+begin
+  y:=GetWeighedBy(yt);
+  Result:=y/(CIE1931X+y+CIE1931Z);
+end;
+
+function TSpectrum.color: TColor;
+begin
+  Result:=colorimetry_funcs.ColorFromSpectrum(self);
 end;
 
 function TSpectrum.average_wavelength: Real;

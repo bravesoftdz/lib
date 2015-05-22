@@ -12,7 +12,7 @@ unit phys_units_lib;
 
 interface
 
-uses classes,VariantWrapper,ConvUtils,sysUtils,linear_eq,streaming_class_lib;
+uses classes,VariantWrapper,ConvUtils,sysUtils,linear_eq,simple_parser_lib,streaming_class_lib;
 
 type
   TUnitsWithExponent = class;
@@ -201,7 +201,16 @@ type
     function FromCommon(const AValue: Double): Double; override;
   end;
 
-  EPhysUnitError = class (Exception);
+  TOldPhysUnitParser = class(TSimpleParser)
+  private
+
+  public
+
+    function getPhysUnit: TConvType;
+    function getVariantNum: Variant;
+  end;
+
+  EOldPhysUnitError = class (Exception);
 
 
   PUnitMultipliersArray = ^TUnitMultipliersArray;
@@ -258,7 +267,7 @@ var UnityPhysConstants: TFundamentalPhysConstants;
     UnitPrefixes: TOldUnitPrefixes;
 implementation
 
-uses StdConvs,math,simple_parser_lib,VarCmplx,strUtils,variants,
+uses StdConvs,math,VarCmplx,strUtils,variants,
   set_english_locale_if_not_sure,expression_lib,Contnrs;
 
 var BaseFamilyEntries: TObjectList;
@@ -291,7 +300,7 @@ begin
   if i>=0 then
     Result:=TBaseConvFamily(BaseFamilyEntries[i]).fLetter
   else
-    Raise EPhysUnitError.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
+    Raise EOldPhysUnitError.CreateFMT('ConvTypeToBaseFamilyLetter: family %s not found among base families',[ConvFamilyToDescription(ConvTypeToFamily(value))]);
   //этот код вообще не используетс€ пока
 end;
 
@@ -332,7 +341,7 @@ begin
       Result.Assign(TDerivedConvFamily(DerivedFamilyEntries[i]).fformula);
       Exit;
     end;
-  Raise EPhysUnitError.CreateFMT(ConvFamilyNeitherBaseNorDerived,[ConvTypeToDescription(ConvType)]);
+  Raise EOldPhysUnitError.CreateFMT(ConvFamilyNeitherBaseNorDerived,[ConvTypeToDescription(ConvType)]);
   //так будет, если одну из станд. разм. не объ€вить в текст. файле.
 end;
 
@@ -378,7 +387,7 @@ end;
 function StrToConvFamily(str: string): TConvFamily;
 begin
   if not DescriptionToConvFamily(str,Result) then
-    Raise EPhysUnitError.CreateFmt('Couldn''t find conversion family %s',[str]);
+    Raise EOldPhysUnitError.CreateFmt('Couldn''t find conversion family %s',[str]);
 end;
 
 (*
@@ -425,7 +434,7 @@ begin
   else begin
     //скребем по derived, находим и помножаем на его unit
     i:=IndexOfDerivedFamily(f);
-    if i=-1 then Raise EPhysUnitError.CreateFmt(ConvFamilyNeitherBaseNorDerived,[ConvFamilyToDescription(f)]);
+    if i=-1 then Raise EOldPhysUnitError.CreateFmt(ConvFamilyNeitherBaseNorDerived,[ConvFamilyToDescription(f)]);
     u:=TUnitsWithExponent.Create;
     try
       u.Assign(TDerivedConvFamily(DerivedFamilyEntries[i]).fformula);
@@ -475,7 +484,7 @@ begin
         if ch='^' then begin
           pow:=p.getFloat;
           if (not p.eof) then begin
-            if (p.NextChar<>'*') and (p.NextChar<>'/')  then Raise EPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
+            if (p.NextChar<>'*') and (p.NextChar<>'/')  then Raise EOldPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
             nextDivide:=(p.getChar='/');
           end;
         end
@@ -771,7 +780,7 @@ begin
               LogConversionDetailsProc(Format(ToConvertFromAToB,[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv),s]));
             end;
           end
-          else Raise EphysUnitError.CreateFmt(IncorrectUnitConversion,[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
+          else Raise EOldphysUnitError.CreateFmt(IncorrectUnitConversion,[ConvTypeToDescription(buConvType),ConvTypeToDescription(DestConv)]);
         finally
           new_formula.Free;
         end;
@@ -1136,7 +1145,7 @@ begin
     fEnabled[i]:=aValue;
     if not Recalculate then begin
       fEnabled[i]:=not aValue;
-      Raise EPhysUnitError.CreateFMT(NonConsistentConstraints,[fNames[i]]);
+      Raise EOldPhysUnitError.CreateFMT(NonConsistentConstraints,[fNames[i]]);
     end;
   end;
 end;
@@ -1158,7 +1167,7 @@ begin
     fEnabled[fCount-1]:=true;
     if not Recalculate then begin
       fEnabled[fCount-1]:=false;
-      Raise EPhysUnitError.CreateFmt(NonConsistentConstraints,[aName]);
+      Raise EOldPhysUnitError.CreateFmt(NonConsistentConstraints,[aName]);
     end;
   end;
 end;
@@ -1305,7 +1314,7 @@ begin
       TVariantWithUnitVarData(Result).Data.ConvType:=ConvType;
     end
     else
-      Raise EPhysUnitError.CreateFmt(AlreadyHasDimension,[source])
+      Raise EOldPhysUnitError.CreateFmt(AlreadyHasDimension,[source])
   else
     VarWithUnitCreateInto(Result,TVariantWithUnit.CreateFromVariant(source,ConvType));
 end;
@@ -1893,8 +1902,160 @@ begin
   end;
   Result:=1;
   if not DescriptionToConvType(term,CType) then
-    Raise EPhysUnitError.CreateFmt(IsNotCorrectUnit,[term]);
+    Raise EOldPhysUnitError.CreateFmt(IsNotCorrectUnit,[term]);
 end;
+
+(*
+    TOldPhysUnitParser
+                          *)
+function TOldPhysUnitParser.getPhysUnit: TConvType;
+var id: string;
+    InitPos,tempPos: Integer;
+    CType: TConvType;
+    ch: char;
+begin
+  //хитрость в том, чтобы найти окончание.
+  //скажем, 1 км*2 - здесь ед. изм "км"
+  //но в 1 Ќ*м - "Ќ*м".
+  skip_spaces;
+  InitPos:=_pos;  //fBackupPos будет мен€тьс€ внутри цикла
+  TempPos:=_pos;
+  while not eof do begin
+    id:=GetPhysUnitIdent;
+    //хот€ у нас есть безразмерна€ величина, принимать
+    //пустое место за нее не имеем права!
+    if (id='') or not UnitPrefixes.FindUnitWithPrefix(id,CType) then begin
+      _pos:=TempPos;
+      break;
+    end
+    else begin
+      if eof then break;
+      TempPos:=_pos;
+      ch:=GetChar;
+      if ch='^' then begin
+        GetFloat;
+        TempPos:=_pos;
+        if eof then break;
+        ch:=GetChar;
+      end;
+      if eof or ((ch<>'*') and (ch<>'/')) then begin
+        _pos:=TempPos;
+        break;
+      end;
+    end;
+  end;
+
+  fBackupPos:=InitPos;
+  if _pos<>InitPos then
+    Result:=StrToConvType(MidStr(_str,InitPos,_pos-InitPos))
+  else
+    Result:=CIllegalConvType;
+end;
+
+function TOldPhysUnitParser.getVariantNum: Variant;
+var Ch: char;
+  state: Integer;
+  deg,min: Integer;
+  sec: Real;
+
+  function TryExponent: Boolean;
+  begin
+    Result:=(ch='e') or (ch='E');
+    if Result then begin
+      inc(_pos);
+      if _pos>Length(_str) then begin
+        putBack;
+        Raise EParserError.CreateFmt(UnexpectedEndOfString,[GetString]);
+      end;
+      ch:=_str[_pos];
+      if (ch='-') or (ch='+') then state:=4
+      else if IsNumberSymbol(ch) then state:=5
+      else begin
+        putBack;
+        Raise EParserError.CreateFmt(UnknownSymbolAfterExponent,[GetString]);
+      end;
+    end;
+  end;
+
+  procedure TryImaginary;
+  begin
+    if (ch='i') or (ch='I') or (ch='j') or (ch='J') then
+      inc(_pos);
+  end;
+
+begin
+  Result:=Unassigned;
+  //в самом числе не может содержатьс€ никаких пробелов!
+  skip_spaces;
+  fBackupPos:=_pos;
+  state:=0;
+  while (_pos<=Length(_str)) do begin
+    Ch:=_str[_pos];
+    case state of
+      0: begin
+          if IsNumberSymbol(ch) then state:=1 else begin
+            putBack;
+            Raise EParserError.CreateFmt(DigitExpected,[GetString]);
+          end;
+        end;
+      1: begin
+          if not IsNumberSymbol(ch) then
+            if (ch='.') or (ch=',') then begin
+              state:=2;
+              _str[_pos]:=DecimalSeparator;
+            end
+            else if (ch='d') or (ch='D') or (ch='∞') then begin
+              deg:=StrToInt(MidStr(_str,fBackupPos,_pos-fBackupPos));
+              getChar;
+              min:=getInt;
+              if getChar<>'''' then Raise EParserError.Create(MinutesExpected);
+              sec:=getFloat;
+              ch:=getChar;
+              if (ch<>'"') and (getChar<>'''') then Raise EParserError.Create(SecondsExpected);
+              Result:=VarWithUnitCreateFromVariant(deg+min/60+sec/3600,auDMS);
+              Exit;
+            end
+            else if not TryExponent then begin
+              TryImaginary;
+              break;
+            end;
+        end;
+      2: if IsNumberSymbol(ch) then state:=3 else begin
+          putBack;
+          Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
+        end;
+      3:  if not IsNumberSymbol(ch) then
+            if not TryExponent then begin
+              TryImaginary;
+              break;
+            end;
+      4: if IsNumberSymbol(ch) then state:=5 else begin
+          putBack;
+          Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
+        end;
+      5: if not IsNumberSymbol(ch) then begin
+          TryImaginary;
+          break;
+          end;
+      end;
+    inc(_pos);
+  end;
+  if state=0 then Raise EParserError.Create('getVariantNum: empty expression');
+  if state=2 then begin
+    PutBack;
+    Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
+  end;
+  if state=4 then begin
+    PutBack;
+    Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
+  end;
+
+  if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then
+    Result:=VarComplexCreate(0,StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos-1)))
+  else
+    Result:=StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos));
+end;
+
 
 
 procedure InitializePhysUnitLib;

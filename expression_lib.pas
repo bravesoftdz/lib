@@ -1013,14 +1013,14 @@ begin
 end;
 
 procedure TVariantExpression.LexicalAnalysis;
-var p: TSimpleParser;
+var p: TOldPhysUnitParser;
     LIndex,i,brLevel: Integer;
     ch: char;
     str,str1: string;
 ResourceString
   ConversionOperatorError = 'ошибочно записан оператор преобразования единицы измерения';
   UnknownOperatorVertLine = 'неизвестный оператор "|"';
-  NoVariableBeforeAssign = 'отсутствует переменная перед знаком =';  
+  NoVariableBeforeAssign = 'отсутствует переменная перед знаком =';
 begin
   LIndex:=-1;
   //первый проход - замена \deg на ° и добавление скобок для знака равенства
@@ -1030,7 +1030,7 @@ begin
   str1:=AddBracketsForAssign(str);
 
 
-  p:=TSimpleParser.Create(str1);
+  p:=TOldPhysUnitParser.Create(str1);
   p.delimiter:=' '#9;
   try
     while not p.eof do begin

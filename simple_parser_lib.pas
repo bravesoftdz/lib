@@ -8,17 +8,17 @@ type
 
 TSimpleParser=class
   private
-    _str: string;
-    _pos: Integer;
-    fBackupPos: Integer;
-    procedure skip_spaces;
-//    procedure find_next_space;
     function isSpace(ch: char): boolean;
     function isDelimiter(ch: char): boolean;
     function isFirstIdentSymbol(ch: char): boolean;
     function isIdentSymbol(ch: char): boolean;
-    function isNumberSymbol(ch: char): boolean;
     function isPhysIdentSymbol(ch: char): boolean;
+  protected
+    _str: string;
+    _pos: Integer;
+    fBackupPos: Integer;
+    procedure skip_spaces;
+    function isNumberSymbol(ch: char): boolean;    
   public
     spaces: string;
     delimiter: string;
@@ -38,14 +38,22 @@ TSimpleParser=class
     function getVarPathIdent: string;
     function getHex: Integer;
     function getBinary: LongWord;
-    function getPhysUnit: TConvType;
-    function getVariantNum: Variant;
+
   end;
 
 EParserError=class(Exception);
 
+resourcestring
+  UnexpectedEndOfString = 'неожиданный конец строки: %s';
+  UnknownSymbolAfterExponent = 'неверный символ после "E" (разделителя мантиссы и показателя степени) в %s';
+  DigitExpected = 'ожидалась цифра в %s';
+  MinutesExpected = 'ожидался символ '' (минуты)';
+  SecondsExpected = 'ожидался символ " (секунды)';
+  DigitExpectedAfterDecimalSeparator = 'после запятой должна идти цифра в %s';
+  DigitExpectedAfterExponent = 'после символа E должно идти целое число в %s';
+
 implementation
-uses strUtils,Variants,VarCmplx,phys_units_lib;
+uses strUtils;
 
 constructor TSimpleParser.Create;
 begin
@@ -286,165 +294,6 @@ begin
     while (_pos<=Length(_str)) and IsPhysIdentSymbol(_str[_pos]) do inc(_pos);
   end;
   Result:=MidStr(_str,fBackupPos,_pos-fBackupPos);
-end;
-
-function TSimpleParser.getPhysUnit: TConvType;
-var id: string;
-    InitPos,tempPos: Integer;
-    CType: TConvType;
-    ch: char;
-begin
-  //хитрость в том, чтобы найти окончание.
-  //скажем, 1 км*2 - здесь ед. изм "км"
-  //но в 1 Н*м - "Н*м".
-  skip_spaces;
-  InitPos:=_pos;  //fBackupPos будет меняться внутри цикла
-  TempPos:=_pos;
-  while not eof do begin
-    id:=GetPhysUnitIdent;
-    //хотя у нас есть безразмерная величина, принимать
-    //пустое место за нее не имеем права!
-    if (id='') or not UnitPrefixes.FindUnitWithPrefix(id,CType) then begin
-      _pos:=TempPos;
-      break;
-    end
-    else begin
-      if eof then break;
-      TempPos:=_pos;
-      ch:=GetChar;
-      if ch='^' then begin
-        GetFloat;
-        TempPos:=_pos;
-        if eof then break;
-        ch:=GetChar;
-      end;
-      if eof or ((ch<>'*') and (ch<>'/')) then begin
-        _pos:=TempPos;
-        break;
-      end;
-    end;
-  end;
-
-  fBackupPos:=InitPos;
-  if _pos<>InitPos then
-    Result:=StrToConvType(MidStr(_str,InitPos,_pos-InitPos))
-  else
-    Result:=CIllegalConvType;
-end;
-
-resourcestring
-  UnexpectedEndOfString = 'неожиданный конец строки: %s';
-  UnknownSymbolAfterExponent = 'неверный символ после "E" (разделителя мантиссы и показателя степени) в %s';
-  DigitExpected = 'ожидалась цифра в %s';
-  MinutesExpected = 'ожидался символ '' (минуты)';
-  SecondsExpected = 'ожидался символ " (секунды)';
-  DigitExpectedAfterDecimalSeparator = 'после запятой должна идти цифра в %s';
-  DigitExpectedAfterExponent = 'после символа E должно идти целое число в %s';
-
-function TSimpleParser.getVariantNum: Variant;
-var Ch: char;
-  state: Integer;
-  deg,min: Integer;
-  sec: Real;
-
-
-
-  function TryExponent: Boolean;
-  begin
-    Result:=(ch='e') or (ch='E');
-    if Result then begin
-      inc(_pos);
-      if _pos>Length(_str) then begin
-        putBack;
-        Raise EParserError.CreateFmt(UnexpectedEndOfString,[GetString]);
-      end;
-      ch:=_str[_pos];
-      if (ch='-') or (ch='+') then state:=4
-      else if IsNumberSymbol(ch) then state:=5
-      else begin
-        putBack;
-        Raise EParserError.CreateFmt(UnknownSymbolAfterExponent,[GetString]);
-      end;
-    end;
-  end;
-
-  procedure TryImaginary;
-  begin
-    if (ch='i') or (ch='I') or (ch='j') or (ch='J') then
-      inc(_pos);
-  end;
-
-begin
-  Result:=Unassigned;
-  //в самом числе не может содержаться никаких пробелов!
-  skip_spaces;
-  fBackupPos:=_pos;
-  state:=0;
-  while (_pos<=Length(_str)) do begin
-    Ch:=_str[_pos];
-    case state of
-      0: begin
-          if IsNumberSymbol(ch) then state:=1 else begin
-            putBack;
-            Raise EParserError.CreateFmt(DigitExpected,[GetString]);
-          end;
-        end;
-      1: begin
-          if not IsNumberSymbol(ch) then
-            if (ch='.') or (ch=',') then begin
-              state:=2;
-              _str[_pos]:=DecimalSeparator;
-            end
-            else if (ch='d') or (ch='D') or (ch='°') then begin
-              deg:=StrToInt(MidStr(_str,fBackupPos,_pos-fBackupPos));
-              getChar;
-              min:=getInt;
-              if getChar<>'''' then Raise EParserError.Create(MinutesExpected);
-              sec:=getFloat;
-              ch:=getChar;
-              if (ch<>'"') and (getChar<>'''') then Raise EParserError.Create(SecondsExpected);
-              Result:=VarWithUnitCreateFromVariant(deg+min/60+sec/3600,auDMS);
-              Exit;
-            end
-            else if not TryExponent then begin
-              TryImaginary;
-              break;
-            end;
-        end;
-      2: if IsNumberSymbol(ch) then state:=3 else begin
-          putBack;
-          Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
-        end;
-      3:  if not IsNumberSymbol(ch) then
-            if not TryExponent then begin
-              TryImaginary;
-              break;
-            end;
-      4: if IsNumberSymbol(ch) then state:=5 else begin
-          putBack;
-          Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
-        end;
-      5: if not IsNumberSymbol(ch) then begin
-          TryImaginary;
-          break;
-          end;
-      end;
-    inc(_pos);
-  end;
-  if state=0 then Raise EParserError.Create('getVariantNum: empty expression');
-  if state=2 then begin
-    PutBack;
-    Raise EParserError.CreateFmt(DigitExpectedAfterDecimalSeparator,[GetString]);
-  end;
-  if state=4 then begin
-    PutBack;
-    Raise EParserError.CreateFmt(DigitExpectedAfterExponent,[GetString]);
-  end;
-
-  if (UpperCase(_str[_pos-1])='I') or (UpperCase(_str[_pos-1])='J') then
-    Result:=VarComplexCreate(0,StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos-1)))
-  else
-    Result:=StrToFloat(MidStr(_str,fBackupPos,_pos-fBackupPos));
 end;
 
 end.
