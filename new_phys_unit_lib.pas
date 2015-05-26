@@ -1000,14 +1000,28 @@ begin
 end;
 
 procedure TVarWithUnit.DoDivide(Right: TAbstractWrapperData);
+var tmp: TVarWithUnit;
 begin
-  inherited;
-
+  tmp:=TVarWithUnit.Create;
+  tmp.Assign(Right);
+  tmp.DoInverse;
+  DoMultiply(tmp);
+  tmp.Free;
 end;
 
 procedure TVarWithUnit.DoInverse;
+var U: TUnitsWithExponents;
 begin
-
+  U:=TUnitsWithExponents.Create(nil);
+  try
+    U.Assign(ConvType.Family.fFormula);
+    Conversion(ConvType.Family.BaseType);
+    instance:=1/instance; //это можно, поскольку баз. тип - нормальный!
+    U.DoPower(-1);
+    ConvType:=U.GetConvType;
+  finally
+    U.Free;
+  end;
 end;
 
 procedure TVarWithUnit.DoMultiply(Right: TAbstractWrapperData);
@@ -1039,14 +1053,26 @@ begin
 end;
 
 procedure TVarWithUnit.DoPower(pow: Real);
+var U: TUnitsWithExponents;
 begin
-
+  U:=TUnitsWithExponents.Create(nil);
+  try
+    U.Assign(ConvType.Family.fFormula);
+    Conversion(ConvType.Family.BaseType);
+    if VarIsComplex(instance) then
+      instance:=VarComplexPower(instance,pow)
+    else
+      instance:=Power(instance,pow);
+    U.DoPower(pow);
+    ConvType:=U.GetConvType;
+  finally
+    U.Free;
+  end;
 end;
 
 procedure TVarWithUnit.Negate;
 begin
-  inherited;
-
+  instance:=ConvType.MultiplyByNumber(instance,-1.000000000,ConvType);
 end;
 
 { TVarWithUnitType }
@@ -1100,11 +1126,6 @@ begin
     opCmpGE: Result:=(L.instance>=R.instance);
   end;
 end;
-
-
-
-
-
 
 { TUnitsWithExponents }
 
