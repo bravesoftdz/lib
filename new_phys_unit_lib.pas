@@ -32,8 +32,7 @@ type
     private
       fShortName,fCaption: TLocalizedName;
       fScaledUp,fScaledDown: TAbstractStreamableConvType;
-      fPrefixOK: boolean;
-      fIsScaled: boolean;
+      fPrefixOK,fIsScaled: boolean;
     public
       constructor Create(aOwner: TComponent); override;
       destructor Destroy; override;
@@ -41,9 +40,11 @@ type
       function CreateAndConnectScaled(mult: Real): TAbstractStreamableConvType;
       function ConvertToBase(value: Variant): Variant; virtual; abstract;
       function ConvertFromBase(value: Variant): Variant; virtual; abstract;
+      function Convert(value: Variant; var ConvType: TAbstractStreamableConvType): Variant; virtual;
       function Family: TStreamableConvFamily;
       procedure Add(V1,V2: Variant; t2: TAbstractStreamableConvType;
         out value: Variant; out t3: TAbstractStreamableConvType); virtual;
+      function MultiplyByNumber(v1,num: Variant; var ConvType: TAbstractStreamableConvType): Variant; virtual; abstract;
     published
       property ShortName: TLocalizedName read fShortName write fShortName;
       property Caption: TLocalizedName read fCaption write fCaption;
@@ -62,6 +63,7 @@ type
       function CreateScaled(mult: Real): TAbstractStreamableConvType; override;
       procedure Add(V1,V2: Variant; t2: TAbstractStreamableConvType;
         out value: Variant; out t3: TAbstractStreamableConvType); override;
+      function MultiplyByNumber(v1,num: Variant; var ConvType: TAbstractStreamableConvType): Variant; override;
     published
       property Multiplier: Real read fMultiplier write fMultiplier;
     end;
@@ -77,9 +79,11 @@ type
       destructor Destroy; override;
       function ConvertToBase(value: Variant): Variant; override;
       function ConvertFromBase(value: Variant): Variant; override;
+      function Convert(value: Variant;var ConvType: TAbstractStreamableConvType): Variant; override;
       function CreateScaled(mult: Real): TAbstractStreamableConvType; override;
       procedure Add(V1,V2: Variant; t2: TAbstractStreamableConvType;
         out value: Variant; out t3: TAbstractStreamableConvType); override;
+      function MultiplyByNumber(v1,num: Variant; var ConvType: TAbstractStreamableConvType): Variant; override;
       function GetAffineUnit(Factor: Real): TAffineConvType;
     published
       property Multiplier: Real read fMultiplier write fMultiplier;
@@ -98,6 +102,7 @@ type
       function CreateScaled(mult: Real): TAbstractStreamableConvType; override;
       procedure Add(V1,V2: Variant; t2: TAbstractStreamableConvType;
         out value: Variant; out t3: TAbstractStreamableConvType); override;
+      function MultiplyByNumber(v1,num: Variant; var ConvType: TAbstractStreamableConvType): Variant; override;        
     published
       property Log10Multiplier: Real read fLog10Mult write fLog10Mult;
       property ZeroValue: Real read fZeroValue write fZeroValue;
@@ -185,6 +190,7 @@ type
       function AsString: string;
       function ShowFormula: string;
       function GetConvType: TAbstractStreamableConvType;
+      function IsUnity: Boolean;
   end;
 
 
@@ -226,7 +232,13 @@ type
 
   EPhysUnitError = class (Exception);
 
+  function IsPhysUnit(V: Variant): Boolean;
+  procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
+  function PhysUnitCreateFromVariant(source: Variant; ConvType: TAbstractStreamableConvType): Variant;
+  function PhysUnitConvert(source: Variant; DestConvType: TAbstractStreamableConvType; explicit: boolean=false): Variant;
+
   var PhysUnitData: TPhysUnitData;
+      VarWithUnitVariantType: TVarWithUnitType;
 
 implementation
 
@@ -342,6 +354,11 @@ begin
   Raise Exception.CreateFmt('Unable to add %s with %s',[Caption.Caption,t2.Caption.Caption]);
 end;
 
+function TAbstractStreamableConvType.Convert(value: Variant; var ConvType: TAbstractStreamableConvType): Variant;
+begin
+  Result:=ConvertFromBase(ConvType.ConvertToBase(value));
+  ConvType:=self; //в большинстве случаев сработает как надо
+end;
 (*
     TNormalConvType
                       *)
@@ -349,7 +366,7 @@ procedure TNormalConvType.Add(V1, V2: Variant;
   t2: TAbstractStreamableConvType; out value: Variant;
   out t3: TAbstractStreamableConvType);
 begin
-  if Owner=t2.Owner then begin
+  if Owner=t2.Owner then begin //same family
     value:=v1+ConvertFromBase(t2.ConvertToBase(v2));
     t3:=self;
   end
@@ -364,6 +381,12 @@ end;
 function TNormalConvType.ConvertToBase(value: Variant): Variant;
 begin
   Result:=value*multiplier;
+end;
+
+function TNormalConvType.MultiplyByNumber(v1,num: Variant;
+  var ConvType: TAbstractStreamableConvType): Variant;
+begin
+  Result:=v1*num; //ConvType не меняется
 end;
 
 function TNormalConvType.CreateScaled(mult: Real): TAbstractStreamableConvType;
@@ -417,17 +440,32 @@ begin
   cpy.Multiplier:=Multiplier*mult;
 end;
 
+function TAffineConvType.Convert(value: Variant; var ConvType: TAbstractStreamableConvType): Variant;
+var AffUnit: TAffineConvType;
+begin
+  //если нам дали K{dif}, а мы сами Celsius, то надо преобр. в Celsius{dif}!
+  AffUnit:=GetAffineUnit((ConvType as TAffineConvType).Factor);
+  Result:=AffUnit.ConvertFromBase(ConvType.ConvertToBase(value));
+  ConvType:=AffUnit;
+end;
+
 procedure TAffineConvType.Add(V1, V2: Variant;
   t2: TAbstractStreamableConvType; out value: Variant;
   out t3: TAbstractStreamableConvType);
 var t2a: TAffineConvType absolute t2;
 begin
   if Owner = t2.Owner then begin
-    value:=v1+GetAffineUnit((t2 as TAffineConvType).Factor).ConvertFromBase(
-      t2.ConvertToBase(v2));
-    t3:=GetAffineUnit(Factor+t2a.Factor);
+    value:=v1+Convert(v2,t2); //может ругнуться на приведение ConvType as TAffineConvType
+    t3:=GetAffineUnit(Factor+t2a.Factor); //если досюда дошли, уже безопасно absolute
   end
   else inherited;
+end;
+
+function TAffineConvType.MultiplyByNumber(v1,num: Variant;
+  var ConvType: TAbstractStreamableConvType): Variant;
+begin
+  v1:=v1*num;
+  ConvType:=GetAffineUnit(Factor*num);
 end;
 
 function TAffineConvType.GetAffineUnit(Factor: Real): TAffineConvType;
@@ -454,7 +492,9 @@ begin
     der.Caption.strings[i]:=Format('%s{%g}',[der.Caption.strings[i],Factor]);
   der.ensureCorrectName(NoSpaces(der.Caption.InEnglish),owner);
   owner.InsertComponent(der);
-  Result:=der;  
+  Result:=der;
+  //и в megalist добавить неплохо бы! Хотя это половинчатое решение - надо по-хорошему
+  //парсить выражение a{b}
 end;
 
 
@@ -489,6 +529,15 @@ begin
     Result:=ZeroValue*power(10.0,(value/Log10Multiplier))
   else
     Raise Exception.Create(LogarithmicConvTypeRequiresRealNum);
+end;
+
+function TLogarithmicConvType.MultiplyByNumber(v1,num: Variant;
+  var ConvType: TAbstractStreamableConvType): Variant;
+begin
+  if VarIsNumeric(v1) then
+    Result:=v1+log10multiplier*log10(num)
+  else
+    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
 
 function TLogarithmicConvType.CreateScaled(mult: Real): TAbstractStreamableConvType;
@@ -866,53 +915,17 @@ begin
 end;
 
 procedure TVarWithUnit.Conversion(DestConv: TAbstractStreamableConvType);
-var j,i,b: Integer;              //inst - это мы
-    offset,k,mul: Real;     //dest - это тоже мы, но позже
-//    formula: TUnitsWithExponent;
-//    new_formula: TUnitsWithExponent;
-    addition: Variant;
-    pow: Real;
-//    buConvType: TConvType;
-    s: string;
 resourcestring
   ToConvertFromAToB = 'Для преобразования из [%s] в [%s] выражение домножено на %s';
   IncorrectUnitConversion = 'Некорректное приведение типов: [%s] в [%s]';
 begin
-(*
-  buConvType:=ConvType;
-  ConvType:=DestConv;
-  if IsAffine(j) then
-    DestConv:=AffineUnits[j].BaseConvType;
-  ConvType:=buConvType;
-*)  //для афинных величин
-(*
-  if IsAffine(j) then begin
-    if CompatibleConversionTypes(ConvType,DestConv) then begin
-      offset:=Convert(0,AffineUnits[j].BaseConvType,DestConv);
-      k:=Convert(1,AffineUnits[j].BaseConvType,DestConv)-offset;
-      mul:=AffineUnits[j].multiplier;
-      instance:=instance*k+offset*mul;
-      ConvType:=DestConv;
-      IsAffine(j);
-      ConvType:=GetAffineWithMultiplier(AffineUnits[j].BaseConvType,mul);
-      Exit;
-    end
-    else begin
-      new_formula:=FindPhysUnit(ConvType);
-      Conversion(new_formula.UnitTypes[0]);  //проще говоря, в кельвины
-      new_formula.Free;
-    end;
-  end;
-  //на этой стадии у нас уже не афинная величина, а самая простая (мы так считаем)
   if (ConvType<>DestConv) then begin
-    if instance=0 then
-      ConvType:=DestConv
-    else if CompatibleConversionTypes(ConvType,DestConv) then begin
-      instance:=instance*Convert(1,ConvType,DestConv);
-      ConvType:=DestConv;
-    end
+    if ConvType.Owner=DestConv.Owner then //same family
+      instance:=DestConv.Convert(instance,ConvType)
     else begin
+      Raise EPhysUnitError.Create('sorry, implicit conversion not supported right now');
     //попробуем выразить, зная, что c=1, h=1 и т.д.
+    (*
       buConvType:=ConvType;
       new_formula:=nil;
       formula:=FindPhysUnit(ConvType);  //это наша родная
@@ -956,9 +969,9 @@ begin
       finally
       formula.Free;
       end;
+      *)
     end;
   end;
-  *)
 end;
 
 constructor TVarWithUnit.Create(text: string);
@@ -976,9 +989,14 @@ begin
 end;
 
 procedure TVarWithUnit.DoAdd(value: TAbstractWrapperData);
+var v: TVarWithUnit absolute value;
 begin
-  inherited;
-
+  if value is TVarWithUnit then begin
+    if ConvType.Owner<>v.ConvType.Owner then
+      v.Conversion(ConvType);
+    ConvType.Add(instance,v.instance,v.ConvType,instance,ConvType)
+  end
+  else inherited;
 end;
 
 procedure TVarWithUnit.DoDivide(Right: TAbstractWrapperData);
@@ -993,9 +1011,31 @@ begin
 end;
 
 procedure TVarWithUnit.DoMultiply(Right: TAbstractWrapperData);
+var v: TVarWithUnit absolute Right;
+  UL,UR,f: TUnitsWithExponents;
 begin
-  inherited;
-
+  if Right is TVarWithUnit then begin
+    UL:=ConvType.Family.fFormula;
+    UR:=v.ConvType.Family.fFormula;
+    if UR.IsUnity then  //безразмерная, но может быть и % или ppm
+      instance:=ConvType.MultiplyByNumber(instance,v.ConvType.ConvertToBase(v.instance),ConvType)
+    else if UL.IsUnity then
+      instance:=v.ConvType.MultiplyByNumber(v.instance,ConvType.ConvertToBase(instance),ConvType)
+    else begin
+      //основная процедура
+      Conversion(ConvType.family.BaseType);
+      f:=TUnitsWithExponents.Create(nil);
+      try
+        f.Assign(UL);
+        f.Multiply(UR);
+        instance:=instance*v.ConvType.ConvertToBase(v.instance);
+        ConvType:=f.GetConvType;
+      finally
+        f.Free;
+      end;
+    end
+  end
+  else inherited;
 end;
 
 procedure TVarWithUnit.DoPower(pow: Real);
@@ -1015,14 +1055,12 @@ procedure TVarWithUnitType.Cast(var Dest: TVarData;
   const Source: TVarData);
 begin
   //строку преобразуем по всем правилам, а любые другие Variant'ы "оборачиваем" безразм.
-(*
   VarDataClear(Dest);
   if VarDataIsStr(Source) then
     TWrapperVarData(Dest).Data:=TVarWithUnit.Create(VarDataToStr(Source))
   else
-    TWrapperVarData(Dest).Data:=TVarWithUnit.CreateFromVariant(Variant(source),duUnity);
-  Dest.VType:=VariantWithUnit;
-*)  //надо еще обозначить duUnity
+    TWrapperVarData(Dest).Data:=TVarWithUnit.CreateFromVariant(Variant(source),PhysUnitData.Unity);
+  Dest.VType:=VarWithUnitVariantType.VarType;
 end;
 
 procedure TVarWithUnitType.CastTo(var Dest: TVarData;
@@ -1037,13 +1075,12 @@ begin
         VarDataFromStr(Dest, TWrapperVarData(Source).data.AsString);
       else
         with TVarWithUnitVarData(Source).Data do begin
-//          tmp:=VarWithUnitConvert(Variant(source),duUnity); //duUnity еще нет
+          tmp:=PhysUnitConvert(Variant(source),PhysUnitData.Unity);
           VarDataCastTo(Dest,TVarData(TVarWithUnitVarData(tmp).Data.instance),AVarType);
         end;
     end;
   end
   else inherited; //нам дали пустой variant скорее всего
-
 end;
 
 function TVarWithUnitType.CompareOp(const Left, Right: TVarData;
@@ -1247,6 +1284,11 @@ begin
   else Result:=false;
 end;
 
+function TUnitsWithExponents.IsUnity: Boolean;
+begin
+  Result:=(fCount=0);
+end;
+
 procedure TUnitsWithExponents.SetBaseType(value: TAbstractStreamableConvType);
 begin
   fCount:=1;
@@ -1355,8 +1397,60 @@ begin
   Result:=un;
 end;
 
+(*
+    Variant routines
+                        *)
+function IsPhysUnit(V: Variant): Boolean;
+begin
+  Result:=(TWrapperVarData(V).VType=VarWithUnitVariantType.VarType);
+end;
+
+procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
+begin
+  VarClear(ADest);
+  TWrapperVarData(ADest).VType:=VarWithUnitVariantType.VarType;
+  TWrapperVarData(ADest).Data:=Adata;
+end;
+
+function PhysUnitCreateFromVariant(source: Variant; ConvType: TAbstractStreamableConvType): Variant;
+resourcestring
+  AlreadyHasDimension = '%s уже имеет размерность';
+begin
+  if IsPhysUnit(source) then
+    if TVarWithUnitVarData(source).Data.ConvType=PhysUnitData.Unity then begin
+      Result:=source;
+      TVarWithUnitVarData(Result).Data.ConvType:=ConvType;
+    end
+    else
+      Raise EPhysUnitError.CreateFmt(AlreadyHasDimension,[source])
+  else
+    PhysUnitCreateInto(Result,TVarWithUnit.CreateFromVariant(source,ConvType));
+end;
+
+function PhysUnitConvert(source: Variant; DestConvType: TAbstractStreamableConvType; explicit: boolean=false): Variant;
+var inst,dest: TVarWithUnit;
+begin
+  if not IsPhysUnit(source) then
+    source:=PhysUnitCreateFromVariant(source,PhysUnitData.Unity);
+  inst:=TVarWithUnitVarData(source).Data;
+  dest:=TVarWithUnit.Create;
+  try
+    dest.Assign(inst);
+    dest.Conversion(DestConvType);
+    dest.ExplicitConversion:=explicit;
+    PhysUnitCreateInto(Result,dest);
+  except  //эта хреновина замаскировала ошибку!
+    dest.Free;
+    raise;
+  end;
+end;
+
+
 initialization
   RegisterClasses([TAffineConvType,TLogarithmicConvType,TNormalConvType,
   TPhysUnitData,TStreamableConvFamily,TUnitPrefix,TUnitPrefixes]);
+  VarWithUnitVariantType:=TVarWithUnitType.Create;
+finalization
+  FreeAndNil(VarWithUnitVariantType);
 
 end.
