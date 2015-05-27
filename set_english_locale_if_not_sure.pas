@@ -69,7 +69,7 @@ type
       property Language: string read GetLanguage write SetLanguage;
   end;
 
-  TLocalizedName = class (TPersistent)   //опробуем композицию вместо наследования
+  TLocalizedName = class (TComponent)   //опробуем композицию вместо наследования
   //можно указать это имя на любых языках и он это поймет, но возвращать будет
   //язык, поставленный в настройках
   //плюс, сохранение в файле и считывание из него
@@ -80,7 +80,7 @@ type
     protected
       procedure DefineProperties(filer: TFiler); override;
     public
-      constructor Create;
+      constructor Create(aOwner: TComponent); override;
       destructor Destroy; override;
       procedure Assign(source: TPersistent); override;
       procedure Clear;
@@ -93,6 +93,8 @@ type
       function isNeutral(index: Integer): Boolean;
       procedure AddString(str, langName: string);
       procedure AddInCurrentLang(str: string);
+      procedure LeftConcat(source: TLocalizedName; chr: string=''); overload;
+      procedure LeftConcat(str: string); overload;
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
   end;
@@ -147,6 +149,7 @@ procedure SetEnglishLocaleIfNotSure;
 var buDir: string;
 begin
   buDir:=GetCurrentDir;
+
   localePreferences:=TLocalePreferences.LoadFromFile(buDir+'\data\Lang\LanguageSettings.txt');
   SetCurrentDir(buDir);
 
@@ -433,9 +436,10 @@ end;
 (*
     TLocalizedName
                     *)
-constructor TLocalizedName.Create;
+constructor TLocalizedName.Create(aOwner: TComponent);
 begin
-  inherited Create;
+  inherited Create(aOwner);
+  SetSubComponent(true);
   fStrings:=TStringList.Create;
 end;
 
@@ -539,7 +543,38 @@ begin
   strings.Clear;
 end;
 
+procedure TLocalizedName.LeftConcat(source: TLocalizedName; chr: string='');
+var i,j: Integer;
+    new_strings: TStringList;
+begin //add source to the left of us, and we are main here
+  new_strings:=TStringList.Create;
+  for i:=0 to strings.Count-1 do
+    if isNeutral(i) then
+      for j:=0 to source.strings.Count-1 do
+        new_strings.AddObject(source.strings[j]+chr+strings[i],source.strings.Objects[j])
+    else begin
+      j:=source.strings.IndexOfObject(strings.Objects[i]);
+      if j>=0 then
+        new_strings.AddObject(source.strings[j]+chr+strings[i],strings.Objects[i])
+      else begin
+        j:=source.strings.IndexOfObject(nil);
+        if j>=0 then
+          new_strings.AddObject(source.strings[j]+chr+strings[i],strings.Objects[i]);
+      end;
+    end;
+  strings.Free;
+  fstrings:=new_strings;
+end;
+
+procedure TLocalizedName.LeftConcat(str: string);
+var i: Integer;
+begin
+  for i:=0 to strings.Count-1 do
+    strings[i]:=str+strings[i];
+end;
+
 initialization
+  localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt');
 
 finalization
   FreeAndNil(localePreferences);

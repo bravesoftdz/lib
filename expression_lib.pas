@@ -2,7 +2,7 @@ unit expression_lib;
 
 interface
 
-uses classes,Contnrs,SysUtils,ConvUtils;
+uses classes,Contnrs,SysUtils,new_phys_unit_lib;
 
 type
 
@@ -77,9 +77,9 @@ TPowNode=class(TNonTerminalNode)  //возведение в степень
 
 TUnitConversionNode=class(TNonTerminalnode) //приведение к другой единице
   private
-    fUnitType: TConvType;
+    fUnitType: TPhysUnit;
   public
-    constructor Create(aUnitType: TConvType; owner: TComponent); reintroduce; overload;
+    constructor Create(aUnitType: TPhysUnit; owner: TComponent); reintroduce; overload;
     function getVariantValue: Variant; override;
   end;
 
@@ -215,7 +215,7 @@ TLexem=record
   LType: TLexemType;
   Num: Variant; //комплексное число тоже может быть
   Ident: string;
-  PhysUnit: TConvType;
+  PhysUnit: TPhysUnit;
 end;
 
 TAssignValueToVariableProc = function (aname: string; avalue: Variant): Boolean;
@@ -223,7 +223,7 @@ TAssignValueToVariableProc = function (aname: string; avalue: Variant): Boolean;
 TVariantExpression=class(TAbstractExpression)  //
   private
     Lexems: array of TLexem;
-    fUnitRestriction: TConvType;
+    fUnitRestriction: TPhysUnit;
     procedure EnsureLexemsLen(i: Integer);
   protected
     function AddBracketsForAssign(text: string): string;
@@ -243,7 +243,7 @@ TVariantExpression=class(TAbstractExpression)  //
     constructor CreateZero(owner: TComponent; unitRestriction: string);reintroduce; overload;
     procedure SetUnitRestriction(unitRestriction: string); 
     function GetVariantValue: Variant; override;
-    property UnitRestriction: TConvType read fUnitRestriction;
+    property UnitRestriction: TPhysUnit read fUnitRestriction;
 end;
 
 TStandAloneVariantExpression=class(TVariantExpression)
@@ -259,7 +259,7 @@ resourcestring
       
 implementation
 
-uses TypInfo,StrUtils,math,phys_units_lib,variants,simple_parser_lib,VarCmplx,specchars;
+uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplx,specchars;
 
 (*
     TEvaluationTreeNode
@@ -405,7 +405,7 @@ end;
 (*
   TUnitConversionNode
                         *)
-constructor TUnitConversionNode.Create(aUnitType: TConvType; owner: TComponent);
+constructor TUnitConversionNode.Create(aUnitType: TPhysUnit; owner: TComponent);
 begin
   inherited Create(owner);
   fUnitType:=aUnitType;
@@ -413,7 +413,7 @@ end;
 
 function TUnitConversionNode.getVariantValue: Variant;
 begin
-  Result:=VarWithUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType,true);
+  Result:=PhysUnitConvert((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType,true);
 end;
 
 (*
@@ -421,7 +421,7 @@ end;
                         *)
 function TUnitAssignmentNode.getVariantValue: Variant;
 begin
-  Result:=VarWithUnitCreateFromVariant((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType);
+  Result:=PhysUnitCreateFromVariant((Components[0] as TEvaluationTreeNode).getVariantValue,fUnitType);
 end;
 
 (*
@@ -440,17 +440,18 @@ begin
   //возведение в степень физ. величины-это бред
   //возведение физ. величины в комплексную степень - тоже
   b:=(Components[1] as TEvaluationTreeNode).getVariantValue;
-  if IsVarWithUnit(b) then
+  if IsPhysUnit(b) then
     if IsDimensionless(b) then begin
-      tmp:=TVAriantWithUnitVarData(b).Data.instance;
+      b:=PhysUnitConvert(b,PhysUnitData.Unity);
+      tmp:=TVarWithUnitVarData(b).Data.instance;
       b:=tmp;
     end
     else
       Raise ESyntaxErr.Create(ExponentShouldBeDimensionless);
   a:=(Components[0] as TEvaluationTreeNode).getVariantValue;
-  if IsVarWithUnit(a) then begin
+  if IsPhysUnit(a) then begin
     if IsDimensionless(a) then begin
-      inst:=TVariantWithUnitVarData(a).Data.instance;
+      inst:=TVarWithUnitVarData(a).Data.instance;
       //если a=()a.instance, то unassigned становится, видимо, рубит сук на котором сидит
       Result:=VarComplexSimplify(VarComplexPower(inst,b));
     end
@@ -459,7 +460,7 @@ begin
       if VarIsComplex(b) then
         Raise ESyntaxErr.Create(ExponentShouldBeReal);
       //возведение размерной величины в действ. степень - уже лучше
-      Result:=VarWithUnitPower(a,b);
+      Result:=PhysUnitPower(a,b);
     end;
   end
   else Result:=VarComplexSimplify(VarComplexPower(a,b));
@@ -492,12 +493,12 @@ end;
 function TMathFuncNode.HandleFuncOfUnits(V: Variant; funcname: string): Variant;
 var tmp: Variant;
 begin
-  if IsVarWithUnit(V) then begin
+  if IsPhysUnit(V) then begin
     if not IsDimensionLess(V) then
-      tmp:=VarWithUnitConvert(V,duUnity)
+      tmp:=PhysUnitConvert(V,PhysUnitData.Unity)
     else
       tmp:=V;
-    Result:=TVariantWithUnitVarData(tmp).Data.instance;
+    Result:=TVarWithUnitVarData(tmp).Data.instance;
   end
   else Result:=V;
 end;
@@ -507,11 +508,11 @@ var tmp: Variant;
 resourcestring
   TrigFuncPrecisionLoss = 'Возможна потеря точности при выполнении триг. функции от %s = %s';
 begin
-  tmp:=VarWithUnitConvert(V,auRadian);
-  Result:=TVariantWithUnitVarData(tmp).Data.instance;
-  if Assigned(LogConversionWarningProc) and ((VarIsNumeric(Result) and abs(Result)>=1e8) or
+  tmp:=PhysUnitConvert(V,PhysUnitData.Radian);
+  Result:=TVarWithUnitVarData(tmp).Data.instance;
+  if Assigned(PhysUnitData.warningproc) and ((VarIsNumeric(Result) and abs(Result)>=1e8) or
     (VarIsComplex(Result) and (VarComplexAbs(Result)>=1e8))) then
-    LogConversionWarningProc(Format(TrigFuncPrecisionLoss,[V,tmp]));
+    PhysUnitData.warningproc(Format(TrigFuncPrecisionLoss,[V,tmp]));
 end;
 
 function TMathFuncNode.Ln(x: Variant): Variant; //натуральный
@@ -581,7 +582,7 @@ begin
   x:=HandleFuncOfUnits(x,'asin');
   if VarIsComplex(x) then tmp:=VarComplexArcsin(x)
   else tmp:=math.ArcSin(x);
-  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
+  Result:=PhysUnitCreateFromVariant(tmp,PhysUnitData.Radian);
 end;
 function TMathFuncNode.Arcsin(x: Variant): Variant;
 begin
@@ -593,7 +594,7 @@ begin
   x:=HandleFuncOfUnits(x,'acos');
   if VarIsComplex(x) then tmp:=VarComplexArcCos(x)
   else tmp:=math.ArcCos(x);
-  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
+  Result:=PhysUnitCreateFromVariant(tmp,PhysUnitData.Radian);
 end;
 function TMathFuncNode.Arccos(x: Variant): Variant;
 begin
@@ -605,7 +606,7 @@ begin
   x:=HandleFuncOfUnits(x,'atan');
   if VarIsComplex(x) then tmp:=VarComplexArcTan(x)
   else tmp:=system.ArcTan(x);
-  Result:=VarWithUnitCreateFromVariant(tmp,auRadian);
+  Result:=PhysUnitCreateFromVariant(tmp,PhysUnitData.Radian);
 end;
 function TMathFuncNode.Arctan(x: Variant): Variant;
 begin
@@ -677,16 +678,16 @@ end;
 function TMathFuncNode.Sqrt(x: Variant): Variant;
 begin
   //самый нетривиальный, ведь может работать с размерными величинами
-  if IsVarWithUnit(x) then Result:=VarWithUnitPower(x,0.5)
+  if IsPhysUnit(x) then Result:=PhysUnitPower(x,0.5)
   else if VarIsComplex(x) then Result:=VarComplexSqrt(x)
   else Result:=system.Sqrt(x);
 end;
 
 function TMathFuncNode.Abs(x: Variant): Variant;
 begin
-  if IsVarWithUnit(x) then begin
+  if IsPhysUnit(x) then begin
     Result:=x;
-    TVariantWithUnitVarData(Result).Data.instance:=Abs(TVariantWithUnitVarData(x).Data.instance);
+    TVarWithUnitVarData(Result).Data.instance:=Abs(TVarWithUnitVarData(x).Data.instance);
   end
   else if VarIsComplex(x) then Result:=VarComplexAbs(x)
   else Result:=system.abs(x);
@@ -695,28 +696,28 @@ end;
 function TMathFuncNode.Arg(x: Variant): Variant;
 var t,t1: Variant;
 begin
-  if IsVarWithUnit(x) then
-    t:=TVariantWithUnitVarData(x).Data.instance     //аргумент-вел. безразмерная
+  if IsPhysUnit(x) then
+    t:=TVarWithUnitVarData(x).Data.instance     //аргумент-вел. безразмерная
   else t:=x;
   if VarIsComplex(t) then t1:=VarComplexAngle(t)
   else if t>=0 then t1:=0 else t1:=pi;
-  Result:=VarWithUnitCreateFromVariant(t1,auRadian);
+  Result:=PhysUnitCreateFromVariant(t1,PhysUnitData.Radian);
 end;
 
 function TMathFuncNode.Conj(x: Variant): Variant;
 begin //комплексное сопряжение
-  if IsVarWithUnit(x) then begin
+  if IsPhysUnit(x) then begin
     Result:=x;
-    TVariantWithUnitVarData(Result).data.instance:=VarComplexConjugate(TVariantWithUnitVarData(x).Data.instance);
+    TVarWithUnitVarData(Result).data.instance:=VarComplexConjugate(TVarWithUnitVarData(x).Data.instance);
   end
   else Result:=VarComplexConjugate(x);
 end;
 
 function TMathFuncNode.Re(x: Variant): Variant;
 begin
-  if IsVarWithUnit(x) then begin
+  if IsPhysUnit(x) then begin
     Result:=x;
-    TVariantWithUnitVarData(Result).Data.instance:=Re(TVariantWithUnitVarData(x).Data.instance);
+    TVarWithUnitVarData(Result).Data.instance:=Re(TVarWithUnitVarData(x).Data.instance);
   end
   else if VarIsComplex(x) then Result:=x.Real
   else Result:=x;
@@ -724,9 +725,9 @@ end;
 
 function TMathFuncNode.Im(x: Variant): Variant;
 begin
-  if IsVarWithUnit(x) then begin
+  if IsPhysUnit(x) then begin
     Result:=x;
-    TVariantWithUnitVarData(Result).Data.instance:=Im(TVariantWithUnitVarData(x).Data.instance);
+    TVarWithUnitVarData(Result).Data.instance:=Im(TVarWithUnitVarData(x).Data.instance);
   end
   else if VarIsComplex(x) then Result:=x.Imaginary
   else Result:=0.0;
@@ -959,12 +960,12 @@ end;
 constructor TVariantExpression.CreateZero(Owner: TComponent; UnitRestriction: string);
 begin
   CreateZero(Owner);
-  fUnitRestriction:=StrToConvType(UnitRestriction);
+  fUnitRestriction:=PhysUnitData.StrToConvType(UnitRestriction);
 end;
 
 procedure TVariantExpression.SetUnitRestriction(unitRestriction: string);
 begin
-  fUnitRestriction:=StrToConvType(unitRestriction);
+  fUnitRestriction:=PhysUnitData.StrToConvType(unitRestriction);
 end;
 
 procedure TVariantExpression.EnsureLexemsLen(i: Integer);
@@ -1013,7 +1014,7 @@ begin
 end;
 
 procedure TVariantExpression.LexicalAnalysis;
-var p: TOldPhysUnitParser;
+var p: TPhysUnitParser;
     LIndex,i,brLevel: Integer;
     ch: char;
     str,str1: string;
@@ -1030,14 +1031,14 @@ begin
   str1:=AddBracketsForAssign(str);
 
 
-  p:=TOldPhysUnitParser.Create(str1);
+  p:=TPhysUnitParser.Create(str1);
   p.delimiter:=' '#9;
   try
     while not p.eof do begin
       inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
       EnsureLexemsLen(LIndex+1);
       Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
-      if Lexems[LIndex].PhysUnit<>CIllegalConvType then
+      if Assigned(Lexems[LIndex].PhysUnit) then
         Lexems[LIndex].LType:=ltPhysUnit
       else begin
         Lexems[LIndex].Ident:=p.getVarPathIdent;
@@ -1063,8 +1064,8 @@ begin
                   EnsureLexemsLen(LIndex+1);
                   Lexems[LIndex].LType:=ltPhysUnitConversion;
                   Lexems[LIndex].PhysUnit:=p.getPhysUnit;
-                  if Lexems[LIndex].PhysUnit=CIllegalConvType then
-                    Lexems[LIndex].PhysUnit:=duUnity;
+                  if Lexems[LIndex].PhysUnit=nil then
+                    Lexems[LIndex].PhysUnit:=PhysUnitData.Unity;
                   if p.eof or (p.getChar<>']') then
                     Raise ELexicalErr.Create(ConversionOperatorError);
                   //теперь ищем скобочку.
@@ -1099,9 +1100,8 @@ begin
             '\': begin
               Lexems[LIndex].Ident:=p.getIdent;
               Lexems[LIndex].LType:=ltPhysUnit;
-              if Lexems[LIndex].Ident='deg' then begin
-                DescriptionToConvType('°',Lexems[LIndex].PhysUnit);
-              end;
+              if Lexems[LIndex].Ident='deg' then
+                Lexems[LIndex].PhysUnit:=PhysUnitData.StrToConvType('°');
               end;
             else begin
               p.PutBack;
@@ -1168,7 +1168,7 @@ begin
       TreeNode:=TUnitConversionNode.Create(Lexems[e].PhysUnit,nil);
       TreeNode.InsertComponent(term);
     end
-    else Raise ESyntaxErr.CreateFmt(NoExpressionToConvertTo,[ConvTypeToDescription(Lexems[e].PhysUnit)])
+    else Raise ESyntaxErr.CreateFmt(NoExpressionToConvertTo,[Lexems[e].PhysUnit.Caption.Caption])
   else
     PlusMinus(b,e,TreeNode);
 end;
@@ -1361,7 +1361,8 @@ begin
       TreeNode.InsertComponent(term);
     end
     else begin
-      Lexems[e].Ident:=ConvTypeToDescription(Lexems[e].PhysUnit);
+      //не к чему подставить величину, поэтому мы решаем, что здесь была переменная
+      //ее имя мы на всякий случай держали в Ident
       Lexems[e].LType:=ltIdent;
       BracketsAndFuncs(b,e,TreeNode);
     end
@@ -1409,14 +1410,14 @@ begin
   if b<e then raise ESyntaxErr.Create(TwoOrMoreLexemsError);
   //остается b=e
   Case Lexems[b].LType of
-    ltNumber: if IsVarWithUnit(Lexems[b].Num) then
+    ltNumber: if IsPhysUnit(Lexems[b].Num) then
       treeNode:=TConstantVariantNode.Create(Lexems[b].Num,nil)
-      else treeNode:=TConstantVariantNode.Create(VarWithUnitCreateFromVariant(Lexems[b].Num,duUnity),nil);
+      else treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(Lexems[b].Num,PhysUnitData.Unity),nil);
     ltIdent: begin
       s:=Lexems[b].Ident;
       if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
       else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
-      else if (uppercase(s)='I') then treeNode:=TConstantVariantNode.Create(VarWithUnitCreateFromVariant(VarComplexCreate(0,1),duUnity),nil)
+      else if (uppercase(s)='I') then treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(VarComplexCreate(0,1),PhysUnitData.Unity),nil)
       else if Assigned(fRootComponent) then begin
       //видать, переменная
         fComponent:=FindNestedComponent(fRootComponent,s);
@@ -1455,8 +1456,8 @@ begin
     if Assigned(fEvaluationTreeRoot) then begin
       if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
       fworking:=true;
-      if fUnitRestriction<>0 then
-        Result:=VarWithUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
+      if Assigned(fUnitRestriction) then
+        Result:=PhysUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
       else
         Result:=fEvaluationTreeRoot.getVariantValue;
       fworking:=false;
