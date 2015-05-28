@@ -14,8 +14,10 @@ type
       fBaseType: TPhysUnit;
       fFormula: TUnitsWithExponents;
       fstrformula: string;
+      fLocalList: TStringList;
     public
       constructor Create(aOwner: TComponent); override;
+      destructor Destroy; override;
       procedure SetupFormula;
       function index: Integer;
     published
@@ -32,6 +34,7 @@ type
       fShortName,fCaption: TLocalizedName;
       fScaledUp,fScaledDown: TPhysUnit;
       fPrefixOK,fIsScaled: boolean;
+      function GetSomeId: string;
     public
       constructor Create(aOwner: TComponent); override;
       function CreateScaled(mult: Real): TPhysUnit; virtual; abstract;
@@ -42,13 +45,14 @@ type
       function Family: TPhysFamily;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); virtual;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; virtual; abstract;
+      property SomeId: string read GetSomeId;
     published
       property ShortName: TLocalizedName read fShortName write fShortName;
       property Caption: TLocalizedName read fCaption write fCaption;
       property PrefixOk: Boolean read fPrefixOk write fPrefixOk default false;
       property IsScaled: Boolean read fIsScaled write fIsScaled default false;
-      property ScaledUp: TPhysUnit read fScaledUp write fScaledUp;
-      property ScaledDown: TPhysUnit read fScaledDown write fScaledDown;
+      property ScaledUp: TPhysUnit read fScaledUp write fScaledUp stored false;
+      property ScaledDown: TPhysUnit read fScaledDown write fScaledDown stored false;
     end;
 
   TNormalConvType=class(TPhysUnit)
@@ -153,6 +157,7 @@ type
 
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponents; i,j: Integer) : Real of object;
   TShowName = function(ConvType: TPhysUnit): string;
+  TShowLocalizedName = function(ConvType: TPhysUnit): TLocalizedName;
   TExponents = array of Real;
   TUnitTypes = array of TPhysUnit;
 
@@ -164,7 +169,7 @@ type
       procedure Merge(value: TUnitsWithExponents; proc: TUnitsWithExponentMergeProc);
       function MergeMul(value: TUnitsWithExponents; i,j: Integer): Real;
       function MergeDiv(value: TUnitsWithExponents; i,j: Integer): Real;
-      function ShowSomething(proc: TShowName): string;
+      function ShowLocalized(proc: TShowLocalizedName): TLocalizedName;
       procedure WriteData(writer: TWriter);
     protected
       procedure DefineProperties(filer: TFiler); override;
@@ -179,7 +184,8 @@ type
       procedure Multiply(value: TUnitsWithExponents);
       procedure Divide(right: TUnitsWithExponents);
       function AsString: string;
-      function ShowFormula: string;
+      function ShowLocFormula: TLocalizedName;
+      function ShowLocShortName: TLocalizedName;
       function GetConvType: TPhysUnit;
       function IsUnity: Boolean;
   end;
@@ -260,22 +266,19 @@ begin
       if j<=Length(str) then str[j]:=AnsiUppercase(MidStr(str,j,1))[1]
       else Exit;
     end
-    else if (str[i]='{') or (str[i]='}') or (str[i]='.') or (str[i]='^') or
-      (str[i]='*') or (str[i]='/') or (str[i]='(') or (str[i]=')') then
+    else if not TSimpleParser.isIdentSymbol(str[i]) then
       str[i]:='_';
   Result:=Result+RightStr(str,Length(str)-prev+1);
 end;
 
-function ConvTypeToStr(ConvType: TPhysUnit): string;
+function ConvTypeToLocShortName(ConvType: TPhysUnit): TLocalizedName;
 begin
-  if not ConvType.ShortName.TryCaption(Result) and
-    not ConvType.Caption.TryCaption(Result) then
-      Result:=ConvType.Name;
+  Result:=ConvType.ShortName;
 end;
 
-function ConvTypeToFamilyLetter(ConvType: TPhysUnit): string;
+function ConvTypeToLocFamilyLetter(ConvType: TPhysUnit): TLocalizedName;
 begin
-  Result:=ConvType.family.ShortName.Caption;
+  Result:=ConvType.family.ShortName;
 end;
 
 (*
@@ -288,6 +291,16 @@ begin
   fShortName:=TLocalizedName.Create(self);
   fDescription:=TLocalizedName.Create(self);
   fFormula:=TUnitsWithExponents.Create(self);
+  fLocalList:=TStringList.Create;
+  fLocalList.Sorted:=true;
+  fLocalList.Duplicates:=dupError;
+  fLocalList.CaseSensitive:=true;
+end;
+
+destructor TPhysFamily.Destroy;
+begin
+  fLocalList.Free;
+  inherited Destroy;
 end;
 
 function TPhysFamily.index: Integer;
@@ -300,6 +313,7 @@ begin
   if IsBase then fFormula.SetBaseType(BaseType)
   else fFormula.TakeFromString(formula);
 end;
+
 
 (*
     TPhysUnit
@@ -342,6 +356,12 @@ function TPhysUnit.Convert(value: Variant; var ConvType: TPhysUnit): Variant;
 begin
   Result:=ConvertFromBase(ConvType.ConvertToBase(value));
   ConvType:=self; //в большинстве случаев сработает как надо
+end;
+
+function TPhysUnit.GetSomeId: string;
+begin
+  if not Caption.TryEnglish(Result) and not ShortName.TryEnglish(Result) then
+    Result:=name;
 end;
 (*
     TNormalConvType
@@ -622,15 +642,24 @@ var j: Integer;
     fam: TPhysFamily;
 
     procedure HandleCreatedCopy;
+    var i: Integer;
+        prev: TPhysUnit;
     begin
     //для каждого языка нашей величины мы должны найти подходящий язык приставки
       cpy.ShortName.LeftConcat(pref.Prefix);
       cpy.Caption.LeftConcat(pref.FullName);
-      if cpy.Caption.enabled then
-        cpy.EnsureCorrectName(NoSpaces(cpy.fCaption.InEnglish),PhysUnitData)
-      else
-        cpy.ensureCorrectName(NoSpaces(cpy.ShortName.InEnglish),PhysUnitData);
-      ct.Owner.InsertComponent(cpy);
+      cpy.EnsureCorrectName(NoSpaces(cpy.getSomeId),fam);
+
+      i:=fam.fLocalList.IndexOf(cpy.GetSomeId);
+      if (i>=0) then begin
+        prev:=fam.flocalList.Objects[i] as TPhysUnit;
+        if fam.BaseType=prev then
+          fam.BaseType:=cpy;
+        prev.Free;
+      end;
+
+      fam.InsertComponent(cpy);
+      fam.fLocalList.AddObject(cpy.GetSomeId,cpy);
     end;
 
     procedure AddToList;
@@ -651,6 +680,7 @@ begin
   while Assigned(ct) do begin
     if ct.PrefixOk then begin
       fn:=ct.Name;
+      fam:=ct.Owner as TPhysFamily;
       //нашли новую жертву
       for j:=0 to UnitPrefixes.fHigher.Count-1 do begin
         pref:=TUnitPrefix(UnitPrefixes.fHigher[j]);
@@ -710,7 +740,7 @@ begin
   fDMS:=FindComponent('Angle').FindComponent('DMS') as TPhysUnit;
   fRadian:=FindComponent('Angle').FindComponent('Radian') as TPhysUnit;
 
-  fMegaList.SaveToFile('megalist.txt');
+//  fMegaList.SaveToFile('megalist.txt');
   fWarningList.SaveToFile('warnings.txt');
   end;
 end;
@@ -751,7 +781,7 @@ begin
         end
       end;
     //если дошли до этого места, значит он все с приставками, выберем наобум
-      warningProc(Format('we used %s',[Result.Caption.Caption]));
+      if Assigned(warningproc) then warningProc(Format('we used %s',[Result.Caption.Caption]));
     end
     else
       Result:=TPhysUnit(fMegaList.Objects[i])
@@ -1103,8 +1133,14 @@ begin
 end;
 
 function TUnitsWithExponents.AsString: string;
+var str: TLocalizedName;
 begin
-  result:=ShowSomething(ConvTypeToStr);
+  str:=ShowLocShortName;
+//  if str.strings.Count<>0 then
+    result:=str.InEnglish;
+//  if result='' then
+//    assert(result='','wtf');
+  str.Free;
 end;
 
 procedure TUnitsWithExponents.Clear;
@@ -1246,27 +1282,33 @@ begin
   Exponents[0]:=1;
 end;
 
-function TUnitsWithExponents.ShowFormula: string;
-begin
-  Result:=ShowSomething(ConvTypeToFamilyLetter);
-end;
-
-function TUnitsWithExponents.ShowSomething(proc: TShowName): string;
+function TUnitsWithExponents.ShowLocalized(proc: TShowLocalizedName): TLocalizedName;
 var i: Integer;
 begin
-  Result:='';
+  Result:=TLocalizedName.CreateEmptyNeutral;
   for i:=0 to fCount-1 do begin
     if Exponents[i]=1 then
-      Result:=Result+proc(UnitTypes[i])
+      Result.RightConcat(proc(UnitTypes[i]))
     else begin
-      Result:=Result+'('+proc(UnitTypes[i])+')^';
+      Result.RightConcat(proc(UnitTypes[i]));
+      Result.RightConcat('^');
       if Exponents[i]<0 then
-        Result:=Result+'('+FloatToStr(Exponents[i])+')'
+        Result.RightConcat('('+FloatToStr(Exponents[i])+')')
       else
-        Result:=Result+FloatToStr(Exponents[i]);
+        Result.RightConcat(FloatToStr(Exponents[i]));
     end;
-    if i<fCount-1 then Result:=Result+'*';
+    if i<fCount-1 then Result.RightConcat('*');
   end;
+end;
+
+function TUnitsWithExponents.ShowLocFormula: TLocalizedName;
+begin
+  Result:=ShowLocalized(ConvTypeToLocFamilyLetter);
+end;
+
+function TUnitsWithExponents.ShowLocShortName: TLocalizedName;
+begin
+  Result:=ShowLocalized(ConvTypeToLocShortName);
 end;
 
 function TUnitsWithExponents.TakeFromString(formula: string): Real;
@@ -1331,7 +1373,8 @@ begin
   //не нашли подходящую семью - придется создать!
   fam:=TPhysFamily.Create(boss);
   fam.fFormula.Assign(self);
-  fam.Name:=NoSpaces(ShowFormula);
+  fam.ShortName:=ShowLocShortName;
+  fam.Name:=NoSpaces(fam.ShortName.InEnglish);
   //и еще подходящую единицу измерения создадим
   //нормальную, других нельзя
   un:=TNormalConvType.Create(fam);
@@ -1573,7 +1616,7 @@ begin
       L:=VarGetLength(vwithunit.instance);
       if (L<1) and Assigned(vwithunit.ConvType.ScaledDown) then
         vwithunit.Conversion(vwithunit.ConvType.ScaledDown)
-      else if (L>1000) and Assigned(vwithunit.ConvType.ScaledUp) then
+      else if (L>=1000) and Assigned(vwithunit.ConvType.ScaledUp) then
         vwithunit.Conversion(vwithunit.ConvType.ScaledUp)
       else begin
         PhysUnitCreateInto(Result,vwithunit);

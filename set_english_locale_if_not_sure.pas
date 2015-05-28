@@ -81,6 +81,7 @@ type
       procedure DefineProperties(filer: TFiler); override;
     public
       constructor Create(aOwner: TComponent); override;
+      constructor CreateEmptyNeutral(aOwner: Tcomponent=nil);
       destructor Destroy; override;
       procedure Assign(source: TPersistent); override;
       procedure Clear;
@@ -88,6 +89,7 @@ type
       function TryCaption(out Caption: string): Boolean;
       function MatchingString(Lang: TObject): string;
       function TryMatchingString(Lang: TObject; out val: string): Boolean;
+      function TryEnglish(out val: string): Boolean;
       function InEnglish: string;
       function Enabled: Boolean;
       function isNeutral(index: Integer): Boolean;
@@ -95,6 +97,8 @@ type
       procedure AddInCurrentLang(str: string);
       procedure LeftConcat(source: TLocalizedName; chr: string=''); overload;
       procedure LeftConcat(str: string); overload;
+      procedure RightConcat(source: TLocalizedName; chr: string=''); overload;
+      procedure RightConcat(str: string); overload;
       property strings: TStringList read fstrings;
 //      function EqualsTo(value: string): Boolean;
   end;
@@ -443,6 +447,12 @@ begin
   fStrings:=TStringList.Create;
 end;
 
+constructor TLocalizedName.CreateEmptyNeutral(aOwner: TComponent=nil);
+begin
+  Create(aOwner);
+  strings.AddObject('',nil);
+end;
+
 destructor TLocalizedName.Destroy;
 begin
   fStrings.Free;
@@ -514,6 +524,11 @@ begin
   Result:=TryMatchingString(TObject(LocalePreferences.languageID),Caption);
 end;
 
+function TLocalizedName.TryEnglish(out val: string): Boolean;
+begin
+  Result:=TryMatchingString(TObject(1033),val);
+end;
+
 function TLocalizedName.InEnglish: string;
 begin
   Result:=MatchingString(Tobject(1033));
@@ -566,11 +581,44 @@ begin //add source to the left of us, and we are main here
   fstrings:=new_strings;
 end;
 
+procedure TLocalizedName.RightConcat(source: TLocalizedName; chr: string='');
+var i,j: Integer;
+    new_strings: TStringList;
+begin //add source to the right of us, and we are main here
+  new_strings:=TStringList.Create;
+  for i:=0 to strings.Count-1 do
+    if isNeutral(i) then
+      for j:=0 to source.strings.Count-1 do
+        new_strings.AddObject(strings[i]+chr+source.strings[j],source.strings.Objects[j])
+    else begin
+      j:=source.strings.IndexOfObject(strings.Objects[i]);
+      if j>=0 then
+        new_strings.AddObject(strings[i]+chr+source.strings[j],strings.Objects[i])
+      else begin
+        j:=source.strings.IndexOfObject(nil);
+        if j>=0 then
+          new_strings.AddObject(strings[i]+chr+source.strings[j],strings.Objects[i]);
+      end;
+    end;
+//  if new_strings.Count=0 then
+//    Assert(fstrings.Count>0,'RightConcat yielded empty locale string');
+//    Raise Exception.CreateFmt('%s + %s yielded empty string',[strings.Text,source.strings.Text]);
+  strings.Free;
+  fstrings:=new_strings;    
+end;
+
 procedure TLocalizedName.LeftConcat(str: string);
 var i: Integer;
 begin
   for i:=0 to strings.Count-1 do
     strings[i]:=str+strings[i];
+end;
+
+procedure TLocalizedName.RightConcat(str: string);
+var i: Integer;
+begin
+  for i:=0 to strings.Count-1 do
+    strings[i]:=strings[i]+str;
 end;
 
 initialization

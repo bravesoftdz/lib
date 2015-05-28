@@ -10,18 +10,18 @@ TSimpleParser=class
   private
     function isSpace(ch: char): boolean;
     function isDelimiter(ch: char): boolean;
-    function isFirstIdentSymbol(ch: char): boolean;
-    function isIdentSymbol(ch: char): boolean;
     function isPhysIdentSymbol(ch: char): boolean;
   protected
     _str: string;
     _pos: Integer;
     fBackupPos: Integer;
     procedure skip_spaces;
-    function isNumberSymbol(ch: char): boolean;    
   public
     spaces: string;
     delimiter: string;
+    class function isNumberSymbol(ch: char): boolean;
+    class function isFirstIdentSymbol(ch: char): boolean;
+    class function isIdentSymbol(ch: char): boolean;
     constructor Create; overload;
     constructor Create(str: String); overload;
     procedure AssignString(str: String);
@@ -108,7 +108,7 @@ begin
   result:=false;
 end;
 
-function TSimpleParser.isFirstIdentSymbol(ch: Char): Boolean;
+class function TSimpleParser.isFirstIdentSymbol(ch: Char): Boolean;
 begin
   result:=((ch>='A') and (ch<='Z')) or ((ch>='a') and (ch<='z')) or
     ((ch>='À') and (ch<='ß')) or ((ch>='à') and (ch<='ÿ')) or (ch='_');
@@ -121,12 +121,12 @@ begin
     (ch<>')') and not isSpace(ch) and (ch<>'[') and (ch<>']') and (ch<>'^');
 end;
 
-function TSimpleParser.isNumberSymbol(ch: Char): Boolean;
+class function TSimpleParser.isNumberSymbol(ch: Char): Boolean;
 begin
   result:=(ch>='0') and (ch<='9');
 end;
 
-function TSimpleParser.isIdentSymbol(ch: Char): Boolean;
+class function TSimpleParser.isIdentSymbol(ch: Char): Boolean;
 begin
   result:=IsFirstIdentSymbol(ch) or isNumberSymbol(ch);
 end;
