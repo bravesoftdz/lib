@@ -2,7 +2,7 @@ unit new_phys_unit_lib;
 
 interface
 uses set_english_locale_if_not_sure,streaming_class_lib,classes,
-  command_class_lib,iterator_lib,variantWrapper,Contnrs,sysUtils,simple_parser_lib;
+  command_class_lib,variantWrapper,Contnrs,sysUtils,simple_parser_lib;
 
 type
   TPhysUnit =class;
@@ -134,7 +134,6 @@ type
 
   TPhysUnitData = class(TAbstractDocument)
   private
-    fConvUnitsIterator: TAbstractDocumentClassIterator;
     fFamilyList: TObjectList;
     fMegaList: TStringList;
     fWarningList: TStringList;
@@ -234,7 +233,7 @@ type
   end;
 
   EPhysUnitError = class (Exception);
-
+  procedure InitPhysUnitData;
   function IsPhysUnit(V: Variant): Boolean;
   function IsDimensionless(V: Variant): Boolean;
   procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
@@ -613,7 +612,6 @@ constructor TPhysUnitData.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
   fFamilyList:=TObjectList.Create(false);
-  fConvUnitsIterator:=TAbstractDocumentClassIterator.Create(self,TPhysUnit);
   fMegaList:=TStringList.Create;
   fMegaList.CaseSensitive:=true;
   fMegaList.Sorted:=true;
@@ -631,15 +629,15 @@ end;
 
 
 procedure InitPhysUnitData;
-var j: Integer;
+var j,k,z: Integer;
     ct: TPhysUnit;
     cpy: TPhysUnit;
     pref: TUnitPrefix;
     m1: Real;
-    fn: string;
     dimensionless: TUnitsWithExponents;
     nm: TLocalizedName;
     fam: TPhysFamily;
+    objlist: TObjectList;
 
     procedure HandleCreatedCopy;
     var i: Integer;
@@ -649,15 +647,16 @@ var j: Integer;
       cpy.ShortName.LeftConcat(pref.Prefix);
       cpy.Caption.LeftConcat(pref.FullName);
       cpy.EnsureCorrectName(NoSpaces(cpy.getSomeId),fam);
-
       i:=fam.fLocalList.IndexOf(cpy.GetSomeId);
       if (i>=0) then begin
         prev:=fam.flocalList.Objects[i] as TPhysUnit;
-        if fam.BaseType=prev then
-          fam.BaseType:=cpy;
-        prev.Free;
+        if cpy.EqualsByAnyOtherName(prev) then begin
+          if fam.BaseType=prev then
+            fam.BaseType:=cpy;
+          fam.fLocalList.Delete(i);
+          prev.Free;
+        end;
       end;
-
       fam.InsertComponent(cpy);
       fam.fLocalList.AddObject(cpy.GetSomeId,cpy);
     end;
@@ -674,74 +673,85 @@ var j: Integer;
 
 begin
   with PhysUnitData do begin
-  UnitPrefixes.PrepareLists;
-//создадим физ. величины с приставками
-  fConvUnitsIterator.First(ct);
-  while Assigned(ct) do begin
-    if ct.PrefixOk then begin
-      fn:=ct.Name;
-      fam:=ct.Owner as TPhysFamily;
-      //нашли новую жертву
-      for j:=0 to UnitPrefixes.fHigher.Count-1 do begin
-        pref:=TUnitPrefix(UnitPrefixes.fHigher[j]);
-        m1:=pref.Multiplier;
-        cpy:=ct.CreateAndConnectScaled(m1);
-        HandleCreatedCopy;
+    if not Assigned(UnitPrefixes) then
+      UnitPrefixes:=TUnitPrefixes.Create(PhysUnitData);
+    UnitPrefixes.PrepareLists;
+    objList:=TObjectList.Create(false);
+    //создадим физ. величины с приставками
+    for j:=0 to fFamilyList.Count-1 do begin
+      fam:=fFamilyList[j] as TPhysFamily;
+      objList.Clear;
+      for k:=0 to fam.ComponentCount-1 do
+        if fam.Components[k] is TPhysUnit then
+          objList.Add(fam.Components[k]);
+      for k:=0 to objList.Count-1 do begin
+        ct:=TPhysUnit(objList[k]);
+        fam.fLocalList.AddObject(ct.GetSomeId,ct);
+        if ct.PrefixOk then begin
+        //нашли новую жертву
+          for z:=0 to UnitPrefixes.fHigher.Count-1 do begin
+            pref:=TUnitPrefix(UnitPrefixes.fHigher[z]);
+            m1:=pref.Multiplier;
+            cpy:=ct.CreateAndConnectScaled(m1);
+            HandleCreatedCopy;
+          end;
+          for z:=UnitPrefixes.fLower.Count-1 downto 0 do begin
+            pref:=TUnitPrefix(UnitPrefixes.fLower[z]);
+            m1:=pref.Multiplier;
+            cpy:=ct.CreateAndConnectScaled(m1);
+            HandleCreatedCopy;
+          end;
+          //остальные приставки нам не нравятся!
+          for z:=0 to UnitPrefixes.fOther.Count-1 do begin
+            pref:=TUnitPrefix(UnitPrefixes.fOther[z]);
+            m1:=pref.Multiplier;
+            cpy:=ct.CreateScaled(m1);
+            HandleCreatedCopy;
+          end;
+        end;
       end;
-      for j:=UnitPrefixes.fLower.Count-1 downto 0 do begin
-        pref:=TUnitPrefix(UnitPrefixes.fLower[j]);
-        m1:=pref.Multiplier;
-        cpy:=ct.CreateAndConnectScaled(m1);
-        HandleCreatedCopy;
-      end;
-      //остальные приставки нам не нравятся!
-      for j:=0 to UnitPrefixes.fOther.Count-1 do begin
-        pref:=TUnitPrefix(UnitPrefixes.fOther[j]);
-        m1:=pref.Multiplier;
-        cpy:=ct.CreateScaled(m1);
-        HandleCreatedCopy;
-      end;
+      for k:=0 to fam.ComponentCount-1 do
+        if fam.Components[k] is TPhysUnit then begin
+          ct:=TPhysUnit(fam.Components[k]);
+          //все величины введены, теперь можно составить гигантский список, чтобы быстрее искать
+          //(по алфавиту) и определять повторяющиеся названия
+          nm:=TLocalizedName.Create(nil);
+          nm.Assign(ct.ShortName);
+          AddToList;
+          nm.LeftConcat(fam.Caption,'.');
+          AddToList;
+          nm.Assign(ct.ShortName);
+          nm.LeftConcat(fam.ShortName,'.');
+          AddToList;
+          nm.Assign(ct.Caption);
+          AddToList;
+          nm.LeftConcat(fam.Caption,'.');
+          AddToList;
+          nm.Assign(ct.Caption);
+          nm.LeftConcat(fam.ShortName,'.');
+          AddToList;
+          nm.Free;
+        end;
     end;
-    fConvUnitsIterator.Next(ct);
-  end;
-  //все величины введены, теперь можно составить гигантский список, чтобы быстрее искать
-  //(по алфавиту) и определять повторяющиеся названия
-  fConvUnitsIterator.First(ct);
-  while Assigned(ct) do begin
-    nm:=TLocalizedName.Create(nil);
-    nm.Assign(ct.ShortName);
-    AddToList;
-    fam:=ct.owner as TPhysFamily;
-    nm.LeftConcat(fam.Caption,'.');
-    AddToList;
-    nm.Assign(ct.ShortName);
-    nm.LeftConcat(fam.ShortName,'.');
-    AddToList;
-    nm.Assign(ct.Caption);
-    AddToList;
-    nm.LeftConcat(fam.Caption,'.');
-    AddToList;
-    nm.Assign(ct.Caption);
-    nm.LeftConcat(fam.ShortName,'.');
-    AddToList;
-    nm.Free;
-    fConvUnitsIterator.Next(ct);
-  end;
+    objlist.Free;
 
-  //на этом этапе TUnitsWithExponents должна стать работоспособной
-  for j:=0 to fFamilyList.Count-1 do
-    (fFamilyList[j] as TPhysFamily).SetupFormula;
-  //осталось
-  //найти Unity, а именно - стандартную безразм. величину
-  dimensionless:=TUnitsWithExponents.Create(nil);
-  funity:=dimensionless.GetConvType;
-  dimensionless.Free;
-  //и еще DMS отыскать, ну пусть он будет тупо в семье Angle и под именем DMS
-  fDMS:=FindComponent('Angle').FindComponent('DMS') as TPhysUnit;
-  fRadian:=FindComponent('Angle').FindComponent('Radian') as TPhysUnit;
+    //на этом этапе TUnitsWithExponents должна стать работоспособной
+    for j:=0 to fFamilyList.Count-1 do
+      (fFamilyList[j] as TPhysFamily).SetupFormula;
+      //осталось
+      //найти Unity, а именно - стандартную безразм. величину
+    dimensionless:=TUnitsWithExponents.Create(nil);
+    funity:=dimensionless.GetConvType;
+    dimensionless.Free;
+    //и еще DMS отыскать, ну пусть он будет тупо в семье Angle и под именем DMS
+    fam:=FindComponent('Angle') as TPhysFamily;
+    if Assigned(fam) then begin
+      fDMS:=fam.FindComponent('DMS') as TPhysUnit;
+      fRadian:=fam.FindComponent('Radian') as TPhysUnit;
+    end;
 
-//  fMegaList.SaveToFile('megalist.txt');
-  fWarningList.SaveToFile('warnings.txt');
+    fMegaList.SaveToFile('megalist.txt');
+    fWarningList.SaveToFile('warnings.txt');
   end;
 end;
 
@@ -1633,7 +1643,7 @@ initialization
   RegisterClasses([TAffineConvType,TLogarithmicConvType,TNormalConvType,
   TPhysUnitData,TPhysFamily,TUnitPrefix,TUnitPrefixes]);
 
-  PhysUnitData:=TPhysUnitData.LoadFromFile('PhysUnitData.txt');
+  PhysUnitData:=TPhysUnitData.Create(nil);
   InitPhysUnitData;
   VarWithUnitVariantType:=TVarWithUnitType.Create;
 finalization
