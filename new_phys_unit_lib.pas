@@ -2,7 +2,7 @@ unit new_phys_unit_lib;
 
 interface
 uses set_english_locale_if_not_sure,streaming_class_lib,classes,
-  command_class_lib,variantWrapper,Contnrs,sysUtils,simple_parser_lib;
+  variantWrapper,Contnrs,sysUtils,simple_parser_lib;
 
 type
   TPhysUnit =class;
@@ -132,7 +132,7 @@ type
 
   TPhysUnitMessagesProc = procedure (line: string); //цвет сами придумаем
 
-  TPhysUnitData = class(TAbstractDocument)
+  TPhysUnitData = class(TStreamingClass)
   private
     fFamilyList: TObjectList;
     fMegaList: TStringList;
@@ -264,10 +264,17 @@ begin
       prev:=j;
       if j<=Length(str) then str[j]:=AnsiUppercase(MidStr(str,j,1))[1]
       else Exit;
-    end
-    else if not TSimpleParser.isIdentSymbol(str[i]) then
-      str[i]:='_';
+    end;
   Result:=Result+RightStr(str,Length(str)-prev+1);
+end;
+
+function ToAcceptableName(str: string): string;
+var i: Integer;
+begin
+  Result:=NoSpaces(str);
+  for i:=1 to Length(Result) do
+    if not TSimpleParser.isIdentSymbol(Result[i]) then
+      Result[i]:='_';
 end;
 
 function ConvTypeToLocShortName(ConvType: TPhysUnit): TLocalizedName;
@@ -490,7 +497,7 @@ begin
     der.ShortName.strings[i]:=Format('%s{%g}',[der.ShortName.strings[i],Factor]);
   for i:=0 to der.Caption.strings.Count-1 do
     der.Caption.strings[i]:=Format('%s{%g}',[der.Caption.strings[i],Factor]);
-  der.ensureCorrectName(NoSpaces(der.Caption.InEnglish),owner);
+  der.ensureCorrectName(ToAcceptableName(der.Caption.InEnglish),owner);
   owner.InsertComponent(der);
   Result:=der;
   //и в megalist добавить неплохо бы! Хотя это половинчатое решение - надо по-хорошему
@@ -646,7 +653,7 @@ var j,k,z: Integer;
     //для каждого языка нашей величины мы должны найти подходящий язык приставки
       cpy.ShortName.LeftConcat(pref.Prefix);
       cpy.Caption.LeftConcat(pref.FullName);
-      cpy.EnsureCorrectName(NoSpaces(cpy.getSomeId),fam);
+      cpy.EnsureCorrectName(ToAcceptableName(cpy.getSomeId),fam);
       i:=fam.fLocalList.IndexOf(cpy.GetSomeId);
       if (i>=0) then begin
         prev:=fam.flocalList.Objects[i] as TPhysUnit;
@@ -734,6 +741,12 @@ begin
         end;
     end;
     objlist.Free;
+    //еще нужно лист привести в порядок немножко
+    fMegaList.Sorted:=false;
+    for j:=0 to fMegaList.Count-1 do
+     fMegaList[j]:=NoSpaces(fMegaList[j]);
+    fMegaList.Sorted:=true;
+    fMegaList.Sort;
 
     //на этом этапе TUnitsWithExponents должна стать работоспособной
     for j:=0 to fFamilyList.Count-1 do
@@ -807,7 +820,7 @@ begin
       Result:=obj
     else begin
       Result:=TNormalConvType.Create(obj.Owner);
-      Result.ensureCorrectName(NoSpaces(str),Result.Owner);
+      Result.ensureCorrectName(ToAcceptableName(str),Result.Owner);
       Result.ShortName.AddInCurrentLang(str); //халтура
       NormalRslt.Multiplier:=multiplier;
     end;
@@ -1367,33 +1380,31 @@ end;
 
 
 function TUnitsWithExponents.GetConvType: TPhysUnit;
-var boss: TPhysUnitData;
-    i: Integer;
+var i: Integer;
     fam: TPhysFamily;
     un: TNormalConvType;
 begin
-  boss:=PhysUnitData;
-  for i:=0 to boss.fFamilyList.Count-1 do begin
-    fam:=boss.fFamilyList[i] as TPhysFamily;
+  for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
+    fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
     if SameFamily(fam.fFormula) then begin
       Result:=fam.BaseType;
       Exit;
     end;
   end;
   //не нашли подходящую семью - придется создать!
-  fam:=TPhysFamily.Create(boss);
+  fam:=TPhysFamily.Create(PhysUnitData);
   fam.fFormula.Assign(self);
-  fam.ShortName:=ShowLocShortName;
-  fam.Name:=NoSpaces(fam.ShortName.InEnglish);
+  fam.ShortName:=ShowLocFormula;
+  fam.Name:=ToAcceptableName(fam.ShortName.InEnglish);
   //и еще подходящую единицу измерения создадим
   //нормальную, других нельзя
   un:=TNormalConvType.Create(fam);
-  un.Name:=NoSpaces(AsString);
+  un.Name:=ToAcceptableName(AsString);
   un.Multiplier:=1;
   //нужно ей и название сформировать, чтоб находить на всех языках
   //или хотя бы на одном
   //shortname или caption - пофиг по большому счету!
-  un.ShortName.AddInCurrentLang(AsString);
+  un.ShortName:=ShowLocShortName;
   fam.BaseType:=un;
   Result:=un;
 end;
