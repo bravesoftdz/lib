@@ -1,0 +1,45 @@
+object TLocalePreferences
+  LangID.data = (
+    'English;9;1'
+    'English_uk;9;2'
+    'Neutral;0;0'
+    'Russian;19;0'
+    'German;7;1')
+  LangPrefMatrix.data = (
+    English
+    (
+      Neutral
+      English
+      English_uk
+      German
+      Russian)
+    Russian
+    (
+      Neutral
+      Russian
+      English
+      English_uk
+      German)
+    English_uk
+    (
+      Neutral
+      English_uk
+      English
+      German
+      Russian)
+    German
+    (
+      Neutral
+      German
+      English
+      English_uk
+      Russian)
+    Neutral
+    (
+      Neutral
+      English
+      English_uk
+      Russian
+      German)
+)
+end

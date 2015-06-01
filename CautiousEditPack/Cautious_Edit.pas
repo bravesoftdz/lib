@@ -331,7 +331,7 @@ end;
 constructor TVariantEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
-  if (csDesigning in ComponentState) then value:=0;
+  if (csDesigning in ComponentState) then value:=StrToFloat('0');
 end;
 
 function TVariantEdit.isValid: Boolean;
