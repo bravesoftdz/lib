@@ -198,9 +198,7 @@ type
     FundamentalPhysConstants: TFundamentalPhysConstants;
   end;
 
-
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponents; i,j: Integer) : Real of object;
-  TShowName = function(ConvType: TPhysUnit): string;
   TShowLocalizedName = function(ConvType: TPhysUnit): TLocalizedName;
   TExponents = array of Real;
   TUnitTypes = array of TPhysUnit;
@@ -234,8 +232,6 @@ type
       function IsUnity: Boolean;
   end;
 
-
-
   TVarWithUnit=class(TAbstractWrapperData)
     private
       ConvType: TPhysUnit;
@@ -245,7 +241,7 @@ type
       constructor Create(text: string); overload;
       constructor CreateFromVariant(source: Variant; aConvType: TPhysUnit);
       procedure Assign(source: TPersistent); overload; override;
-      procedure Assign(str: string); reintroduce; overload;
+//      procedure Assign(str: string); reintroduce; overload;
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
@@ -283,7 +279,7 @@ type
   function IsPhysUnit(V: Variant): Boolean;
   function IsDimensionless(V: Variant): Boolean;
   procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
-  function PhysUnitCreate(text: string): Variant;  
+//  function PhysUnitCreate(text: string): Variant;
   function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
   function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
@@ -404,8 +400,10 @@ begin
 end;
 
 procedure TPhysUnit.Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
+resourcestring
+  AbstractErrorAdd = 'could not add %s and %s';
 begin
-  Raise Exception.CreateFmt('Unable to add %s with %s',[Caption.Caption,t.Caption.Caption]);
+  Raise Exception.CreateFmt(AbstractErrorAdd,[Caption.Caption,t.Caption.Caption]);
 end;
 
 function TPhysUnit.Convert(value: Variant; var ConvType: TPhysUnit): Variant;
@@ -576,7 +574,7 @@ begin
   if VarIsNumeric(value) then
     Result:=Log10Multiplier*log10(value/ZeroValue)
   else
-    Raise Exception.Create(LogarithmicConvTypeRequiresRealNum);
+    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
 
 function TLogarithmicConvType.ConvertToBase(value: Variant): Variant;
@@ -584,13 +582,14 @@ begin
   if VarIsNumeric(value) then
     Result:=ZeroValue*power(10.0,(value/Log10Multiplier))
   else
-    Raise Exception.Create(LogarithmicConvTypeRequiresRealNum);
+    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
 
 function TLogarithmicConvType.MultiplyByNumber(v1,num: Variant;
   var ConvType: TPhysUnit): Variant;
 begin
   if VarIsNumeric(v1) then
+//    if VarIsNumeric(num) then
     Result:=v1+log10multiplier*log10(num)
   else
     Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
@@ -601,7 +600,7 @@ var cpy: TLogarithmicConvType absolute Result;
 begin
   Result:=TLogarithmicConvType.Clone(self);
   Result.PrefixOk:=false;
-  Result.IsScaled:=true;  
+  Result.IsScaled:=true;
   cpy.Log10Multiplier:=Log10Multiplier/mult;
 end;
 
@@ -845,6 +844,9 @@ var i,j,k: Integer;
     fml: TUnitsWithExponents;
     multiplier: Real;
     NormalRslt: TNormalConvType absolute Result;
+resourcestring
+  StrCanReferTo = '%s can refer to:';
+  ConvTypeWeUsedIs = 'we used %s';
 begin
   i:=fMegaList.IndexOf(str);
   if i>=0 then begin
@@ -853,7 +855,7 @@ begin
     if j>i+1 then begin //неоднозначность
     //выведем в warning разные варианты
       if Assigned(warningProc) then begin
-        warningProc(Format('%s can refer to:',[str]));
+        warningProc(Format(StrCanReferTo,[str]));
         for k:=i to j-1 do
           warningProc(TPhysUnit(fMegaList.Objects[k]).Caption.Caption);
       end;
@@ -862,12 +864,12 @@ begin
         Result:=TPhysUnit(fMegaList.Objects[k]);
         if not Result.IsScaled then begin
           if Assigned(warningProc) then
-            warningProc(Format('we used %s',[Result.Caption.Caption]));
+            warningProc(Format(ConvTypeWeUsedIs,[Result.Caption.Caption]));
           Exit;
         end
       end;
     //если дошли до этого места, значит они все с приставками, выберем наобум
-      if Assigned(warningproc) then warningProc(Format('we used %s',[Result.Caption.Caption]));
+      if Assigned(warningproc) then warningProc(Format(ConvTypeWeUsedIs,[Result.Caption.Caption]));
     end
     else
       Result:=TPhysUnit(fMegaList.Objects[i])
@@ -905,6 +907,7 @@ begin
   else inherited Assign(source);
 end;
 
+(*
 procedure TVarWithUnit.Assign(str: string);
 var unitStr: string;
     i: Integer;
@@ -939,6 +942,7 @@ begin
     end;
   end;
 end;
+*)
 
 function TVarWithUnit.AsString: string;
 var deg,min: Variant;
@@ -991,7 +995,6 @@ begin
 //      Raise EPhysUnitError.Create('sorry, implicit conversion not supported right now');
     //попробуем выразить, зная, что c=1, h=1 и т.д.
       buConvType:=ConvType;
-      new_formula:=nil;
       formula:=TUnitsWithExponents.Create(nil);
       try
         formula.Assign(ConvType.family.fFormula);
@@ -1037,7 +1040,7 @@ end;
 constructor TVarWithUnit.Create(text: string);
 begin
   Create;
-  Assign(text);
+//  Assign(text);
 end;
 
 constructor TVarWithUnit.CreateFromVariant(source: Variant;
@@ -1422,6 +1425,8 @@ var p: TSimpleParser;
     pow: Real;
     isDivide: Boolean;
     nextDivide: Boolean;
+resourcestring
+  UnitsWithExponentsSyntaxErr = 'Syntax error in unit %s';
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
@@ -1441,7 +1446,8 @@ begin
         if ch='^' then begin
           pow:=p.getFloat;
           if (not p.eof) then begin
-            if (p.NextChar<>'*') and (p.NextChar<>'/')  then Raise EPhysUnitError.CreateFmt('Syntax error in unit %s',[formula]);
+            if (p.NextChar<>'*') and (p.NextChar<>'/') then
+              Raise EPhysUnitError.CreateFmt(UnitsWithExponentsSyntaxErr,[formula]);
             nextDivide:=(p.getChar='/');
           end;
         end
@@ -1784,10 +1790,12 @@ begin
   TWrapperVarData(ADest).Data:=Adata;
 end;
 
+(*
 function PhysUnitCreate(text: string): Variant;
 begin
   PhysUnitCreateInto(Result,TVarWithUnit.Create(text));
 end;
+*)
 
 function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
 resourcestring
