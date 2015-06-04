@@ -210,19 +210,19 @@ TAbstractExpression=class(TComponent,IExpression)
 end;
 
 TLexemType=(ltLeftBracket,ltRightBracket,ltPlus,ltMinus,ltMul,ltDiv,ltPow,
-  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion,ltPar,ltAssign);
+  ltNumber,ltIdent,ltPhysUnit,ltPhysUnitConversion,ltPar,ltAssign,ltLeftSquareBracket,ltRightSquareBracket);
 TLexem=record
   LType: TLexemType;
   Num: Variant; //комплексное число тоже может быть
   Ident: string;
   PhysUnit: TPhysUnit;
+  startStr,endStr: Integer; //начало и конец лексемы в строке
 end;
 
 TAssignValueToVariableProc = function (aname: string; avalue: Variant): Boolean;
 
 TVariantExpression=class(TAbstractExpression)  //
   private
-    Lexems: array of TLexem;
     fUnitRestriction: TPhysUnit;
     procedure EnsureLexemsLen(i: Integer);
   protected
@@ -239,6 +239,7 @@ TVariantExpression=class(TAbstractExpression)  //
     procedure BracketsAndFuncs(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
   public
+    Lexems: array of TLexem;  
     AssignValueToVariableProc: TAssignValueToVariableProc;
     constructor CreateZero(owner: TComponent; unitRestriction: string);reintroduce; overload;
     procedure SetUnitRestriction(unitRestriction: string); 
@@ -1037,80 +1038,91 @@ begin
     while not p.eof do begin
       inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
       EnsureLexemsLen(LIndex+1);
-      Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
-      if Assigned(Lexems[LIndex].PhysUnit) then
-        Lexems[LIndex].LType:=ltPhysUnit
+
+      Lexems[LIndex].startStr:=p.Pos;
+      //хочется по контексту понять, может ли здесь быть ед. изм?
+      //после +,-,*,/,^,||,=,(,PhysUnit - точно нет
+      //после числа - может быть
+      //после ) - может быть
+      if (LIndex>0) and (Lexems[LIndex-1].LType in [ltRightBracket,ltNumber]) then begin
+        Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
+        if Assigned(Lexems[LIndex].PhysUnit) then begin
+          Lexems[LIndex].LType:=ltPhysUnit;
+          Lexems[LIndex].endStr:=p.Pos;
+          Continue;
+        end;
+      end;
+
+      Lexems[LIndex].Ident:=p.getVarPathIdent;
+      if Lexems[LIndex].Ident<>'' then
+        Lexems[LIndex].LType:=ltIdent
       else begin
-        Lexems[LIndex].Ident:=p.getVarPathIdent;
-        if Lexems[LIndex].Ident<>'' then
-          Lexems[LIndex].LType:=ltIdent
-        else begin
-          ch:=p.getChar;
-          case ch of
-            ')': Lexems[LIndex].LType:=ltRightBracket;
-            '(': Lexems[LIndex].LType:=ltLeftBracket;
-            '+': Lexems[LIndex].LType:=ltPlus;
-            '-': Lexems[LIndex].LType:=ltMinus;
-            '*': Lexems[LIndex].LType:=ltMul;
-            '/': if (not p.eof) and (p.nextChar='/') then begin
-                  //нашли комментарий, игнорируем все
-                  dec(LIndex);
-                  break;
-                  end
-                  else Lexems[LIndex].LType:=ltDiv;
-            '^': Lexems[LIndex].LType:=ltPow;
-            '[': begin
-                  inc(LIndex);  //у нас еще скобочка появится где-то слева
-                  EnsureLexemsLen(LIndex+1);
-                  Lexems[LIndex].LType:=ltPhysUnitConversion;
-                  Lexems[LIndex].PhysUnit:=p.getPhysUnit;
-                  if Lexems[LIndex].PhysUnit=nil then
-                    Lexems[LIndex].PhysUnit:=PhysUnitData.Unity;
-                  if p.eof or (p.getChar<>']') then
-                    Raise ELexicalErr.Create(ConversionOperatorError);
-                  //теперь ищем скобочку.
-                  brLevel:=0; //условно
-                  for i:=LIndex-2 downto 0 do begin //LIndex-1 еще не заполнен
-                    Lexems[i+1]:=Lexems[i];
-                    Case Lexems[i].LType of
-                      ltLeftBracket:
-                        if brLevel=0 then break
-                        else dec(brLevel);
-                      ltRightBracket: inc(brLevel);
-                    end;
-                    if i=0 then Lexems[0].LType:=ltLeftBracket;
-                  end;
-                  //и осталось закрывающую скобочку поставить
+        ch:=p.getChar;
+        case ch of
+          ')': Lexems[LIndex].LType:=ltRightBracket;
+          '(': Lexems[LIndex].LType:=ltLeftBracket;
+          '+': Lexems[LIndex].LType:=ltPlus;
+          '-': Lexems[LIndex].LType:=ltMinus;
+          '*': Lexems[LIndex].LType:=ltMul;
+          '/': if (not p.eof) and (p.nextChar='/') then begin
+            //нашли комментарий, игнорируем все
+              dec(LIndex);
+              break;
+            end
+            else Lexems[LIndex].LType:=ltDiv;
+          '^': Lexems[LIndex].LType:=ltPow;
+          '[': begin
+            inc(LIndex);  //у нас еще скобочка появится где-то слева
+            EnsureLexemsLen(LIndex+1);
+            Lexems[LIndex].LType:=ltPhysUnitConversion;
+            Lexems[LIndex].PhysUnit:=p.getPhysUnit;
+            if Lexems[LIndex].PhysUnit=nil then
+              Lexems[LIndex].PhysUnit:=PhysUnitData.Unity;
+            if p.eof or (p.getChar<>']') then
+              Raise ELexicalErr.Create(ConversionOperatorError);
+            //теперь ищем скобочку.
+            brLevel:=0; //условно
+            for i:=LIndex-2 downto 0 do begin //LIndex-1 еще не заполнен
+              Lexems[i+1]:=Lexems[i];
+              Case Lexems[i].LType of
+                ltLeftBracket:
+                  if brLevel=0 then break
+                  else dec(brLevel);
+                ltRightBracket: inc(brLevel);
+              end;
+              if i=0 then Lexems[0].LType:=ltLeftBracket;
+            end;
+            //и осталось закрывающую скобочку поставить
+            inc(LIndex);
+            EnsureLexemsLen(LIndex+1);
+            Lexems[LIndex].LType:=ltRightBracket;
+            end;
+          '|': if (not p.eof) and (p.getChar='|') then
+                Lexems[LIndex].LType:=ltPar
+              else
+                Raise ELexicalErr.Create(UnknownOperatorVertLine);
+          '=':  if LIndex=0 then Raise ELexicalErr.Create(NoVariableBeforeAssign)
+                else begin
+                  Lexems[LIndex]:=Lexems[LIndex-1];
+                  Lexems[LIndex-1].LType:=ltLeftBracket;
                   inc(LIndex);
                   EnsureLexemsLen(LIndex+1);
-                  Lexems[LIndex].LType:=ltRightBracket;
+                  Lexems[LIndex].LType:=ltAssign;
                 end;
-            '|': if (not p.eof) and (p.getChar='|') then
-                    Lexems[LIndex].LType:=ltPar
-                  else
-                    Raise ELexicalErr.Create(UnknownOperatorVertLine);
-            '=':  if LIndex=0 then Raise ELexicalErr.Create(NoVariableBeforeAssign)
-                  else begin
-                    Lexems[LIndex]:=Lexems[LIndex-1];
-                    Lexems[LIndex-1].LType:=ltLeftBracket;
-                    inc(LIndex);
-                    EnsureLexemsLen(LIndex+1);
-                    Lexems[LIndex].LType:=ltAssign;
-                  end;
-            '\': begin
-              Lexems[LIndex].Ident:=p.getIdent;
-              Lexems[LIndex].LType:=ltPhysUnit;
-              if Lexems[LIndex].Ident='deg' then
-                Lexems[LIndex].PhysUnit:=PhysUnitData.StrToConvType('°');
-              end;
-            else begin
-              p.PutBack;
-              Lexems[LIndex].Num:=p.getVariantNum;
-              Lexems[LIndex].LType:=ltNumber
+          '\': begin
+            Lexems[LIndex].Ident:=p.getIdent;
+            Lexems[LIndex].LType:=ltPhysUnit;
+            if Lexems[LIndex].Ident='deg' then
+              Lexems[LIndex].PhysUnit:=PhysUnitData.StrToConvType('°');
             end;
+          else begin
+            p.PutBack;
+            Lexems[LIndex].Num:=p.getVariantNum;
+            Lexems[LIndex].LType:=ltNumber
           end;
         end;
       end;
+      Lexems[LIndex].endStr:=p.Pos;
     end;
   finally
     p.Free;

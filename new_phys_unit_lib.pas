@@ -2,7 +2,8 @@ unit new_phys_unit_lib;
 
 interface
 uses set_english_locale_if_not_sure,streaming_class_lib,classes,
-  variantWrapper,Contnrs,sysUtils,simple_parser_lib,linear_eq;
+  variantWrapper,Contnrs,sysUtils,simple_parser_lib,linear_eq,
+  autocomplete_string_list;
 
 type
   TPhysUnit =class;
@@ -148,7 +149,7 @@ type
     property enabled: Boolean read fIsEnabled write SetEnabled;
   end;
 
-  TFundamentalPhysConstants = class(TStreamingClass)
+  TPhysConsts = class(TStreamingClass)
   private
     fList: TObjectList;
     fsolver: IAbstractSLEQ;
@@ -179,6 +180,7 @@ type
     fFamilyList: TObjectList;
     fBaseFamilyList: TObjectList;
     fMegaList: TStringList;
+    fAutocompleteList: TStringList;
     fWarningList: TStringList;
     fUnity,fDMS,fRadian: TPhysUnit;
   protected
@@ -195,7 +197,7 @@ type
     property Radian: TPhysUnit read fRadian;
   published
     UnitPrefixes: TUnitPrefixes;
-    FundamentalPhysConstants: TFundamentalPhysConstants;
+    PhysConsts: TPhysConsts;
   end;
 
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponents; i,j: Integer) : Real of object;
@@ -238,10 +240,9 @@ type
     public
       instance: Variant; //та переменная, которую мы оборачиваем
       ExplicitConversion: boolean;  //флаг, что величину "насильно" привели к данному виду
-      constructor Create(text: string); overload;
+      constructor Create(text: string); reintroduce; overload;
       constructor CreateFromVariant(source: Variant; aConvType: TPhysUnit);
-      procedure Assign(source: TPersistent); overload; override;
-//      procedure Assign(str: string); reintroduce; overload;
+      procedure Assign(source: TPersistent); override;
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
       procedure DoMultiply(Right: TAbstractWrapperData); override;
@@ -279,7 +280,7 @@ type
   function IsPhysUnit(V: Variant): Boolean;
   function IsDimensionless(V: Variant): Boolean;
   procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
-//  function PhysUnitCreate(text: string): Variant;
+  function TryPhysUnitCreate(text: string; out Res: Variant): boolean;  
   function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
   function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
@@ -291,6 +292,19 @@ type
 implementation
 
 uses Variants,math,strUtils,VarCmplx,expression_lib;
+
+resourcestring
+  AbstractErrorAdd = 'could not add %s and %s';
+  LogarithmicConvTypeRequiresRealNum = 'Лог. единицы измерения допустимы только для положительных действительных значений';
+  StrCanReferTo = '%s can refer to:';
+  ConvTypeWeUsedIs = 'we used %s';
+  ToConvertFromAToB = 'Для преобразования из [%s] в [%s] выражение домножено на %s';
+  IncorrectUnitConversion = 'Некорректное приведение типов: [%s] в [%s]';
+  UnitsWithExponentsSyntaxErr = 'Syntax error in unit %s';
+  NonConsistentConstraints = 'Добавление условия %s=1 приводит к противоречию';
+  FundPhysConstMustBeRealPositive='Fund phys const %s must be real and positive';
+  FundConstMustBePhys = 'Phys unit const expected, %s found';
+  AlreadyHasDimension = '%s уже имеет размерность';          
 (*
       General procedures
                             *)
@@ -400,8 +414,7 @@ begin
 end;
 
 procedure TPhysUnit.Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
-resourcestring
-  AbstractErrorAdd = 'could not add %s and %s';
+
 begin
   Raise Exception.CreateFmt(AbstractErrorAdd,[Caption.Caption,t.Caption.Caption]);
 end;
@@ -557,8 +570,7 @@ end;
 (*
     TLogarithmicConvType
                           *)
-resourcestring
-  LogarithmicConvTypeRequiresRealNum = 'Лог. единицы измерения допустимы только для действительных значений';
+
 
 procedure TLogarithmicConvType.Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
 begin
@@ -588,9 +600,10 @@ end;
 function TLogarithmicConvType.MultiplyByNumber(v1,num: Variant;
   var ConvType: TPhysUnit): Variant;
 begin
-  if VarIsNumeric(v1) then
-//    if VarIsNumeric(num) then
-    Result:=v1+log10multiplier*log10(num)
+  if VarIsNumeric(v1) and VarIsNumeric(num) and (num>0) then begin
+    Result:=v1+log10multiplier*log10(num);
+    ConvType:=self;
+  end
   else
     Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
@@ -675,12 +688,18 @@ begin
   fMegaList.CaseSensitive:=true;
   fMegaList.Sorted:=true;
   fMegaList.Duplicates:=dupAccept;
+  fAutocompleteList:=TAutocompleteStringList.Create;
+//  fAutocompleteList:=TStringList.Create;
+  fAutocompleteList.Sorted:=true;
+  fAutocompleteList.CaseSensitive:=false;
+  fAutocompleteList.Duplicates:=dupAccept;
   fWarningList:=TStringList.Create;
 end;
 
 destructor TPhysUnitData.Destroy;
 begin
   fMegaList.Free;
+  fAutocompleteList.Free;
   fWarningList.Free;
   fFamilyList.Free;
   fBaseFamilyList.Free;
@@ -698,6 +717,7 @@ var fam: TPhysFamily;
         if fMegaList.IndexOf(nm.strings[i])>=0 then
           fWarningList.Add(Format('%s ident ambiguity',[nm.strings[i]]));
         fMegaList.AddObject(nm.strings[i],ct);
+        fAutocompleteList.AddObject(nm.strings[i],ct);
       end;
     end;
 
@@ -800,10 +820,14 @@ begin
     objlist.Free;
     //еще нужно лист привести в порядок немножко
     fMegaList.Sorted:=false;
-    for j:=0 to fMegaList.Count-1 do
+    fAutocompleteList.Sorted:=false;
+    for j:=0 to fMegaList.Count-1 do begin
      fMegaList[j]:=NoSpaces(fMegaList[j]);
+     fAutocompleteList[j]:=NoSpaces(fAutocompleteList[j]);
+    end;
     fMegaList.Sorted:=true;
-    fMegaList.Sort;
+    fAutocompleteList.Sorted:=true;
+
 
     //на этом этапе TUnitsWithExponents должна стать работоспособной
     for j:=0 to fFamilyList.Count-1 do begin
@@ -822,10 +846,11 @@ begin
       fDMS:=fam.FindComponent('DMS') as TPhysUnit;
       fRadian:=fam.FindComponent('Radian') as TPhysUnit;
     end;
-    if Assigned(FundamentalPhysConstants) then
-      FundamentalPhysConstants.Init;
+    if Assigned(PhysConsts) then
+      PhysConsts.Init;
 
     fMegaList.SaveToFile('megalist.txt');
+    fAutocompleteList.SaveToFile('autocomplete2.txt');
     fWarningList.SaveToFile('warnings.txt');
   end;
 end;
@@ -844,9 +869,6 @@ var i,j,k: Integer;
     fml: TUnitsWithExponents;
     multiplier: Real;
     NormalRslt: TNormalConvType absolute Result;
-resourcestring
-  StrCanReferTo = '%s can refer to:';
-  ConvTypeWeUsedIs = 'we used %s';
 begin
   i:=fMegaList.IndexOf(str);
   if i>=0 then begin
@@ -907,42 +929,17 @@ begin
   else inherited Assign(source);
 end;
 
-(*
-procedure TVarWithUnit.Assign(str: string);
-var unitStr: string;
-    i: Integer;
-    val: Extended;
+constructor TVarWithUnit.Create(text: string);
+var expr: TVariantExpression;
+    v: Variant;
 begin
-  for i:=1 to Length(str) do
-    if (str[i]='.') or (str[i]=',') then str[i]:=DecimalSeparator;
-  i:=Length(str);
-  while (i>=1) and (str[i]<>' ') do dec(i);
-  if i=0 then begin
-    //либо только ед. измерения, без числа,
-    //либо тот или иной Variant, но мы заранее не знаем, какой.
-    //в этом проблема всех этих произволов. Попробуем в комплексную вел. преобразовать что ль
-    instance:=VarComplexCreate(str);
-    instance:=VarComplexSimplify(instance);
-    ConvType:=PhysUnitData.Unity;  //безразм.
-  end
-  else begin
-    //посерединке пробел
-    //либо часть справа от пробела-ед. изм., либо например разделенные действ и мним. части
-    if AnsiUppercase(str[Length(str)])='I' then begin
-      Instance:=VarComplexCreate(str);
-      ConvType:=PhysUnitData.Unity;
-    end
-    else begin
-      if TryStrToFloat(LeftStr(str,i-1),val) then
-        instance:=val
-      else
-        instance:=VarComplexCreate(LeftStr(str,i-1));
-      unitStr:=RightStr(str,Length(str)-i);
-      ConvType:=PhysUnitData.StrToConvType(unitStr);
-    end;
-  end;
+  inherited Create;
+  expr:=TVariantExpression.Create(nil);
+  expr.SetString(text);
+  v:=expr.GetVariantValue;
+  Assign(TVarWithUnitVarData(v).Data);
+  expr.free;
 end;
-*)
 
 function TVarWithUnit.AsString: string;
 var deg,min: Variant;
@@ -984,9 +981,6 @@ var buConvType:TPhysUnit;
     i,j,b:Integer;
     pow: Real;
     s: string;
-resourcestring
-  ToConvertFromAToB = 'Для преобразования из [%s] в [%s] выражение домножено на %s';
-  IncorrectUnitConversion = 'Некорректное приведение типов: [%s] в [%s]';
 begin
   if (ConvType<>DestConv) then begin
     if ConvType.Owner=DestConv.Owner then //same family
@@ -1004,7 +998,7 @@ begin
         addition:=0.0;
         for i:=0 to formula.fCount-1 do begin
           j:=PhysUnitData.fBaseFamilyList.IndexOf(formula.UnitTypes[i].Family);
-          addition:=addition+PhysUnitData.FundamentalPhysConstants.GetVar(j)*formula.Exponents[i];
+          addition:=addition+PhysUnitData.PhysConsts.GetVar(j)*formula.Exponents[i];
         end;
         if VarManySolutionsIsNumber(addition) then begin  //успех!
           instance:=instance*Exp(-addition);
@@ -1012,35 +1006,29 @@ begin
           Conversion(DestConv); //теперь сделается как надо!
           if Assigned(physUnitData.infoProc) then begin
 //разоблачение фокуса - на что мы помножили и поделили
-            for i:=0 to physUnitData.FundamentalPhysConstants.ActuallyUsedCount-1 do begin
+            for i:=0 to physUnitData.PhysConsts.ActuallyUsedCount-1 do begin
               pow:=0.0;
               for j:=0 to formula.fCount-1 do begin
                 b:=PhysUnitData.fBaseFamilyList.IndexOf(formula.UnitTypes[j].Family);
-                pow:=pow-PhysUnitData.FundamentalPhysConstants.Solver.getInvMatrix(i,b)*formula.Exponents[j];
+                pow:=pow-PhysUnitData.PhysConsts.Solver.getInvMatrix(i,b)*formula.Exponents[j];
               end;
               if abs(pow)>0.001 then begin
                 if Length(s)>0 then s:=s+'*';
                 if abs(pow-1)>1e-19 then
-                  s:=s+'('+PhysUnitData.FundamentalPhysConstants[PhysUnitData.FundamentalPhysConstants.GetActualIndex(i)].caption.Caption+')^'+Format('%2.2g',[pow])
+                  s:=s+'('+PhysUnitData.PhysConsts[PhysUnitData.PhysConsts.GetActualIndex(i)].caption.Caption+')^'+Format('%2.2g',[pow])
                 else
-                  s:=s+PhysUnitData.FundamentalPhysConstants[PhysUnitData.FundamentalPhysConstants.GetActualIndex(i)].caption.Caption;
+                  s:=s+PhysUnitData.PhysConsts[PhysUnitData.PhysConsts.GetActualIndex(i)].caption.Caption;
               end;
             end;
             PhysUnitData.infoproc(Format(ToConvertFromAToB,[buConvType.Shortname.Caption,DestConv.Shortname.Caption,s]));
           end;
         end
-        else Raise EphysUnitError.CreateFmt(IncorrectUnitConversion,[buConvType.Caption.Caption,DestConv.Caption.Caption]);
+        else Raise EphysUnitError.CreateFmt(IncorrectUnitConversion,[buConvType.Shortname.Caption,DestConv.Shortname.Caption]);
       finally
         formula.Free;
       end;
     end;
   end;
-end;
-
-constructor TVarWithUnit.Create(text: string);
-begin
-  Create;
-//  Assign(text);
 end;
 
 constructor TVarWithUnit.CreateFromVariant(source: Variant;
@@ -1425,8 +1413,6 @@ var p: TSimpleParser;
     pow: Real;
     isDivide: Boolean;
     nextDivide: Boolean;
-resourcestring
-  UnitsWithExponentsSyntaxErr = 'Syntax error in unit %s';
 begin
   Clear;
   p:=TSimpleParser.Create(formula);
@@ -1650,10 +1636,6 @@ end;
 (*
     TPhysConst
                   *)
-resourcestring
-  NonConsistentConstraints = 'Добавление условия %s=1 приводит к противоречию';
-
-
 constructor TPhysConst.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
@@ -1665,7 +1647,7 @@ procedure TPhysConst.SetEnabled(value: Boolean);
 begin
   if Value<>Enabled then begin
     fIsEnabled:=Value;
-    if (not (csLoading in ComponentState)) and not (Owner as TFundamentalPhysConstants).Recalculate then begin
+    if (not (csLoading in ComponentState)) and not (Owner as TPhysConsts).Recalculate then begin
       fIsEnabled:=not value;
       Raise EPhysUnitError.CreateFMT(NonConsistentConstraints,[caption.Caption]);
     end;
@@ -1675,7 +1657,7 @@ end;
 (*
     TFundamentalPhysConstants
                                 *)
-constructor TFundamentalPhysConstants.Create(Owner: TComponent);
+constructor TPhysConsts.Create(Owner: TComponent);
 begin
   inherited Create(Owner);
   fsolver:=TSimpleGaussLEQ.Create;
@@ -1684,7 +1666,7 @@ begin
   recalculate;
 end;
 
-destructor TFundamentalPhysConstants.Destroy;
+destructor TPhysConsts.Destroy;
 begin
   //debug purpose
   //Heisenbug: now it works without error
@@ -1693,34 +1675,34 @@ begin
   inherited Destroy;
 end;
 
-function TFundamentalPhysConstants.GetItems(index: Integer): TPhysConst;
+function TPhysConsts.GetItems(index: Integer): TPhysConst;
 begin
   Result:=fList[index] as TPhysConst;
 end;
 
-function TFundamentalPhysConstants.getCount: Integer;
+function TPhysConsts.getCount: Integer;
 begin
   Result:=fList.Count;
 end;
 
-function TFundamentalPhysConstants.GetActualIndex(i: Integer): Integer;
+function TPhysConsts.GetActualIndex(i: Integer): Integer;
 begin
   Result:=fActualIndex[i];
 end;
 
-procedure TFundamentalPhysConstants.Notification(aComponent: TComponent; Operation: TOperation);
+procedure TPhysConsts.Notification(aComponent: TComponent; Operation: TOperation);
 //здесь у нас пустой, совсем пустой компонент, ничего не можем с ним сделать, только добавить
 begin
   if (aComponent is TPhysConst) and (operation = opInsert) then
     fList.Add(aComponent);
 end;
 
-function TFundamentalPhysConstants.GetVar(i: Integer): Variant;
+function TPhysConsts.GetVar(i: Integer): Variant;
 begin
   Result:=fsolver.GetVariable(i);
 end;
 
-procedure TFundamentalPhysConstants.Init;
+procedure TPhysConsts.Init;
 var i: Integer;
     expr: TVariantExpression;
 begin
@@ -1733,13 +1715,10 @@ begin
   Recalculate;
 end;
 
-function TFundamentalPhysConstants.Recalculate: Boolean;
+function TPhysConsts.Recalculate: Boolean;
 var BaseUnitsCount,EqsCount,i,j,ind: Integer;
     formula: TUnitsWithExponents;
     V: TVarWithUnit;
-resourcestring
-  FundPhysConstMustBeRealPositive='Fund phys const %s must be real and positive';
-  FundConstMustBePhys = 'Phys unit const expected, %s found';
 begin
   BaseUnitsCount:=PhysUnitData.fBaseFamilyList.Count;
   EqsCount:=0;
@@ -1790,6 +1769,17 @@ begin
   TWrapperVarData(ADest).Data:=Adata;
 end;
 
+function TryPhysUnitCreate(text: string; out Res: Variant): boolean;
+begin
+  Result:=false;
+  try
+    PhysUnitCreateInto(Res,TVarWithUnit.Create(text));
+    Result:=true;
+  except
+    on E: Exception do
+      Res:=E.Message;
+  end;
+end;
 (*
 function PhysUnitCreate(text: string): Variant;
 begin
@@ -1798,8 +1788,6 @@ end;
 *)
 
 function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
-resourcestring
-  AlreadyHasDimension = '%s уже имеет размерность';
 begin
   if IsPhysUnit(source) then
     if TVarWithUnitVarData(source).Data.ConvType=PhysUnitData.Unity then begin

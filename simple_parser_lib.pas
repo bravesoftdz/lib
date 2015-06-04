@@ -38,7 +38,7 @@ TSimpleParser=class
     function getVarPathIdent: string;
     function getHex: Integer;
     function getBinary: LongWord;
-
+    property Pos: Integer read _pos;
   end;
 
 EParserError=class(Exception);

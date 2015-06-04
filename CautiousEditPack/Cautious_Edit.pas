@@ -3,7 +3,8 @@ unit Cautious_Edit;
 interface
 
 uses
-  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls,TypInfo;
+  SysUtils, Classes, Controls, StdCtrls,graphics,messages,Contnrs,extctrls,
+  TypInfo,expression_lib;
 
 type
   TCautiousEditClass=class of TCautiousEdit;
@@ -11,7 +12,6 @@ type
   TCautiousEdit=class(TEdit)
   private
     fAllowExpressions: Boolean;
-    fExpressionRootComponent: TComponent;
     backupHint: string;
     fSeemsNormal: boolean;
     fControlToDisable: TControl;
@@ -38,7 +38,6 @@ type
     property OnValidateResult: TNotifyEvent read fonValidateResult write SetOnValidateResult;
     property OnDestroy: TNotifyEvent read fonDestroy write fonDestroy;
     property AllowExpressions: boolean read fAllowExpressions write fAllowExpressions default true;
-    property ExpressionRootComponent: TComponent read fExpressionRootComponent write fExpressionRootComponent stored fAllowExpressions;
   end;
 
   TIntegerEdit=class(TCautiousEdit)
@@ -75,12 +74,14 @@ type
 
   TVariantEdit = class(TCautiousEdit)
   private
+    fExpression: TVariantExpression;
     function get_value: Variant;
     procedure set_value(value: Variant);
   public
     constructor Create(Owner: TComponent); override;
     procedure Change; override;
     function isValid: boolean;
+    property Expression: TVariantExpression read fExpression;
   published
     property value: Variant read get_value write set_value;
   end;
@@ -134,7 +135,7 @@ procedure Register;
 
 implementation
 
-uses expression_lib,phys_units_lib,float_expression_lib,math;
+uses new_phys_unit_lib, float_expression_lib,math;
 (* General procedures *)
 
 var CautiousControlList: TBucketList;
@@ -213,6 +214,7 @@ end;
 procedure TCautiousEdit.Change;
 begin
   if Assigned(OnValidateResult) and enabled then OnValidateResult(self);
+  if Assigned(OnChange) then OnChange(self);
 end;
 
 procedure TCautiousEdit.SetOnValidateResult(value: TNotifyEvent);
@@ -277,48 +279,33 @@ end;
             TVariantEdit
                                 *)
 function TVariantEdit.get_value: Variant;
-var expr: TVariantExpression;
-    E: Exception;
 begin
-  if AllowExpressions then begin
-    expr:=TVariantExpression.Create(nil);
-    try
-      expr.SetRootComponent(ExpressionRootComponent);
-      expr.SetString(text);
-      if expr.isCorrect then
-        Result:=expr.getVariantValue  //не гарантируется отсутствие ошибок, тем не менее
-      else begin
-        Result:=0;
-        if not (csDesigning in self.ComponentState) then begin
-          E:=Exception.CreateFMT('TFloatLabel: %s',[expr.errorMsg]);
-          FreeAndNil(expr);  //не хотим терять память
-          Raise E;
-        end;
-      end;
-    finally
-      expr.Free;
-    end;
-  end
-  else
-    Result:=VarWithUnitCreate(text);
+//  if AllowExpressions then begin
+  expression.SetString(text);
+  if expression.isCorrect then
+    Result:=expression.getVariantValue  //не гарантируется отсутствие ошибок, тем не менее
+  else begin
+    Result:=0;
+    if not (csDesigning in self.ComponentState) then
+      Raise Exception.CreateFMT('TFloatLabel: %s',[expression.errorMsg]);
+  end;
+//  end
+//  else
+//    Result:=PhysUnitCreate(text);
 end;
 
 procedure TVariantEdit.Change;
 var res: Variant;
-    expr: TVariantExpression;
 resourcestring
   FloatEditNotARealNumberMsg = 'Не является действительным числом';
 begin
   if AllowExpressions then begin
-    expr:=TVariantExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
-    expr.SetString(text);
-    if expr.isCorrect then ReturnToNormal
-    else TurnRed(expr.errorMsg);
-    expr.Free;
+    expression.SetString(text);
+    if expression.isCorrect then ReturnToNormal
+    else TurnRed(expression.errorMsg);
   end
   else
-    if TryVarWithUnitCreate(text,res) then ReturnToNormal
+    if TryPhysUnitCreate(text,res) then ReturnToNormal
     else TurnRed(res);
   inherited Change;
 end;
@@ -331,22 +318,19 @@ end;
 constructor TVariantEdit.Create(owner: TComponent);
 begin
   inherited Create(owner);
+  fExpression:=TVariantExpression.create(self);
   if (csDesigning in ComponentState) then value:=StrToFloat('0');
 end;
 
 function TVariantEdit.isValid: Boolean;
 var t: Variant;
-    expr: TVariantExpression;
 begin
   if AllowExpressions then begin
-    expr:=TVariantExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
-    expr.SetString(text);
-    Result:=expr.isCorrect;
-    expr.Free;
+    expression.SetString(text);
+    Result:=expression.isCorrect;
   end
   else
-    Result:=TryVarWithUnitCreate(text,t);
+    Result:=TryPhysUnitCreate(text,t);
 end;
 
 (*
@@ -506,7 +490,7 @@ var res: Extended;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then Result:=expr.getValue
     else begin
@@ -538,7 +522,7 @@ resourcestring
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then ReturnToNormal
     else TurnRed(expr.errorMsg);
@@ -568,7 +552,7 @@ var t: Extended;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     Result:=expr.isCorrect;
     expr.Free;
@@ -601,7 +585,7 @@ var res: Integer;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then begin
       Result:=expr.getIntegerValue;
@@ -638,7 +622,7 @@ var t: Integer;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     Result:=expr.isCorrect and WithinBounds(expr.getIntegerValue,errmsg);
     expr.Free;
@@ -656,7 +640,7 @@ resourcestring
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-    expr.SetRootComponent(ExpressionRootComponent);
+//    expr.SetRootComponent(ExpressionRootComponent);
     expr.SetString(text);
     if expr.isCorrect then
       if WithinBounds(expr.getIntegerValue,errMsg) then
