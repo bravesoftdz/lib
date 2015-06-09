@@ -1040,11 +1040,13 @@ begin
       EnsureLexemsLen(LIndex+1);
 
       Lexems[LIndex].startStr:=p.Pos;
+      Lexems[LIndex].Ident:=p.getPhysUnitIdent;
+      p.PutBack;
       //хочется по контексту понять, может ли здесь быть ед. изм?
       //после +,-,*,/,^,||,=,(,PhysUnit - точно нет
       //после числа - может быть
       //после ) - может быть
-      if (LIndex>0) and (Lexems[LIndex-1].LType in [ltRightBracket,ltNumber]) then begin
+      if (LIndex>0) and (Lexems[LIndex-1].LType in [ltRightBracket,ltNumber,ltLeftSquareBracket]) then begin
         Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
         if Assigned(Lexems[LIndex].PhysUnit) then begin
           Lexems[LIndex].LType:=ltPhysUnit;
@@ -1071,15 +1073,22 @@ begin
             end
             else Lexems[LIndex].LType:=ltDiv;
           '^': Lexems[LIndex].LType:=ltPow;
+          ']': begin
+            if (LIndex>0) and (Lexems[LIndex-1].LType=ltLeftSquareBracket) then begin
+              Lexems[LIndex].LType:=ltPhysUnit;
+              Lexems[LIndex].PhysUnit:=PhysUnitData.Unity;
+              inc(LIndex);
+              EnsureLexemsLen(LIndex+1);
+            end;
+            Lexems[LIndex].LType:=ltRightSquareBracket;
+            inc(LIndex);
+            EnsureLexemsLen(LIndex+1);
+            Lexems[LIndex].LType:=ltRightBracket;
+            end;
           '[': begin
             inc(LIndex);  //у нас еще скобочка появится где-то слева
             EnsureLexemsLen(LIndex+1);
-            Lexems[LIndex].LType:=ltPhysUnitConversion;
-            Lexems[LIndex].PhysUnit:=p.getPhysUnit;
-            if Lexems[LIndex].PhysUnit=nil then
-              Lexems[LIndex].PhysUnit:=PhysUnitData.Unity;
-            if p.eof or (p.getChar<>']') then
-              Raise ELexicalErr.Create(ConversionOperatorError);
+            Lexems[LIndex].LType:=ltLeftSquareBracket;
             //теперь ищем скобочку.
             brLevel:=0; //условно
             for i:=LIndex-2 downto 0 do begin //LIndex-1 еще не заполнен
@@ -1092,10 +1101,7 @@ begin
               end;
               if i=0 then Lexems[0].LType:=ltLeftBracket;
             end;
-            //и осталось закрывающую скобочку поставить
-            inc(LIndex);
-            EnsureLexemsLen(LIndex+1);
-            Lexems[LIndex].LType:=ltRightBracket;
+            //закрывающую скобку поставит ]
             end;
           '|': if (not p.eof) and (p.getChar='|') then
                 Lexems[LIndex].LType:=ltPar
@@ -1174,10 +1180,11 @@ var term: TEvaluationTreeNode;
 resourcestring
   NoExpressionToConvertTo = 'отсутствует значение, которое надо сконвертировать в %s';
 begin
-  if Lexems[e].LType=ltPhysUnitConversion then
-    if e>b then begin
-      UnitConversionOperators(b,e-1,term);
-      TreeNode:=TUnitConversionNode.Create(Lexems[e].PhysUnit,nil);
+  if (e>b+1) and (Lexems[e].LType=ltRightSquareBracket) and (Lexems[e-1].LType=ltPhysUnit)
+  and (Lexems[e-2].LType=ltLeftSquareBracket) then
+    if e>b+2 then begin
+      UnitConversionOperators(b,e-3,term);
+      TreeNode:=TUnitConversionNode.Create(Lexems[e-1].PhysUnit,nil);
       TreeNode.InsertComponent(term);
     end
     else Raise ESyntaxErr.CreateFmt(NoExpressionToConvertTo,[Lexems[e].PhysUnit.Caption.Caption])
@@ -1468,12 +1475,14 @@ begin
     if Assigned(fEvaluationTreeRoot) then begin
       if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
       fworking:=true;
-      if Assigned(fUnitRestriction) then
-        Result:=PhysUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
-      else
-        Result:=fEvaluationTreeRoot.getVariantValue;
-      fworking:=false;
-
+      try
+        if Assigned(fUnitRestriction) then
+          Result:=PhysUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
+        else
+          Result:=fEvaluationTreeRoot.getVariantValue;
+      finally
+        fworking:=false;
+      end;
     end
     else Raise Exception.Create(EmptyEvaluationTreeErrStr);
   end

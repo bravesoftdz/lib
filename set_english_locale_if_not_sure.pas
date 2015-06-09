@@ -48,11 +48,13 @@ type
     private
       fLangId: TLangId;
       fLangPrefMatrix: TLangPrefMatrix;
-      fCurLang: Integer;
+      fCurLang,fResLang: Integer;
       fAvailLanguageList: TList;
       procedure SetLanguage(value: string);
       procedure SetLanguageID(value: Integer);
       function GetLanguage: string;
+      procedure SetResourceLang(value: string);
+      function GetResourceLang: string;
     public
       constructor Create(Owner: TComponent); override;
       destructor Destroy; override;
@@ -63,9 +65,11 @@ type
       function ChangeLanguageID(value: Integer): Boolean;
       function ChangeLanguage(value: string): Boolean;
       property languageID: Integer read fCurLang write SetLanguageID;
+      property ResourceLangID: Integer read fResLang;
     published
       property LangID: TLangId read fLangId write fLangId;
       property LangPrefMatrix: TLangPrefMatrix read fLangPrefMatrix write fLangPrefMatrix;
+      property ResourceLang: string read GetResourceLang write SetResourceLang;
       property Language: string read GetLanguage write SetLanguage;
   end;
 
@@ -105,6 +109,9 @@ type
 
 procedure SetEnglishLocaleIfNotSure;
 function GetDefaultLanguageInEnglish: string;
+
+function LocaleCompareStr(s1,s2: string): Integer;
+function LocaleCompareText(s1,s2: string): Integer;
 
 var LocalePreferences: TLocalePreferences;
 
@@ -364,6 +371,16 @@ begin
   ChangeLanguageID(value);
 end;
 
+function TLocalePreferences.GetResourceLang: string;
+begin
+  Result:=LangID.IDToName(fResLang);
+end;
+
+procedure TLocalePreferences.SetResourceLang(value: string);
+begin
+  fResLang:=LangID.NameToID(value);
+end;
+
 function TLocalePreferences.ChangeLanguage(value: string): Boolean;
 begin
   Result:=ChangeLanguageID(LangID.NameToID(value));
@@ -620,6 +637,23 @@ begin
   for i:=0 to strings.Count-1 do
     strings[i]:=strings[i]+str;
 end;
+
+
+(*
+      General
+                  *)
+function LocaleCompareStr(s1,s2: string): Integer;
+begin
+  Result:=CompareString(localePreferences.ResourceLangID, 0, PChar(S1), Length(S1),
+    PChar(S2), Length(S2)) - 2;
+end;
+
+function LocaleCompareText(s1,s2: string): Integer;
+begin
+  Result:=CompareString(localePreferences.ResourceLangID, NORM_IGNORECASE, PChar(S1), Length(S1),
+    PChar(S2), Length(S2)) - 2;
+end;
+
 
 initialization
   localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt');

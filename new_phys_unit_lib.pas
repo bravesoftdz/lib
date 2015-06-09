@@ -180,7 +180,7 @@ type
     fFamilyList: TObjectList;
     fBaseFamilyList: TObjectList;
     fMegaList: TStringList;
-    fAutocompleteList: TStringList;
+    fAutocompleteList: TAutocompleteStringList;
     fWarningList: TStringList;
     fUnity,fDMS,fRadian: TPhysUnit;
   protected
@@ -195,6 +195,7 @@ type
     property Unity: TPhysUnit read fUnity;
     property DMS: TPhysUnit read fDMS;
     property Radian: TPhysUnit read fRadian;
+    property AutoCompleteList: TAutocompleteStringList read fAutocompleteList;
   published
     UnitPrefixes: TUnitPrefixes;
     PhysConsts: TPhysConsts;
@@ -850,7 +851,8 @@ begin
       PhysConsts.Init;
 
     fMegaList.SaveToFile('megalist.txt');
-    fAutocompleteList.SaveToFile('autocomplete2.txt');
+    fAutocompleteList.Sort;
+    fAutocompleteList.SaveToFile('autocomplete.txt');
     fWarningList.SaveToFile('warnings.txt');
   end;
 end;
@@ -1179,7 +1181,6 @@ begin
 end;
 
 { TUnitsWithExponents }
-
 function TUnitsWithExponents.AddArbitraryUnit(ConvType: TPhysUnit; Exponent: Real): Real;
 var u: TUnitsWithExponents;
 begin
@@ -1193,7 +1194,11 @@ begin
     if ConvType=ConvType.Family.BaseType then
       Result:=1 //это лишь для ускорения работы, а может ну его нафиг?
     else
-      Result:=Power((ConvType as TNormalConvType).Multiplier,Exponent);
+    //если затесались градусы - жди беды. Мы тогда считаем их {0} и находим multiplier
+      if ConvType is TNormalConvType then
+        Result:=Power((ConvType as TNormalConvType).Multiplier,Exponent)
+      else
+        Result:=Power((ConvType as TAffineConvType).Multiplier,Exponent);
       //именно эта штука может выдать exception, если ConvType<>TNormalConvType
   finally
     u.Free;
