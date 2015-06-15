@@ -228,7 +228,6 @@ TVariantExpression=class(TAbstractExpression)  //
   protected
     function AddBracketsForAssign(text: string): string;
     procedure LexicalAnalysis;
-    procedure MakeEvaluationTree; override;
     procedure AssignOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure UnitConversionOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure PlusMinus(b,e: Integer; var treeNode: TEvaluationTreeNode);
@@ -239,9 +238,10 @@ TVariantExpression=class(TAbstractExpression)  //
     procedure BracketsAndFuncs(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure ConstsAndVars(b,e: Integer; var treeNode: TEvaluationTreeNode);reintroduce; overload;
   public
-    Lexems: array of TLexem;  
+    Lexems: array of TLexem;
     AssignValueToVariableProc: TAssignValueToVariableProc;
     constructor CreateZero(owner: TComponent; unitRestriction: string);reintroduce; overload;
+    procedure MakeEvaluationTree; override;    
     procedure SetUnitRestriction(unitRestriction: string); 
     function GetVariantValue: Variant; override;
     property UnitRestriction: TPhysUnit read fUnitRestriction;

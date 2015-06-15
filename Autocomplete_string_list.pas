@@ -43,12 +43,9 @@ function TAutocompleteStringList.GetListOfObjects(str: string): TStringList;
 var i,u,d: Integer;
 begin
   Result:=TStringList.Create;
-  if Find(str,i) then begin
-    //нужно отмотать и вверх, и вниз!
-    d:=i-1;
-    while (d>-1) and (CompareStrings(strings[d],str)=0) do dec(d);
-    inc(d);
-    u:=i+1;
+  if Find(str,d) then begin
+    //Find гарантированно выдаст первое упоминание str
+    u:=d+1;
     while (u<Count) and (CompareStrings(strings[u],str)=0) do inc(u);
     dec(u);
     for i:=d to u do

@@ -46,6 +46,7 @@ type
       function Family: TPhysFamily;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); virtual;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; virtual; abstract;
+      function isNumericallyEqual(un: TPhysUnit): Boolean; virtual; abstract;
       property SomeId: string read GetSomeId;
     published
       property ShortName: TLocalizedName read fShortName write fShortName;
@@ -65,6 +66,7 @@ type
       function CreateScaled(mult: Real): TPhysUnit; override;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
+      function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
       property Multiplier: Real read fMultiplier write fMultiplier;
     end;
@@ -85,6 +87,7 @@ type
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
       function GetAffineUnit(Factor: Real): TAffineConvType;
+      function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
       property Multiplier: Real read fMultiplier write fMultiplier;
       property Offset: Real read fOffset write fOffset;
@@ -102,6 +105,7 @@ type
       function CreateScaled(mult: Real): TPhysUnit; override;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);override;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
+      function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
       property Log10Multiplier: Real read fLog10Mult write fLog10Mult;
       property ZeroValue: Real read fZeroValue write fZeroValue;
@@ -183,6 +187,7 @@ type
     fAutocompleteList: TAutocompleteStringList;
     fWarningList: TStringList;
     fUnity,fDMS,fRadian: TPhysUnit;
+    fSuspiciousList: TStringList;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
@@ -192,6 +197,7 @@ type
     constructor Create(aOwner: TComponent); override;
     destructor Destroy; override;
     function StrToConvType(str: string): TPhysUnit;
+    function isAmbigious(str: string): boolean;
     property Unity: TPhysUnit read fUnity;
     property DMS: TPhysUnit read fDMS;
     property Radian: TPhysUnit read fRadian;
@@ -199,6 +205,7 @@ type
   published
     UnitPrefixes: TUnitPrefixes;
     PhysConsts: TPhysConsts;
+    property SuspiciousList: TStringList read fSuspiciousList write fSuspiciousList;
   end;
 
   TUnitsWithExponentMergeProc = function (value: TUnitsWithExponents; i,j: Integer) : Real of object;
@@ -286,6 +293,7 @@ type
   function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
   function PhysUnitFindGoodPrefix(V: Variant): Variant;
+  function NoSpaces(str: string): String;
 
   var PhysUnitData: TPhysUnitData;
       VarWithUnitVariantType: TVarWithUnitType;
@@ -469,6 +477,11 @@ begin
   cpy.Multiplier:=Multiplier*mult;
 end;
 
+function TNormalConvType.isNumericallyEqual(un: TPhysUnit): Boolean;
+var nct: TNormalConvType absolute un;
+begin
+  Result:=(un is TNormalConvType) and (nct.Multiplier=Multiplier);
+end;
 
 { TAffineConvType }
 
@@ -567,6 +580,12 @@ begin
   //парсить выражение a{b}
 end;
 
+function TAffineConvType.isNumericallyEqual(un: TPhysUnit): Boolean;
+var act: TAffineConvType absolute un;
+begin
+  Result:=(un is TAffineConvType) and (act.Multiplier=Multiplier) and
+    (act.Offset=Offset) and (act.Factor=Factor);
+end;
 
 (*
     TLogarithmicConvType
@@ -616,6 +635,13 @@ begin
   Result.PrefixOk:=false;
   Result.IsScaled:=true;
   cpy.Log10Multiplier:=Log10Multiplier/mult;
+end;
+
+function TLogarithmicConvType.isNumericallyEqual(un: TPhysUnit): Boolean;
+var lct: TLogarithmicConvType absolute un;
+begin
+  Result:=(un is TLogarithmicConvType) and (lct.Log10Multiplier=Log10Multiplier)
+    and (lct.ZeroValue=ZeroValue);
 end;
 
 (*
@@ -695,6 +721,8 @@ begin
   fAutocompleteList.CaseSensitive:=false;
   fAutocompleteList.Duplicates:=dupAccept;
   fWarningList:=TStringList.Create;
+  fSuspiciousList:=TStringList.Create;
+  fSuspiciousList.CaseSensitive:=true;
 end;
 
 destructor TPhysUnitData.Destroy;
@@ -704,6 +732,7 @@ begin
   fWarningList.Free;
   fFamilyList.Free;
   fBaseFamilyList.Free;
+  fSuspiciousList.Free;
   inherited Destroy;
 end;
 
@@ -763,11 +792,14 @@ var j,k,z: Integer;
       i:=fam.fLocalList.IndexOf(cpy.GetSomeId);
       if (i>=0) then begin
         prev:=fam.flocalList.Objects[i] as TPhysUnit;
-        if cpy.EqualsByAnyOtherName(prev) then begin
-          if fam.BaseType=prev then
-            fam.BaseType:=cpy;
-          fam.fLocalList.Delete(i);
-          prev.Free;
+        if cpy.isNumericallyEqual(prev) then begin
+          if Assigned(cpy.ScaledUp) then
+            cpy.ScaledUp.ScaledDown:=prev;
+          if Assigned(cpy.ScaledDown) then
+            cpy.ScaledDown.ScaledUp:=prev;
+          prev.ScaledUp:=cpy.ScaledUp;
+          prev.ScaledDown:=cpy.ScaledDown;
+          Exit;
         end;
       end;
       fam.InsertComponent(cpy);
@@ -808,6 +840,8 @@ begin
             pref:=TUnitPrefix(UnitPrefixes.fOther[z]);
             m1:=pref.Multiplier;
             cpy:=ct.CreateScaled(m1);
+            cpy.ScaledDown:=ct;
+            cpy.ScaledUp:=ct; //условимся, что ScaledUp=ScaledDown означает ссылку на осн. объект
             HandleCreatedCopy;
           end;
         end;
@@ -865,6 +899,15 @@ begin
     fFamilyList.Add(AComponent);
 end;
 
+function TPhysUnitData.isAmbigious(str: string): boolean;
+var i: Integer;
+begin
+  if fmegalist.Find(str,i) then
+    Result:=((i+1<fMegaList.Count) and (fMegaList[i+1]=fMegaList[i])) or (SuspiciousList.IndexOfName(str)>=0)
+  else
+    Result:=true; //если строки в списке нет - надо еще подумать, что вернуть
+end;
+
 function TPhysUnitData.StrToConvType(str: string): TPhysUnit;
 var i,j,k: Integer;
     obj: TPhysUnit;
@@ -895,8 +938,12 @@ begin
     //если дошли до этого места, значит они все с приставками, выберем наобум
       if Assigned(warningproc) then warningProc(Format(ConvTypeWeUsedIs,[Result.Caption.Caption]));
     end
-    else
+    else begin
+      j:=SuspiciousList.IndexOfName(str);
+      if (j>=0) and Assigned(warningProc) then
+        WarningProc(SuspiciousList.ValueFromIndex[j]);
       Result:=TPhysUnit(fMegaList.Objects[i])
+    end;
   end
   else begin
   //ничего не нашли, это вестимо что-то составное
@@ -1844,6 +1891,8 @@ begin
     vwithunit:=TVarWithUnit.Create;
     vwithunit.Assign(TVarWithUnitVarData(V).Data);
     repeat
+      if Assigned(vwithunit.ConvType.ScaledUp) and (vwithunit.ConvType.ScaledUp=vwithunit.ConvType.ScaledDown) then
+        vwithunit.Conversion(vwithunit.ConvType.ScaledDown);
       L:=VarGetLength(vwithunit.instance);
       if (L<1) and Assigned(vwithunit.ConvType.ScaledDown) then
         vwithunit.Conversion(vwithunit.ConvType.ScaledDown)
