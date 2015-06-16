@@ -336,13 +336,16 @@ end;
 
 function ToAcceptableName(str: string): string;
 var i: Integer;
+const
+  Alpha = ['A'..'Z', 'a'..'z', '_'];
+  AlphaNumeric = Alpha + ['0'..'9'];
 begin
   Result:=NoSpaces(str);
   if Length(Result)=0 then Exit;
-  if not TSimpleParser.isFirstIdentSymbol(Result[1]) then
+  if not (Result[1] in Alpha) then
     Result[1]:='_';
   for i:=2 to Length(Result) do
-    if not TSimpleParser.isIdentSymbol(Result[i]) then
+    if not (Result[i] in Alphanumeric) then
       Result[i]:='_';
 end;
 

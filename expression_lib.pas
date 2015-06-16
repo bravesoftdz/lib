@@ -149,8 +149,8 @@ TMathFuncNode=class(TNonTerminalNode)
 
 IVariantProperties=Interface
 ['{99CB6FA7-1795-4C73-A4B7-E2854435DAFA}']
-  procedure SetProperty(name: string; value: Variant);
-  function GetProperty(name: string): Variant; //идем напролом,
+  function SetProperty(name: string; value: Variant): Boolean;
+  function GetProperty(name: string; out val: Variant): Boolean; //идем напролом,
   //если нет св-ва или read-only, выкидываем exception
   //позже можно сделать еще TrySet и TryGet
 end;
@@ -241,8 +241,8 @@ TVariantExpression=class(TAbstractExpression)  //
     Lexems: array of TLexem;
     AssignValueToVariableProc: TAssignValueToVariableProc;
     constructor CreateZero(owner: TComponent; unitRestriction: string);reintroduce; overload;
-    procedure MakeEvaluationTree; override;    
-    procedure SetUnitRestriction(unitRestriction: string); 
+    procedure MakeEvaluationTree; override;
+    procedure SetUnitRestriction(unitRestriction: string);
     function GetVariantValue: Variant; override;
     property UnitRestriction: TPhysUnit read fUnitRestriction;
 end;
@@ -256,8 +256,22 @@ resourcestring
   TooManyClosingBracketsStr = 'Закрывающих скобок больше, чем открывающих в %s';
   EmptyStringErrStr = 'Отсутствует значение';
   CircularReferenceErrStr = 'циклическая ссылка в выражении %s';
-  EmptyEvaluationTreeErrStr = 'пустое дерево синтаксического разбора';
-      
+  ExponentShouldBeDimensionless='Показатель степени должен быть безразмерным';
+  ExponentShouldBeReal='Нельзя возводить размерную величину в комплексную степень';
+  VariableNodePropertyNotExistStr = 'Не найдено переменной "%s"';
+  VariableNodeWrongTypeOfPropertyStr = 'Неверный тип переменной "%s"';
+  WrongExpressionStr = 'Выражение "%s" не является числом или переменной';
+  TrigFuncPrecisionLoss = 'Возможна потеря точности при выполнении триг. функции от %s = %s';
+  VariableIsReadOnly='Переменная %s доступна только для чтения';
+  UnknownOperatorVertLine = 'неизвестный оператор "|"';
+  SomeCrapLeftOfAssign = 'Слева от = должна быть переменная';
+  NoExpressionToConvertTo = 'отсутствует значение, которое надо сконвертировать в %s';
+  LeftBracketOnWrongPlace = 'открывающая скобка не на своем месте';
+  TwoOrMoreLexemsError = '2 или более лексических единиц, не связанных между собой';
+  MathFuncNodeUnknownFunc = 'Неизвестная функция: %s';
+  LeftSideExpressionIsConst='выражение слева от "=" является константой';
+const
+  EmptyEvaluationTreeErrStr = 'empty evaluation tree';
 implementation
 
 uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplx;
@@ -438,8 +452,6 @@ end;
 
 function TPowNode.getVariantValue: Variant;
 var a,b,inst,tmp: Variant;
-resourcestring  ExponentShouldBeDimensionless='Показатель степени должен быть безразмерным';
-                ExponentShouldBeReal='Нельзя возводить размерную величину в комплексную степень';
 begin
   //возведение в степень физ. величины-это бред
   //возведение физ. величины в комплексную степень - тоже
@@ -474,8 +486,6 @@ end;
     TMathFuncNode
                     *)
 constructor TMathFuncNode.Create(afunc: string; aowner: TComponent);
-resourcestring
-  MathFuncNodeUnknownFunc = 'Неизвестная функция: %s';
 begin
   inherited Create(aowner);
   @func:=MethodAddress(afunc);
@@ -509,8 +519,6 @@ end;
 
 function TMathFuncNode.HandleTrigFunc(V: Variant): Variant;
 var tmp: Variant;
-resourcestring
-  TrigFuncPrecisionLoss = 'Возможна потеря точности при выполнении триг. функции от %s = %s';
 begin
   tmp:=PhysUnitConvert(V,PhysUnitData.Radian);
   Result:=TVarWithUnitVarData(tmp).Data.instance;
@@ -760,36 +768,11 @@ begin
   Result:=false;
 end;
 
-resourcestring
-  VariableNodePropertyNotExistStr = 'Не найдено переменной "%s"';
-  VariableNodeWrongTypeOfPropertyStr = 'Неверный тип переменной "%s"';
-
 function TVariableNode.getValue: Real;
-var propInfo: PPropInfo;
-    intf: IVariantProperties;
 begin
   if fComponent is TAbstractExpression then
     Result:=TAbstractExpression(fComponent).getValue
-  else begin
-    propInfo:=GetPropInfo(fComponent,fPropName);
-    if propInfo=nil then
-      if fcomponent.GetInterface(IVariantProperties,intf) then begin
-        Result:=intf.GetProperty(fPropName);
-        Exit;
-      end
-      else
-        raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
-    if PropInfo.PropType^.Kind=tkFloat then
-      Result:=GetFloatProp(fComponent,fPropName)
-    else if PropInfo.PropType^.Kind=tkInteger then
-      Result:=GetOrdProp(fComponent,fPropName)
-    else if (PropInfo.PropType^.Kind=tkClass) then
-      Result:=TAbstractExpression(GetObjectProp(fComponent,fPropName,TAbstractExpression)).getValue
-    else if PropInfo.PropType^.Kind=tkVariant then
-      Result:=GetVariantProp(fComponent,fPropName)
-    else
-      Raise ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
-  end;
+  else Result:=getVariantValue;
 end;
 
 function TVariableNode.getVariantValue: Variant;
@@ -801,10 +784,8 @@ begin
   else begin
     propInfo:=GetPropInfo(fComponent,fPropName);
     if propInfo=nil then
-      if fComponent.GetInterface(IVariantProperties,intf) then begin
-        Result:=intf.GetProperty(fPropName);
-        Exit;
-      end
+      if fComponent.GetInterface(IVariantProperties,intf)
+        and intf.GetProperty(fPropName,Result) then Exit
       else
         raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
     if PropInfo.PropType^.Kind=tkFloat then
@@ -823,17 +804,14 @@ end;
 procedure TVariableNode.Assign(value: Variant);
 var propInfo: PPropInfo;
     intf: IVariantProperties;
-resourcestring VariableIsReadOnly='Переменной %s нельзя присвоить значение';
 begin
   if fcomponent is TAbstractExpression then
     TAbstractExpression(fComponent).SetString(value)
   else begin
     propInfo:=GetPropInfo(fComponent,fPropName);
     if propInfo=nil then
-      if fComponent.GetInterface(IVariantProperties,intf) then begin
-        intf.SetProperty(fPropName,value);
-        Exit;
-      end
+      if fComponent.GetInterface(IVariantProperties,intf)
+        and intf.SetProperty(fPropName,value) then Exit
       else
         raise ESyntaxErr.CreateFmt(VariableNodePropertyNotExistStr,[fPropName]);
     if propInfo.SetProc=nil then
@@ -843,7 +821,7 @@ begin
       tkInteger: SetOrdProp(fComponent,fPropName,value);
       tkVariant: SetVariantProp(fComponent,fPropName,value);
       tkClass: TAbstractExpression(GetObjectProp(fComponent,fPropName,TAbstractExpression)).SetString(value);
-      else ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
+      else raise ESyntaxErr.CreateFmt(VariableNodeWrongTypeOfPropertyStr,[fPropName]);
     end;
   end;
 end;
@@ -852,7 +830,6 @@ end;
     TAssignNode
                     *)
 function TAssignNode.getVariantValue: Variant;
-resourcestring LeftSideExpressionIsConst='выражение слева от "=" является константой';
 begin
   Result:=(Components[1] as TEvaluationTreeNode).getVariantValue;
   if Components[0] is TVariableNode then
@@ -909,10 +886,6 @@ function TAbstractExpression.getString: string;
 begin
   Result:=fstring;
 end;
-//а теперь самая мякотка - построение стека и его проход.
-//лексический анализ будем делать?
-resourcestring
-  WrongExpressionStr = 'Выражение "%s" не является числом или переменной';
 
 procedure TAbstractExpression.ConstsAndVars(s: String; var treeNode: TEvaluationTreeNode);
 var val: Extended;
@@ -987,37 +960,28 @@ end;
 function TVariantExpression.AddBracketsForAssign(text: string; var map: TIntegerArray): string;
 var i,j,k,curbr: Integer;
 begin
-  Result:='';
-  j:=1;
-//  brCount:=0;
+  Result:=text;
   i:=1;
-  while i<=Length(text)-1 do begin
-    case text[i] of
-//      '(': inc(brCount);
-//      ')': dec(brCount);
-      '=': begin
-        result:=result+MidStr(text,j,i-j+1);  //вставляем все до знака равенства и его тоже
-        //открывающую скобку перед переменной поставим на стадии лексического анализа
-//        inc(brCount);
-        k:=i;
-        curbr:=0;
-        while (k<Length(text)) and (curbr>=0) do begin
-          inc(k);
-          text[k-1]:=text[k];
-          case text[k] of
-            '(': inc(curbr);
-            ')': dec(curbr);
-          end;
+  while i<Length(Result) do begin
+    if Result[i]='=' then begin
+    //вставляем все до знака равенства и его тоже
+    //открывающую скобку перед переменной поставим на стадии лексического анализа
+      k:=i;
+      curbr:=0;
+      while (k<Length(Result)) and (curbr>=0) do begin
+        inc(k);
+        case text[k] of
+          '(': inc(curbr);
+          ')': dec(curbr);
         end;
-        text[k]:=')';
-        j:=i;
-//        dec(i);
-
       end;
+      Result:=StuffString(Result,k+1,0,')');
+      SetLength(map,Length(Result)+2);
+      for j:=Length(Result)+1 downto k do
+        map[j]:=map[j-1];
     end;
     inc(i);
   end;
-  result:=result+RightStr(text,Length(text)-j+1);
 end;
 
 procedure TVariantExpression.LexicalAnalysis;
@@ -1026,10 +990,6 @@ var p: TPhysUnitParser;
     ch: char;
     str,str1: string;
     map: TIntegerArray;
-ResourceString
-  ConversionOperatorError = 'ошибочно записан оператор преобразования единицы измерения';
-  UnknownOperatorVertLine = 'неизвестный оператор "|"';
-  NoVariableBeforeAssign = 'отсутствует переменная перед знаком =';
 begin
   LIndex:=-1;
   //первый проход - замена \deg на ° и добавление скобок для знака равенства
@@ -1097,6 +1057,7 @@ begin
             Lexems[LIndex].LType:=ltRightBracket;
             end;
           '[': begin
+            if LIndex=0 then Raise ELexicalErr.CreateFMT(NoExpressionToConvertTo,[p.getIdent]);
             inc(LIndex);  //у нас еще скобочка появится где-то слева
             EnsureLexemsLen(LIndex+1);
             Lexems[LIndex].LType:=ltLeftSquareBracket;
@@ -1118,8 +1079,7 @@ begin
                 Lexems[LIndex].LType:=ltPar
               else
                 Raise ELexicalErr.Create(UnknownOperatorVertLine);
-          '=':  if LIndex=0 then Raise ELexicalErr.Create(NoVariableBeforeAssign)
-                else begin
+          '=':  if LIndex>0 then begin
                   Lexems[LIndex]:=Lexems[LIndex-1];
                   Lexems[LIndex-1].LType:=ltLeftBracket;
                   inc(LIndex);
@@ -1153,7 +1113,6 @@ begin
   try
     LexicalAnalysis;
     if Length(Lexems)=0 then Raise ESyntaxErr.Create(EmptyStringErrStr);
-//    UnitConversionOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
     AssignOperators(0,Length(Lexems)-1,fEvaluationTreeRoot);
     fcorrect:=true;
     fIndependent:=fEvaluationTreeRoot.isIndependent;
@@ -1170,8 +1129,6 @@ end;
 
 procedure TVariantExpression.AssignOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var tmp: TEvaluationTreeNode;
-resourcestring
-  SomeCrapLeftOfAssign = 'Слева от = должна быть переменная';
 begin
   if (b+1<e) and (Lexems[b+1].LType=ltAssign) then begin
     if (Lexems[b].LType<>ltIdent) then
@@ -1188,8 +1145,6 @@ end;
 
 procedure TVariantExpression.UnitConversionOperators(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var term: TEvaluationTreeNode;
-resourcestring
-  NoExpressionToConvertTo = 'отсутствует значение, которое надо сконвертировать в %s';
 begin
   if (e>b+1) and (Lexems[e].LType=ltRightSquareBracket) and (Lexems[e-1].LType=ltPhysUnit)
   and (Lexems[e-2].LType=ltLeftSquareBracket) then
@@ -1402,8 +1357,6 @@ end;
 
 procedure TVariantExpression.BracketsAndFuncs(b,e: Integer; var TreeNode: TEvaluationTreeNode);
 var temp: TEvaluationTreeNode;
-resourcestring
-  LeftBracketOnWrongPlace = 'закрывающая скобка не на своем месте';
 begin
   if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
   if Lexems[e].LType=ltRightBracket then begin
@@ -1431,12 +1384,8 @@ var fComponent: TComponent;
     buRoot: TComponent;
     i: Integer;
     s: string;
-resourcestring
-  TwoOrMoreLexemsError = '2 или более лексических единиц, не связанных между собой';
-  NumberOrIdentifierExpected = '%s не является числом или переменной';
 begin
 //должна остаться одна лексема
-  if b>e then raise ESyntaxErr.Create(EmptyStringErrStr);
   if b<e then raise ESyntaxErr.Create(TwoOrMoreLexemsError);
   //остается b=e
   Case Lexems[b].LType of
@@ -1475,7 +1424,7 @@ begin
         end
       else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[s]);
     end;
-    else raise ESyntaxErr.CreateFmt(NumberOrIdentifierExpected,[fstring]);
+    else raise ESyntaxErr.CreateFmt(WrongExpressionStr,[fstring]);
   end;
 end;
 
@@ -1483,19 +1432,17 @@ function TVariantExpression.GetVariantValue: Variant;
 begin
   if fchanged then MakeEvaluationTree;
   if fCorrect then begin
-    if Assigned(fEvaluationTreeRoot) then begin
-      if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
-      fworking:=true;
-      try
-        if Assigned(fUnitRestriction) then
-          Result:=PhysUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
-        else
-          Result:=fEvaluationTreeRoot.getVariantValue;
-      finally
-        fworking:=false;
-      end;
-    end
-    else Raise Exception.Create(EmptyEvaluationTreeErrStr);
+    Assert(Assigned(fEvaluationTreeRoot),EmptyEvaluationTreeErrStr);
+    if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
+    fworking:=true;
+    try
+      if Assigned(fUnitRestriction) then
+        Result:=PhysUnitConvert(fEvaluationTreeRoot.getVariantValue,fUnitRestriction)
+      else
+        Result:=fEvaluationTreeRoot.getVariantValue;
+    finally
+      fworking:=false;
+    end;
   end
   else Raise Exception.Create(fLastErrorMsg);
 end;

@@ -200,13 +200,11 @@ function TFloatExpression.getValue: Real;
 begin
   if fchanged then MakeEvaluationTree;
   if fCorrect then begin
-    if Assigned(fEvaluationTreeRoot) then begin
-      if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
-      fworking:=true;
-      Result:=fEvaluationTreeRoot.getValue;
-      fworking:=false;
-    end
-    else Raise Exception.Create(EmptyEvaluationTreeErrStr);
+    Assert(Assigned(fEvaluationTreeRoot),EmptyEvaluationTreeErrStr);
+    if fworking then Raise Exception.CreateFMT(CircularReferenceErrStr,[fstring]);
+    fworking:=true;
+    Result:=fEvaluationTreeRoot.getValue;
+    fworking:=false;
   end
   else Raise Exception.Create(fLastErrorMsg);
 end;
