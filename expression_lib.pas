@@ -2,7 +2,7 @@ unit expression_lib;
 
 interface
 
-uses classes,Contnrs,SysUtils,new_phys_unit_lib;
+uses classes,Contnrs,SysUtils,new_phys_unit_lib,specchars;
 
 type
 
@@ -226,7 +226,7 @@ TVariantExpression=class(TAbstractExpression)  //
     fUnitRestriction: TPhysUnit;
     procedure EnsureLexemsLen(i: Integer);
   protected
-    function AddBracketsForAssign(text: string): string;
+    function AddBracketsForAssign(text: string; var map: TIntegerArray): string;
     procedure LexicalAnalysis;
     procedure AssignOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
     procedure UnitConversionOperators(b,e: Integer; var treeNode: TEvaluationTreeNode);
@@ -260,7 +260,7 @@ resourcestring
       
 implementation
 
-uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplx,specchars;
+uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplx;
 
 (*
     TEvaluationTreeNode
@@ -355,10 +355,13 @@ end;
 
 function TMultiplicationNode.getVariantValue: Variant;
 var i: Integer;
+  tmp: Variant;
 begin
-  Result:=1;
-  for i:=0 to ComponentCount-1 do
-    Result:=Result*(Components[i] as TEvaluationTreeNode).getVariantValue;
+  Result:=1.00000;
+  for i:=0 to ComponentCount-1 do begin
+    tmp:=Result;
+    Result:=tmp*(Components[i] as TEvaluationTreeNode).getVariantValue;
+  end;
 end;
 
 (*
@@ -511,9 +514,15 @@ resourcestring
 begin
   tmp:=PhysUnitConvert(V,PhysUnitData.Radian);
   Result:=TVarWithUnitVarData(tmp).Data.instance;
-  if Assigned(PhysUnitData.warningproc) and ((VarIsNumeric(Result) and abs(Result)>=1e8) or
-    (VarIsComplex(Result) and (VarComplexAbs(Result)>=1e8))) then
-    PhysUnitData.warningproc(Format(TrigFuncPrecisionLoss,[V,tmp]));
+
+  if Assigned(PhysUnitData.warningproc) then begin
+    if VarIsNumeric(Result) then
+      if system.Abs(Result)>=1e8 then
+        PhysUnitData.warningproc(Format(TrigFuncPrecisionLoss,[V,tmp]));
+    if VarIsComplex(Result) then
+      if VarComplexAbs(Result)>=1e8 then
+        PhysUnitData.warningproc(Format(TrigFuncPrecisionLoss,[V,tmp]));
+  end;
 end;
 
 function TMathFuncNode.Ln(x: Variant): Variant; //натуральный
@@ -975,7 +984,7 @@ begin
     SetLength(Lexems,Length(Lexems)+i);
 end;
 
-function TVariantExpression.AddBracketsForAssign(text: string): string;
+function TVariantExpression.AddBracketsForAssign(text: string; var map: TIntegerArray): string;
 var i,j,k,curbr: Integer;
 begin
   Result:='';
@@ -1005,11 +1014,8 @@ begin
 //        dec(i);
 
       end;
-
-
     end;
     inc(i);
-
   end;
   result:=result+RightStr(text,Length(text)-j+1);
 end;
@@ -1019,6 +1025,7 @@ var p: TPhysUnitParser;
     LIndex,i,brLevel: Integer;
     ch: char;
     str,str1: string;
+    map: TIntegerArray;
 ResourceString
   ConversionOperatorError = 'ошибочно записан оператор преобразования единицы измерения';
   UnknownOperatorVertLine = 'неизвестный оператор "|"';
@@ -1027,9 +1034,13 @@ begin
   LIndex:=-1;
   //первый проход - замена \deg на ° и добавление скобок для знака равенства
   //и вообще проверка на кол-во скобок, иначе сообщ. об ошибке невыразительное
-  str:=ConvertSpecChars(fstring);
+  SetLength(map,length(fstring)+2);
+  for i:=0 to length(map)-1 do
+    map[i]:=i+1;
 
-  str1:=AddBracketsForAssign(str);
+  str:=ConvertSpecCharsMap(fstring,map);
+
+  str1:=AddBracketsForAssign(str,map);
 
 
   p:=TPhysUnitParser.Create(str1);
@@ -1039,7 +1050,7 @@ begin
       inc(LIndex);  //мы уверены, что хоть одну лексему заполучим
       EnsureLexemsLen(LIndex+1);
 
-      Lexems[LIndex].startStr:=p.Pos;
+      Lexems[LIndex].startStr:=map[p.Pos-1];
       Lexems[LIndex].Ident:=p.getPhysUnitIdent;
       p.PutBack;
       //хочется по контексту понять, может ли здесь быть ед. изм?
@@ -1050,7 +1061,7 @@ begin
         Lexems[LIndex].PhysUnit:=p.GetPhysUnit;
         if Assigned(Lexems[LIndex].PhysUnit) then begin
           Lexems[LIndex].LType:=ltPhysUnit;
-          Lexems[LIndex].endStr:=p.Pos;
+          Lexems[LIndex].endStr:=map[p.Pos]-1;
           Continue;
         end;
       end;
@@ -1128,7 +1139,7 @@ begin
           end;
         end;
       end;
-      Lexems[LIndex].endStr:=p.Pos;
+      Lexems[LIndex].endStr:=map[p.Pos]-1;
     end;
   finally
     p.Free;

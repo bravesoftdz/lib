@@ -546,7 +546,7 @@ end;
 function TAffineConvType.MultiplyByNumber(v1,num: Variant;
   var ConvType: TPhysUnit): Variant;
 begin
-  v1:=v1*num;
+  Result:=v1*num;
   ConvType:=GetAffineUnit(Factor*num);
 end;
 
@@ -569,9 +569,15 @@ begin
   der.BaseAffine:=BaseAffine; //на этом этапе он должен автоматом появиться в списке
   //теперь украшательства - имя ему изменяем
   for i:=0 to der.ShortName.strings.Count-1 do
-    der.ShortName.strings[i]:=Format('%s{%g}',[der.ShortName.strings[i],Factor]);
+    if Factor=0 then
+      der.ShortName.strings[i]:=Format('%s{dif}',[der.ShortName.strings[i]])
+    else
+      der.ShortName.strings[i]:=Format('%s{%g}',[der.ShortName.strings[i],Factor]);
   for i:=0 to der.Caption.strings.Count-1 do
-    der.Caption.strings[i]:=Format('%s{%g}',[der.Caption.strings[i],Factor]);
+    if Factor=0 then
+      der.Caption.strings[i]:=Format('%s{dif}',[der.Caption.strings[i]])
+    else
+      der.Caption.strings[i]:=Format('%s{%g}',[der.Caption.strings[i],Factor]);
   der.ensureCorrectName(ToAcceptableName(der.Caption.InEnglish),owner);
   owner.InsertComponent(der);
   Result:=der;
@@ -1127,12 +1133,15 @@ end;
 procedure TVarWithUnit.DoMultiply(Right: TAbstractWrapperData);
 var v: TVarWithUnit absolute Right;
   UL,UR,f: TUnitsWithExponents;
+  tmp: Variant;
 begin
   if Right is TVarWithUnit then begin
     UL:=ConvType.Family.fFormula;
     UR:=v.ConvType.Family.fFormula;
-    if UR.IsUnity then  //безразмерная, но может быть и % или ppm
-      instance:=ConvType.MultiplyByNumber(instance,v.ConvType.ConvertToBase(v.instance),ConvType)
+    if UR.IsUnity then begin  //безразмерная, но может быть и % или ppm
+      tmp:=instance;
+      instance:=ConvType.MultiplyByNumber(tmp,v.ConvType.ConvertToBase(v.instance),ConvType);
+    end
     else if UL.IsUnity then
       instance:=v.ConvType.MultiplyByNumber(v.instance,ConvType.ConvertToBase(instance),ConvType)
     else begin
@@ -1144,6 +1153,9 @@ begin
         f.Multiply(UR);
         instance:=instance*v.ConvType.ConvertToBase(v.instance);
         ConvType:=f.GetConvType;
+        //если получилась афинная величина на выходе, нужно сделать ее {0}
+        if ConvType is TAffineConvType then
+          ConvType:=(ConvType as TAffineConvType).GetAffineUnit(0);
       finally
         f.Free;
       end;
