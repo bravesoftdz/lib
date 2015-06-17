@@ -163,10 +163,6 @@ begin
 
   localePreferences:=TLocalePreferences.LoadFromFile(buDir+'\data\Lang\LanguageSettings.txt');
   SetCurrentDir(buDir);
-
-  //debug
-  localePreferences.saveFormat:=fAscii;
-  localePreferences.SaveToFile('prefs.txt');
 end;
 
 (*

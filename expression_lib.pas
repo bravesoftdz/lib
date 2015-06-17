@@ -508,10 +508,7 @@ function TMathFuncNode.HandleFuncOfUnits(V: Variant; funcname: string): Variant;
 var tmp: Variant;
 begin
   if IsPhysUnit(V) then begin
-    if not IsDimensionLess(V) then
-      tmp:=PhysUnitConvert(V,PhysUnitData.Unity)
-    else
-      tmp:=V;
+    tmp:=PhysUnitConvert(V,PhysUnitData.Unity);
     Result:=TVarWithUnitVarData(tmp).Data.instance;
   end
   else Result:=V;

@@ -47,6 +47,7 @@ type
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); virtual;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; virtual; abstract;
       function isNumericallyEqual(un: TPhysUnit): Boolean; virtual; abstract;
+      function UniqueName: string;
       property SomeId: string read GetSomeId;
     published
       property ShortName: TLocalizedName read fShortName write fShortName;
@@ -441,6 +442,23 @@ function TPhysUnit.GetSomeId: string;
 begin
   if not Caption.TryEnglish(Result) and not ShortName.TryEnglish(Result) then
     Result:=name;
+end;
+
+function TPhysUnit.UniqueName: string;
+begin
+  if ShortName.Enabled and not PhysUnitData.isAmbigious(NoSpaces(ShortName.Caption)) then
+    Result:=NoSpaces(ShortName.Caption)
+  else if Caption.Enabled and not PhysUnitData.isAmbigious(NoSpaces(Caption.Caption)) then
+    Result:=NoSpaces(Caption.Caption)
+  else begin
+    if family.ShortName.Enabled then Result:=NoSpaces(family.Shortname.Caption)
+    else Result:=NoSpaces(family.Caption.Caption);
+    if ShortName.Enabled then
+      Result:=Result+'.'+NoSpaces(ShortName.Caption)
+    else if Caption.Enabled then
+      Result:=Result+'.'+NoSpaces(Caption.Caption)
+    else Result:=name;
+  end;
 end;
 (*
     TNormalConvType
@@ -893,9 +911,6 @@ begin
     if Assigned(PhysConsts) then
       PhysConsts.Init;
 
-    fMegaList.SaveToFile('megalist.txt');
-    fAutocompleteList.Sort;
-    fAutocompleteList.SaveToFile('autocomplete.txt');
     fWarningList.SaveToFile('warnings.txt');
   end;
 end;
@@ -969,6 +984,7 @@ begin
         Result.ensureCorrectName(ToAcceptableName(str),Result.Owner);
         Result.ShortName.AddInCurrentLang(str); //халтура
         NormalRslt.Multiplier:=multiplier;
+        AddToMegaList(Result);
       end;
     end;
   end;
@@ -1026,8 +1042,7 @@ begin
   end
   else begin
     Result:=instance;
-    if not ConvType.ShortName.TryCaption(s) and not ConvType.Caption.TryCaption(s)
-      then s:=ConvType.Name;
+    s:=ConvType.UniqueName;
     if s<>'' then Result:=Result+' '+s;
   end;
 end;
@@ -1909,10 +1924,20 @@ begin
       if Assigned(vwithunit.ConvType.ScaledUp) and (vwithunit.ConvType.ScaledUp=vwithunit.ConvType.ScaledDown) then
         vwithunit.Conversion(vwithunit.ConvType.ScaledDown);
       L:=VarGetLength(vwithunit.instance);
-      if (L<1) and Assigned(vwithunit.ConvType.ScaledDown) then
-        vwithunit.Conversion(vwithunit.ConvType.ScaledDown)
-      else if (L>=1000) and Assigned(vwithunit.ConvType.ScaledUp) then
-        vwithunit.Conversion(vwithunit.ConvType.ScaledUp)
+      if (L<(1-1e-9)) then
+        if Assigned(vwithunit.ConvType.ScaledDown) then
+          vwithunit.Conversion(vwithunit.ConvType.ScaledDown)
+        else begin
+          Result:=V;
+          break;
+        end
+      else if (L>=1000) then
+        if Assigned(vwithunit.ConvType.ScaledUp) then
+          vwithunit.Conversion(vwithunit.ConvType.ScaledUp)
+        else begin
+          Result:=V;
+          break;
+        end
       else begin
         PhysUnitCreateInto(Result,vwithunit);
         break;
