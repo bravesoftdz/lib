@@ -689,6 +689,7 @@ begin
     else if AComponent=fHistoryAction then
       fHistoryAction:=nil;
   end;
+  inherited;
 end;
 
 procedure TUndoPopup.DoPopup(Sender: TObject);

@@ -147,6 +147,21 @@ type
       property backup: string read fbackup write fbackup;
     end;
 
+  TChangeLocaleStringCommand=class(TChangePropertyCommand)
+    private
+      fstring,fbackup,flang: string;
+    public
+      constructor Create(aComponent: TStreamingClass; propName: string; alang,value: string); reintroduce;
+      function Execute: Boolean; override;
+      function Undo: Boolean; override;
+      function Caption: string; override;
+    published
+      property val: string read fstring write fstring;
+      property lang: string read flang write flang;
+      property backup: string read fbackup write fbackup;
+    end;
+
+
 
   TCommandTree=class(TAbstractCommandContainer) //дерево для undo/redo с многими ветвями
     private
@@ -220,7 +235,7 @@ type
       procedure Save;
       procedure Change; virtual;
       procedure DoLoad; virtual;
-      function Hash: T4x4LongWordRecord;
+      function Hash: T4x4LongWordRecord; virtual;
       function UndoTree: TCommandTree;
       property onDocumentChange: TNotifyEvent read fOnDocumentChange write SetOnDocumentChange;
       property onLoad: TNotifyEvent read fOnLoad write SetOnLoad;
@@ -229,6 +244,12 @@ type
     published
       UndoContainer: TAbstractCommandContainer;
       Tool: TAbstractToolAction;
+    end;
+
+  TAbstractDocumentInnerObject = class(TStreamingClass)
+    public
+      function Doc: TAbstractDocument;
+      function SaveWithUndo: Boolean;
     end;
 
   TSavingThread=class(TThread)
@@ -269,7 +290,8 @@ type
 
 implementation
 
-uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms;
+uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms,
+set_english_locale_if_not_sure;
 
 var BeginHashEvent: TEvent;
 
@@ -673,6 +695,49 @@ begin
 end;
 
 (*
+          TChangeLocaleStringCommand
+                                        *)
+constructor TChangeLocaleStringCommand.Create(aComponent: TStreamingClass;PropName: string; alang,value: String);
+begin
+  inherited Create(nil);
+  fcomponent:=acomponent;
+  fPropName:=PropName;
+  fString:=value;
+  flang:=alang;
+end;
+
+function TChangeLocaleStringCommand.Execute: Boolean;
+var locStr: TLocalizedName;
+begin
+  inherited Execute;  //дает имя строки, чтобы отобр. в caption
+  locStr:=TlocalizedName(GetObjectProp(fComponent,fPropName,TLocalizedName));
+//  locStr:=(fComponent.FindComponent(fPropName)) as TlocalizedName;
+  fBackup:=locStr.str[flang];
+  if fBackup=fstring then Result:=false
+  else begin
+    locStr.str[flang]:=fstring;
+    Result:=true;
+  end;
+end;
+
+function TChangeLocaleStringCommand.Undo: Boolean;
+var locStr: TLocalizedName;
+begin
+  locStr:=TLocalizedName(GetObjectProp(fComponent,fPropName,TLocalizedName));
+//  locStr:=(fComponent.FindComponent(fPropName)) as TLocalizedName;
+  locStr.str[flang]:=fBackup;
+  fBackup:='';
+  Result:=true;
+end;
+
+function TChangeLocaleStringCommand.Caption: string;
+begin
+  Result:=fComponentNameStr+'.'+fPropName+'.'+fLang+'='+fString;
+end;
+
+
+
+(*
           TChangeFloatCommand
                                       *)
 constructor TChangeFloatCommand.Create(acomponent: TStreamingClass;PropName: string;value: Real);
@@ -854,6 +919,7 @@ procedure TAbstractDocument.Notification(aComponent: TComponent; operation: TOpe
 begin
   if (operation=opRemove) and (aComponent=fActionList) then
     fActionList:=nil;
+  inherited;
 end;
 
 function TAbstractDocument.isEmpty: Boolean;
@@ -974,7 +1040,7 @@ function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
     buSaveFormat: streamingClassSaveFormat;
     str: TMemoryStream;
-    filestr: TFileStream;
+//    filestr: TFileStream;
 begin
 //  fCriticalSection.Acquire;
   buSaveWithUndo:=SaveWithUndo; //потом вернем
@@ -992,10 +1058,12 @@ begin
     end;
   end;
 //debug
+(*
   filestr:=TFileStream.Create(TIDHash128.AsHex(Result)+'.txt',fmCreate);
   str.Seek(0,soFromBeginning);
   filestr.CopyFrom(str,str.Size);
   filestr.Free;
+*)  
 //end of debug
   str.Free;
 
@@ -1018,6 +1086,18 @@ begin
   DoLoad;
 end;
 
+(*
+      TAbstractDocumentInnerObject
+                                      *)
+function TAbstractDocumentInnerObject.Doc: TAbstractDocument;
+begin
+  Result:=FindOwner as TAbstractDocument;
+end;
+
+function TAbstractDocumentInnerObject.SaveWithUndo: Boolean;
+begin
+  Result:=Doc.SaveWithUndo;
+end;
 
 
 
@@ -1466,7 +1546,8 @@ end;
 
 initialization
 RegisterClasses([TCommandTree,TBranchCommand,TInfoCommand,TSavedAsInfoCommand,
-TChangeIntegerCommand,TChangeBoolCommand,TChangeFloatCommand,TChangeStringCommand]);
+TChangeIntegerCommand,TChangeBoolCommand,TChangeFloatCommand,TChangeStringCommand,
+TChangeLocaleStringCommand]);
 BeginHashEvent:=TEvent.Create(nil,false,false,'AbstractDocumentBeginHash');
 
 finalization

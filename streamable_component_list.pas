@@ -261,9 +261,9 @@ end;
 
 procedure TStreamableComponentList.Notification(aComponent: TComponent; operation: TOperation);
 begin
-  inherited Notification(aComponent,operation);
   if UseNotifications and (operation=opRemove) and Exist(aComponent) then
     fList.Delete(IndexOf(aComponent));
+  inherited Notification(aComponent,operation);    
 end;
 
 procedure TStreamableComponentList.SetObjectsOwner(value: TComponent);

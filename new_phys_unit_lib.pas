@@ -11,6 +11,7 @@ type
   TPhysFamily=class(TStreamingClass) //можно будет и к TComponent вернуться
     private
       fIsBase: Boolean;
+      fIsGoodName: Boolean;
       fCaption,fShortName,fDescription: TLocalizedName;
       fBaseType: TPhysUnit;
       fFormula: TUnitsWithExponents;
@@ -21,8 +22,10 @@ type
       destructor Destroy; override;
       procedure SetupFormula;
       function index: Integer;
+      function BaseIndex: Integer;
     published
       property IsBase: Boolean read fIsBase write fIsBase;
+      property IsGoodName: Boolean read fIsGoodName write fIsGoodName default false;
       property Caption: TLocalizedName read fCaption write fCaption;
       property ShortName: TLocalizedName read fShortName write fShortName;
       property Description: TLocalizedName read fDescription write fDescription;
@@ -357,7 +360,10 @@ end;
 
 function ConvTypeToLocFamilyLetter(ConvType: TPhysUnit): TLocalizedName;
 begin
-  Result:=ConvType.family.ShortName;
+  if ConvType.Family.ShortName.Enabled then
+    Result:=ConvType.family.ShortName
+  else
+    Result:=ConvType.family.Caption;
 end;
 
 (*
@@ -385,6 +391,11 @@ end;
 function TPhysFamily.index: Integer;
 begin
   Result:=(Owner as TPhysUnitData).fFamilyList.IndexOf(self);
+end;
+
+function TPhysFamily.BaseIndex: Integer;
+begin
+  Result:=(Owner as TPhysUnitData).fBaseFamilyList.IndexOf(self);
 end;
 
 procedure TPhysFamily.SetupFormula;
@@ -918,9 +929,9 @@ end;
 procedure TPhysUnitData.Notification(AComponent: TComponent;
   Operation: TOperation);
 begin
-  inherited;
   if (Operation=opInsert) and (AComponent is TPhysFamily) then
     fFamilyList.Add(AComponent);
+  inherited;
 end;
 
 function TPhysUnitData.isAmbigious(str: string): boolean;
@@ -1534,9 +1545,12 @@ end;
 
 
 function TUnitsWithExponents.GetConvType: TPhysUnit;
-var i: Integer;
+var i,j: Integer;
     fam: TPhysFamily;
     un: TNormalConvType;
+    solver: IAbstractSLEQ;
+    nvars,neq: Integer;
+    s: string;
 begin
   for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
     fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
@@ -1545,11 +1559,52 @@ begin
       Exit;
     end;
   end;
+
+  if fcount>2 then begin
+    if Assigned(PhysUnitData.infoproc) then
+      PhysUnitData.infoproc('creating new family');
+    solver:=TSimpleGaussLEQ.Create;
+    nvars:=PhysUnitData.fBaseFamilyList.Count;
+    neq:=nvars;
+    solver.SetDimensions(nvars,neq);
+    for i:=0 to nvars-1 do begin
+      solver.Matrix[i,i]:=1;
+      solver.VariableName[i]:=(PhysUnitData.fBaseFamilyList[i] as TPhysFamily).BaseType.UniqueName;
+    end;
+    //единичная матрица для основных величин
+    for i:=0 to fcount-1 do
+      solver.Matrix[nvars,UnitTypes[i].Family.BaseIndex]:=Exponents[i];
+
+    for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
+      fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
+      if fam.IsGoodName then begin
+        inc(nvars);
+        solver.SetDimensions(nvars,neq);
+        for j:=0 to fam.fFormula.fCount-1 do
+          solver.Matrix[nvars-1,fam.fFormula.UnitTypes[j].Family.BaseIndex]:=fam.fFormula.Exponents[j];
+        if not Assigned(fam.BaseType) then
+          raise Exception.Create(fam.fCaption.Caption);
+        solver.VariableName[nvars-1]:=fam.BaseType.UniqueName;
+      end;
+    end;
+
+    solver.Solve;
+    if Assigned(PhysUnitData.infoproc) then begin
+      for i:=0 to nvars-1 do begin
+        s:=solver.GetVariable(i);
+        PhysUnitData.infoproc(solver.VariableName[i]+'='+s);
+      end;
+    end;
+
+  end;
+
+
   //не нашли подходящую семью - придется создать!
   fam:=TPhysFamily.Create(PhysUnitData);
   fam.fFormula.Assign(self);
   fam.ShortName:=ShowLocFormula;
   fam.Name:=ToAcceptableName(fam.ShortName.InEnglish);
+
   //и еще подходящую единицу измерения создадим
   //нормальную, других нельзя
   un:=TNormalConvType.Create(fam);
@@ -1777,6 +1832,7 @@ procedure TPhysConsts.Notification(aComponent: TComponent; Operation: TOperation
 begin
   if (aComponent is TPhysConst) and (operation = opInsert) then
     fList.Add(aComponent);
+  inherited;
 end;
 
 function TPhysConsts.GetVar(i: Integer): Variant;

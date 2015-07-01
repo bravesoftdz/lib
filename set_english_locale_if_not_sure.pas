@@ -61,6 +61,7 @@ type
       procedure Loaded; override;
       function GetAppropriateLang(list: TListWithID): Integer;
       function TryGetMatchingString(ID: Integer; strings: TStrings; out str: string): Boolean;
+      function TrySetMatchingString(ID: Integer; strings: TStrings; val: string): Boolean;
       function GetLanguageList: TStringList;  //string:название языка, object: его ID
       function ChangeLanguageID(value: Integer): Boolean;
       function ChangeLanguage(value: string): Boolean;
@@ -83,6 +84,8 @@ type
       procedure WriteData(writer: TWriter);
     protected
       procedure DefineProperties(filer: TFiler); override;
+      procedure SetMatchingString(lang,value: string);
+      function GetMatchingString(lang: string): string;
     public
       constructor Create(aOwner: TComponent); override;
       constructor CreateEmptyNeutral(aOwner: Tcomponent=nil);
@@ -104,6 +107,7 @@ type
       procedure RightConcat(source: TLocalizedName; chr: string=''); overload;
       procedure RightConcat(str: string); overload;
       property strings: TStringList read fstrings;
+      property str[Lang: string]: string read GetMatchingString write SetMatchingString;
 //      function EqualsTo(value: string): Boolean;
   end;
 
@@ -440,6 +444,24 @@ begin
     end;
 end;
 
+function TLocalePreferences.TrySetMatchingString(ID: Integer; strings: TStrings;
+  val: string): Boolean;
+var preflist: TListWithID;
+    i,j: Integer;
+begin
+  preflist:=LangPrefMatrix.GetPrefList(ID);
+  Result:=false;
+  if assigned(preflist) then
+    for i:=0 to preflist.Count-1 do begin
+      j:=strings.IndexOfObject(preflist[i]);
+      if j>=0 then begin
+        Result:=true;
+        strings[j]:=val;
+        Exit;
+      end;
+    end;
+end;
+
 function TLocalePreferences.GetLanguageList: TStringList;
 var i: Integer;
 begin
@@ -634,6 +656,17 @@ begin
     strings[i]:=strings[i]+str;
 end;
 
+procedure TLocalizedName.SetMatchingString(lang,value: string);
+begin
+  if not localePreferences.TrySetMatchingString(localePreferences.LangID.NameToID(lang),strings,value) then
+    Raise Exception.CreateFMT('SetMatchingString: lang %s not found',[lang]);
+end;
+
+function TLocalizedName.GetMatchingString(lang: string): string;
+begin
+  if not localePreferences.TryGetMatchingString(localePreferences.LangID.NameToID(lang),strings,Result) then
+    Raise Exception.CreateFmt('GetMatchingString: lang %s not found',[lang]);
+end;
 
 (*
       General

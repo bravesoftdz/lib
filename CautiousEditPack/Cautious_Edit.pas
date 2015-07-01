@@ -23,6 +23,8 @@ type
     procedure LoadZeroFlag(Reader: TReader);
   protected
     procedure DefineProperties(Filer: TFiler); override;
+    procedure SetExpressionRoot(value: TComponent); virtual; abstract;
+    function GetExpressionRoot: TComponent; virtual; abstract;
   public
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
@@ -32,6 +34,7 @@ type
     procedure TurnRed(explain: string);
     procedure ReturnToNormal;
     property SeemsNormal: boolean read fSeemsNormal;
+    property ExpressionRootComponent: TComponent read GetExpressionRoot write SetExpressionRoot;
   published
     property ControlToDisable: TControl read fControlToDisable write SetControlToDisable;
     property OnValidateResult: TNotifyEvent read fonValidateResult write SetOnValidateResult;
