@@ -3,7 +3,7 @@ unit analysis_lib;
 interface
 
 uses classes,linear_eq,streaming_class_lib,streamable_component_list,expression_lib,
-  chart,series,TeEngine,ConvUtils,graphics;
+  chart,series,TeEngine,graphics,new_phys_unit_lib;
 
 type
 
@@ -38,9 +38,9 @@ end;
 
 TChartDetails = record
   LeftAxisGraphs: array of Integer; //номера в страшенной таблице fData
-  BottomAxisType: TConvType;
-  LeftAxisType: TConvType;
-  RightAxisType: TConvType;
+  BottomAxisType: TPhysUnit;
+  LeftAxisType: TPhysUnit;
+  RightAxisType: TPhysUnit;
   RightAxisEnabled: boolean;
   RightAxisGraphs: array of Integer;
   caption: string;
@@ -123,7 +123,7 @@ var stTransient,stAC,stDC, stUndefined : TSimulationType;
 implementation
 
 uses SysUtils,Math,command_class_lib,variants, ComObj, formShowAnalysisResults,
-phys_units_lib,VarCmplx,ComCtrls,StrUtils,controls,stdCtrls,graphicEx,Types;
+VarCmplx,ComCtrls,StrUtils,controls,stdCtrls,graphicEx,Types;
 
 var AnalysisTypes: TStrings;
 
@@ -469,10 +469,10 @@ var i,j,k,L: Integer;
     incr: Real;
     fullturn: Variant;
 begin
-  fullturn:=VarWithUnitCreate('1 turn');
+  fullturn:=PhysUnitCreate('1 turn');
   //первым делом с комплексными числами разберемся, если таковые есть
   for i:=0 to fTempVarsOfInterest.Count-1 do
-    if VarIsComplex(VarWithUnitGetNumber(fdata[0,0,i])) then
+    if VarIsComplex(PhysUnitGetNumber(fdata[0,0,i])) then
       if fShowDetails.fComplexDisplay=cndAbsArg then begin
         fTempVarsOfInterest.Add('arg('+fTempVarsOfInterest[i]+')');
         fTempVarsOfInterest[i]:='abs('+fTempVarsOfInterest[i]+')';
@@ -480,11 +480,11 @@ begin
         SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,L+1);
         for j:=0 to PrimarySweep.NumberOfPoints-1 do
           for k:=0 to SecondarySweep.NumberOfPoints-1 do begin
-            fdata[j,k,L]:=VarWithUnitArg(fdata[j,k,i]);
+            fdata[j,k,L]:=PhysUnitArg(fdata[j,k,i]);
 
             if j>0 then begin
               while true do begin
-                incr:=VarWithUnitGetNumberIn(fdata[j,k,L]-fdata[j-1,k,L],auRadian);
+                incr:=PhysUnitGetNumberIn(fdata[j,k,L]-fdata[j-1,k,L],PhysUnitData.Radian);
 
                 if abs(incr)>pi then begin
                   if incr>0 then fdata[j,k,L]:=fdata[j,k,L]-fullturn
@@ -495,7 +495,7 @@ begin
 
             end;
 
-            fdata[j,k,i]:=VarWithUnitAbs(fdata[j,k,i]);
+            fdata[j,k,i]:=PhysUnitAbs(fdata[j,k,i]);
           end;
       end
       else if fShowDetails.fComplexDisplay=cndReIm then begin
@@ -505,8 +505,8 @@ begin
         SetLength(fdata,PrimarySweep.NumberOfPoints,SecondarySweep.NumberOfPoints,L+1);
         for j:=0 to PrimarySweep.NumberOfPoints-1 do
           for k:=0 to SecondarySweep.NumberOfPoints-1 do begin
-            fdata[j,k,L]:=VarWithUnitIm(fdata[j,k,i]);
-            fdata[j,k,i]:=VarWithUnitRe(fdata[j,k,i]);
+            fdata[j,k,L]:=PhysUnitIm(fdata[j,k,i]);
+            fdata[j,k,i]:=PhysUnitRe(fdata[j,k,i]);
           end;
       end;
   //если выбран вариант cndGodograph, то оставляем числа в покое, потом построим хитрый график
@@ -518,10 +518,10 @@ var i: Integer;
 begin
   i:=Sender.ParentChart.Tag;
   if Sender=Sender.ParentChart.LeftAxis then
-    tmpvar:=VarWithUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].LeftAxisType)
+    tmpvar:=PhysUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].LeftAxisType)
   else if Sender=Sender.ParentChart.BottomAxis then
-    tmpvar:=VarWithUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].BottomAxisType);
-  LabelText:=VarWithUnitFindGoodPrefix(tmpvar);
+    tmpvar:=PhysUnitCreateFromVariant(StrToFloat(LabelText),fShowDetails.fChartDetails[i].BottomAxisType);
+  LabelText:=PhysUnitFindGoodPrefix(tmpvar);
 (*
   fdummyBtmp.Canvas.Font:=Sender.labelsFont;
   if fdummyBtmp.Canvas.TextWidth(LabelText)>Sender.LabelsSize then
@@ -570,7 +570,7 @@ var i,j,k,col: Integer;
     fTabSheet: TTabSheet;
     fChart: TChart;
     fSeries: TLineSeries;
-    XConv,YConv: TConvType;
+    XConv,YConv: TPhysUnit;
     fCenter,fWindowHeight: Real;
     Button: TButton;
     btmp: TBitmap;
@@ -597,7 +597,7 @@ begin
     for i:=0 to fTempVarsOfInterest.Count-1 do begin
       found:=false;
       for j:=0 to k-1 do
-        if IsVarWithUnitSameFamily(fdata[0,0,i],VariousTypes[j]) then begin
+        if IsPhysUnitSameFamily(fdata[0,0,i],VariousTypes[j]) then begin
           found:=true;
           chartnumbers[i]:=j;
           inc(graphsCount[j]);
@@ -618,9 +618,9 @@ begin
     for i:=0 to fShowDetails.fChartCount-1 do begin
       SetLength(fShowDetails.fChartDetails[i].LeftAxisGraphs,graphsCount[i]);
       fShowDetails.fChartDetails[i].RightAxisEnabled:=false;
-      fShowDetails.fChartDetails[i].BottomAxisType:=VarWithUnitGetConvType(PrimarySweep.Variable.getVariantValue);
-      fShowDetails.fChartDetails[i].LeftAxisType:=VarWithUnitGetConvType(VariousTypes[i]);
-      fShowDetails.fChartDetails[i].caption:=ConvFamilyToDescription(VarWithUnitGetConvFamily(VariousTypes[i]));
+      fShowDetails.fChartDetails[i].BottomAxisType:=PhysUnitGetConvType(PrimarySweep.Variable.getVariantValue);
+      fShowDetails.fChartDetails[i].LeftAxisType:=PhysUnitGetConvType(VariousTypes[i]);
+      fShowDetails.fChartDetails[i].caption:=PhysUnitGetConvType(VariousTypes[i]).family.Caption.Caption;
     end;
     //ага, распихиваем наши величины по разным местам
     for i:=0 to k-1 do
@@ -631,7 +631,7 @@ begin
     end;
   end;
 
-  XConv:=VarWithUnitGetConvType(PrimarySweep.Variable.getVariantValue);
+  XConv:=PhysUnitGetConvType(PrimarySweep.Variable.getVariantValue);
   //а теперь собственно построение графиков. Для начала создадим компоненты.
   for i:=0 to fShowDetails.fChartCount-1 do begin
 
@@ -677,9 +677,9 @@ begin
         fSeries.LinePen.Width:=2;
         col:=fShowDetails.fChartDetails[i].LeftAxisGraphs[j];
         fSeries.Title:=fTempVarsOfInterest[col];
-        YConv:=VarWithUnitGetConvType(fdata[0,0,col]);
+        YConv:=PhysUnitGetConvType(fdata[0,0,col]);
         for k:=0 to PrimarySweep.NumberOfPoints-1 do
-          fSeries.AddXY(VarWithUnitGetNumberIn(PrimarySweep.GetPoint(k),XConv),VarWithUnitGetNumberIn(fdata[k,0,col],YConv));
+          fSeries.AddXY(PhysUnitGetNumberIn(PrimarySweep.GetPoint(k),XConv),PhysUnitGetNumberIn(fdata[k,0,col],YConv));
       end;
       //теперь габариты знаем - пора чуть расширить область отрисовки
     fChart.LeftAxis.AdjustMaxMin;
@@ -760,7 +760,7 @@ initialization
   stTransient:=RegisterSimulationType('Transient');
   stAC:=RegisterSimulationType('AC');
   stDC:=RegisterSimulationType('DC');
-  NumberOfAnalysisThreads:=4;
+  NumberOfAnalysisThreads:=1;
 finalization
   FreeAndNil(AnalysisTypes);
 end.

@@ -23,8 +23,8 @@ type
     procedure LoadZeroFlag(Reader: TReader);
   protected
     procedure DefineProperties(Filer: TFiler); override;
-    procedure SetExpressionRoot(value: TComponent); virtual; abstract;
-    function GetExpressionRoot: TComponent; virtual; abstract;
+    procedure SetExpressionRoot(value: TComponent); virtual;
+    function GetExpressionRoot: TComponent; virtual;
   public
     constructor Create(owner: TComponent); override;
     destructor Destroy; override;
@@ -47,6 +47,9 @@ type
     fExpression: TVariantExpression;
     function get_value: Variant;
     procedure set_value(value: Variant);
+  protected
+    procedure SetExpressionRoot(value: TComponent); override;
+    function GetExpressionRoot: TComponent; override;
   public
     constructor Create(Owner: TComponent); override;
     procedure Change; override;
@@ -202,6 +205,16 @@ begin
     text:='';
 end;
 
+procedure TCautiousEdit.SetExpressionRoot(value: TComponent);
+begin
+// nothing
+end;
+
+function TCautiousEdit.GetExpressionRoot: TComponent;
+begin
+  Result:=nil;
+end;
+
 (*
             TVariantEdit
                                 *)
@@ -260,7 +273,15 @@ begin
     Result:=TryPhysUnitCreate(text,t);
 end;
 
+procedure TVariantEdit.SetExpressionRoot(value: TComponent);
+begin
+  Expression.SetRootComponent(value);
+end;
 
+function TVariantEdit.GetExpressionRoot: TComponent;
+begin
+  Result:=nil;
+end;
 
 (* General procedures *)
 

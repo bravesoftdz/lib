@@ -89,6 +89,7 @@ type
     public
       constructor Create(aOwner: TComponent); override;
       constructor CreateEmptyNeutral(aOwner: Tcomponent=nil);
+      procedure MakeEmptyNeutral;
       destructor Destroy; override;
       procedure Assign(source: TPersistent); override;
       procedure Clear;
@@ -161,12 +162,15 @@ end;
 
 
 procedure SetEnglishLocaleIfNotSure;
-var buDir: string;
+//var buDir: string;
 begin
-  buDir:=GetCurrentDir;
+//вроде как localePrefences уже загружен
+  
 
-  localePreferences:=TLocalePreferences.LoadFromFile(buDir+'\data\Lang\LanguageSettings.txt');
-  SetCurrentDir(buDir);
+//  buDir:=GetCurrentDir;
+
+//  localePreferences:=TLocalePreferences.LoadFromFile(buDir+'\data\Lang\LanguageSettings.txt');
+//  SetCurrentDir(buDir);
 end;
 
 (*
@@ -488,6 +492,12 @@ begin
   strings.AddObject('',nil);
 end;
 
+procedure TLocalizedName.MakeEmptyNeutral;
+begin
+  strings.Clear;
+  strings.AddObject('',nil);
+end;
+
 destructor TLocalizedName.Destroy;
 begin
   fStrings.Free;
@@ -685,7 +695,8 @@ end;
 
 
 initialization
-  localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt');
+  if FileExists(GetCurrentDir+'\data\Lang\LanguageSettings.txt') then
+    localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt');
 
 finalization
   FreeAndNil(localePreferences);

@@ -229,7 +229,7 @@ type
     protected
       procedure DefineProperties(filer: TFiler); override;
       function AddArbitraryUnit(ConvType: TPhysUnit; Exponent: Real): Real;
-      function ShowLocalized(proc: TShowLocalizedName): TLocalizedName;
+      procedure ShowLocalized(proc: TShowLocalizedName; dest: TLocalizedName);
     public
       procedure Clear;
       procedure Assign(source: TPersistent); override;
@@ -240,8 +240,8 @@ type
       procedure Multiply(value: TUnitsWithExponents);
       procedure Divide(right: TUnitsWithExponents);
       function AsString: string;
-      function ShowLocFormula: TLocalizedName;
-      function ShowLocShortName: TLocalizedName;
+      procedure ShowLocFormula(dest: TLocalizedName);
+      procedure ShowLocShortName(dest: TLocalizedName);
       function GetConvType: TPhysUnit;
       function IsUnity: Boolean;
   end;
@@ -262,8 +262,10 @@ type
       procedure DoDivide(Right: TAbstractWrapperData); override;
       procedure DoPower(pow: Real);
       function AsString: string; override;
+      function GetLengthSquared: Real;
       procedure Conversion(DestConv: TPhysUnit);
     published
+      property LengthSquared: Real read GetLengthSquared;
       property isExplicitlyConverted: boolean read ExplicitConversion;
   end;
 
@@ -294,10 +296,25 @@ type
   procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
   function TryPhysUnitCreate(text: string; out Res: Variant): boolean;  
   function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
-  function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant;
+  function PhysUnitCreate(text: string): Variant;
+  function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant; overload;
+  function PhysUnitConvert(source: Variant; DestType: string): Variant; overload;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
+  function PhysUnitSqrt(source: Variant): Variant;
+  function PhysUnitAbs(source: Variant): Variant;
+  function PhysUnitArg(source: Variant): Variant;
+  function PhysUnitRe(source: Variant): Variant;
+  function PhysUnitIm(source: Variant): Variant;
   function PhysUnitFindGoodPrefix(V: Variant): Variant;
+  function PhysUnitGetNumberIn(source: Variant; UnitName: TPhysUnit): Variant; overload;
+  function PhysUnitGetNumberIn(source: Variant; UnitName: string): Variant; overload;
+  function PhysUnitGetNumber(source: Variant): Variant;  
   function NoSpaces(str: string): String;
+  function StrToPhysFamily(str: string): TPhysFamily;
+  function StrToPhysUnit(str: string): TPhysUnit;
+  function IsPhysUnitSameFamily(v1,v2: Variant): Boolean;
+  function PhysUnitGetConvType(source: Variant): TPhysUnit;
+  function VarGetLengthSquared(value: Variant): Real;    
 
   var PhysUnitData: TPhysUnitData;
       VarWithUnitVariantType: TVarWithUnitType;
@@ -837,6 +854,7 @@ var j,k,z: Integer;
             cpy.ScaledDown.ScaledUp:=prev;
           prev.ScaledUp:=cpy.ScaledUp;
           prev.ScaledDown:=cpy.ScaledDown;
+          cpy.Free;
           Exit;
         end;
       end;
@@ -910,9 +928,11 @@ begin
     end;
       //осталось
       //найти Unity, а именно - стандартную безразм. величину
+
     dimensionless:=TUnitsWithExponents.Create(nil);
     funity:=dimensionless.GetConvType;
     dimensionless.Free;
+
     //и еще DMS отыскать, ну пусть он будет тупо в семье Angle и под именем DMS
     fam:=FindComponent('Angle') as TPhysFamily;
     if Assigned(fam) then begin
@@ -949,6 +969,7 @@ var i,j,k: Integer;
     fml: TUnitsWithExponents;
     multiplier: Real;
     NormalRslt: TNormalConvType absolute Result;
+    p: TSimpleParser;
 begin
   i:=fMegaList.IndexOf(str);
   if i>=0 then begin
@@ -982,6 +1003,13 @@ begin
   end
   else begin
   //ничего не нашли, это вестимо что-то составное
+  //костыль, избежать Stack Overflow
+    p:=TPhysUnitParser.Create(str);
+    try
+      if p.getPhysUnitIdent=str then Raise EPhysUnitError.CreateFmt('StrToConvType: unit %s not found',[str]);
+    finally
+      p.Free;
+    end;
     fml:=TUnitsWithExponents.Create(self);
     multiplier:=fml.TakeFromString(str);
     obj:=fml.GetConvType; //возможно, сейчас на лету была создана подходящая величина
@@ -1070,7 +1098,12 @@ begin
     if ConvType.Owner=DestConv.Owner then //same family
       instance:=DestConv.Convert(instance,ConvType)
     else begin
-//      Raise EPhysUnitError.Create('sorry, implicit conversion not supported right now');
+      if (instance=0) and ((ConvType is TNormalConvType) or
+      ((ConvType is TAffineConvType) and (TAffineConvType(ConvType).Factor=0))) then begin
+        ConvType:=DestConv;
+        Exit;
+      end;
+    //      Raise EPhysUnitError.Create('sorry, implicit conversion not supported right now');
     //попробуем выразить, зная, что c=1, h=1 и т.д.
       buConvType:=ConvType;
       formula:=TUnitsWithExponents.Create(nil);
@@ -1127,8 +1160,14 @@ procedure TVarWithUnit.DoAdd(value: TAbstractWrapperData);
 var v: TVarWithUnit absolute value;
 begin
   if value is TVarWithUnit then begin
-    if ConvType.Owner<>v.ConvType.Owner then
+    if ConvType.Owner<>v.ConvType.Owner then begin
+      if instance=0 then begin
+        instance:=v.instance;
+        ConvType:=v.ConvType;
+        Exit;
+      end;
       v.Conversion(ConvType);
+    end;
     ConvType.Add(instance,ConvType,v.instance,v.ConvType);
   end
   else inherited;
@@ -1214,6 +1253,11 @@ end;
 procedure TVarWithUnit.Negate;
 begin
   instance:=ConvType.MultiplyByNumber(instance,-1.000000000,ConvType);
+end;
+
+function TVarWithUnit.GetLengthSquared: Real;
+begin
+  Result:=VarGetLengthSquared(instance);
 end;
 
 { TVarWithUnitType }
@@ -1307,7 +1351,8 @@ end;
 function TUnitsWithExponents.AsString: string;
 var str: TLocalizedName;
 begin
-  str:=ShowLocShortName;
+  str:=TLocalizedName.Create(nil);
+  ShowLocShortName(str);
 //  if str.strings.Count<>0 then
     result:=str.InEnglish;
 //  if result='' then
@@ -1454,48 +1499,48 @@ begin
   Exponents[0]:=1;
 end;
 
-function TUnitsWithExponents.ShowLocalized(proc: TShowLocalizedName): TLocalizedName;
+procedure TUnitsWithExponents.ShowLocalized(proc: TShowLocalizedName; dest: TLocalizedName);
 var i,j,neg: Integer;
 begin
   j:=0; //кол-во уже имеющихся ед.
   neg:=0;
-  Result:=TLocalizedName.CreateEmptyNeutral;
+  dest.MakeEmptyNeutral;
   if fCount=0 then Exit;
   for i:=0 to fCount-1 do
     if Exponents[i]>0 then begin
-      if j>0 then Result.RightConcat('*');
+      if j>0 then dest.RightConcat('*');
       inc(j);
-      Result.RightConcat(proc(UnitTypes[i]));
+      dest.RightConcat(proc(UnitTypes[i]));
       if Exponents[i]<>1 then
-        Result.RightConcat('^'+FloatToStr(Exponents[i]));
+        dest.RightConcat('^'+FloatToStr(Exponents[i]));
     end
     else inc(neg);
-  if j=0 then Result.RightConcat('1');
+  if j=0 then dest.RightConcat('1');
   //а теперь отрицательные степени
   j:=0;
   if neg>0 then begin
-    if neg=1 then Result.RightConcat('/')
-    else Result.RightConcat('/(');
+    if neg=1 then dest.RightConcat('/')
+    else dest.RightConcat('/(');
     for i:=0 to fCount-1 do
       if Exponents[i]<0 then begin
-        if j>0 then Result.RightConcat('*');
+        if j>0 then dest.RightConcat('*');
         inc(j);
-        Result.RightConcat(proc(UnitTypes[i]));
+        dest.RightConcat(proc(UnitTypes[i]));
         if Exponents[i]<>-1 then
-          Result.RightConcat('^'+FloatToStr(-Exponents[i]));
+          dest.RightConcat('^'+FloatToStr(-Exponents[i]));
       end;
-    if neg>1 then Result.RightConcat(')');
+    if neg>1 then dest.RightConcat(')');
   end;
 end;
 
-function TUnitsWithExponents.ShowLocFormula: TLocalizedName;
+procedure TUnitsWithExponents.ShowLocFormula(dest: TLocalizedName);
 begin
-  Result:=ShowLocalized(ConvTypeToLocFamilyLetter);
+  ShowLocalized(ConvTypeToLocFamilyLetter,dest);
 end;
 
-function TUnitsWithExponents.ShowLocShortName: TLocalizedName;
+procedure TUnitsWithExponents.ShowLocShortName(dest: TLocalizedName);
 begin
-  Result:=ShowLocalized(ConvTypeToLocShortName);
+  ShowLocalized(ConvTypeToLocShortName,dest);
 end;
 
 function TUnitsWithExponents.TakeFromString(formula: string): Real;
@@ -1602,7 +1647,8 @@ begin
   //не нашли подходящую семью - придется создать!
   fam:=TPhysFamily.Create(PhysUnitData);
   fam.fFormula.Assign(self);
-  fam.ShortName:=ShowLocFormula;
+  //утечка памяти
+  ShowLocFormula(fam.ShortName);
   fam.Name:=ToAcceptableName(fam.ShortName.InEnglish);
 
   //и еще подходящую единицу измерения создадим
@@ -1613,7 +1659,7 @@ begin
   //нужно ей и название сформировать, чтоб находить на всех языках
   //или хотя бы на одном
   //shortname или caption - пофиг по большому счету!
-  un.ShortName:=ShowLocShortName;
+  ShowLocShortName(un.ShortName);
   fam.BaseType:=un;
   Result:=un;
 
@@ -1897,7 +1943,7 @@ end;
 function IsDimensionless(V: Variant): Boolean;
 begin
   //% или ppm тоже подходят
-  Result:=IsPhysUnit(V) and (TVarWithUnitVarData(V).Data.ConvType.Family.fFormula.IsUnity);
+  Result:=(not IsPhysUnit(V)) or (TVarWithUnitVarData(V).Data.ConvType.Family.fFormula.IsUnity);
 end;
 
 procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
@@ -1918,12 +1964,11 @@ begin
       Res:=E.Message;
   end;
 end;
-(*
+
 function PhysUnitCreate(text: string): Variant;
 begin
   PhysUnitCreateInto(Result,TVarWithUnit.Create(text));
 end;
-*)
 
 function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
 begin
@@ -1956,10 +2001,88 @@ begin
   end;
 end;
 
+function PhysUnitConvert(source: Variant; DestType: string): Variant;
+begin
+  Result:=PhysUnitConvert(source,StrToPhysUnit(DestType),true);
+end;
+
 function PhysUnitPower(source: Variant; pow: Real): Variant;
 begin
   Result:=source;
   TVarWithUnitVarData(Result).Data.DoPower(pow);
+end;
+
+function PhysUnitSqrt(source: Variant): Variant;
+begin
+  Result:=PhysUnitPower(source,0.5);
+end;
+
+function PhysUnitAbs(source: Variant): Variant;
+begin
+  if IsPhysUnit(source) then begin
+    Result:=source;
+    TVarWithUnitVarData(Result).Data.instance:=VarComplexAbs(TVarWithUnitVarData(source).Data.instance)
+  end
+  else
+    Result:=PhysUnitCreateFromVariant(VarComplexAbs(source),PhysUnitData.Unity);
+end;
+
+function PhysUnitArg(source: Variant): Variant;
+begin
+  if isPhysUnit(source) then
+    Result:=PhysUnitCreateFromVariant(VarComplexAngle(TVarWithUnitVarData(source).Data.instance),PhysUnitData.Radian)
+  else
+    Result:=PhysUnitCreateFromVariant(VarComplexAngle(source),PhysUnitData.Radian);
+end;
+
+function PhysUnitRe(source: Variant): Variant;
+begin
+  if isPhysUnit(source) then begin
+    Result:=source;
+    TVarWithUnitVarData(Result).Data.instance:=TVarWithUnitVarData(Result).Data.instance.Real
+  end
+  else
+    Result:=PhysUnitCreateFromVariant(source.Re,PhysUnitData.Unity);
+end;
+
+function PhysUnitIm(source: Variant): Variant;
+begin
+  if isPhysUnit(source) then begin
+    Result:=source;
+    TVarWithUnitVarData(Result).Data.instance:=TVarWithUnitVarData(Result).Data.instance.Imaginary
+  end
+  else
+    Result:=PhysUnitCreateFromVariant(source.Im,PhysUnitData.Unity);
+end;
+
+function PhysUnitGetNumberIn(source: Variant; UnitName: TPhysUnit): Variant;
+var tmp: Variant;
+begin
+  tmp:=PhysUnitConvert(source,UnitName);
+  Result:=TVarWithUnitVarData(tmp).Data.instance;
+end;
+
+function PhysUnitGetNumberIn(source: Variant; UnitName: string): Variant;
+begin
+  Result:=PhysUnitGetNumberIn(source,PhysUnitData.strToConvType(UnitName));
+end;
+
+function PhysUnitGetNumber(source: Variant): Variant;
+begin
+  if IsPhysUnit(source) then
+    Result:=TVarWithUnitVarData(source).Data.instance
+  else
+    Result:=source;
+end;
+
+function VarGetLengthSquared(value: Variant): Real;
+begin
+  if value=null then Result:=-1
+  else if VarIsNumeric(value) then
+   result:=Sqr(value)
+  else if VarIsComplex(value) then
+    result:=VarComplexAbsSqr(value)
+  else Result:=value.LengthSquared;
 end;
 
 function VarGetLength(source: Variant): Real;
@@ -2004,6 +2127,46 @@ begin
     Result:=V;
 end;
 
+function StrToPhysUnit(str: string): TPhysUnit;
+begin
+  Result:=PhysUnitData.StrToConvType(str);
+end;
+
+function StrToPhysFamily(str: string): TPhysFamily;
+var i: Integer;
+begin
+  for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
+    Result:=PhysUnitData.fFamilyList[i] as TPhysFamily;
+    if (Result.Caption.strings.IndexOf(str)>=0) or
+      (Result.ShortName.strings.IndexOf(str)>=0) then
+        Exit;
+  end;
+  Raise EPhysUnitError.CreateFMT('StrToPhysFamily: family %s not found',[str]);
+end;
+
+function IsPhysUnitSameFamily(v1,v2: Variant): Boolean;
+var dat1: TVarWithUnitVarData absolute v1;
+    dat2: TVarWithUnitVarData absolute v2;
+    fam1,fam2: TPhysFamily;
+begin
+  if not IsPhysUnit(v1) then
+    fam1:=PhysUnitData.Unity.Family
+  else
+    fam1:=dat1.Data.ConvType.Family;
+  if not IsPhysUnit(v2) then
+    fam2:=PhysUnitData.Unity.Family
+  else
+    fam2:=dat2.Data.ConvType.Family;
+  Result:=(fam1=fam2);
+end;
+
+function PhysUnitGetConvType(source: Variant): TPhysUnit;
+begin
+  if IsPhysUnit(source) then
+    Result:=TVarWithUnitVarData(source).Data.ConvType
+  else
+    Result:=PhysUnitData.Unity;
+end;
 
 initialization
   RegisterClasses([TAffineConvType,TLogarithmicConvType,TNormalConvType,

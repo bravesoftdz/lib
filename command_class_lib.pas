@@ -871,8 +871,10 @@ end;
 
 procedure TAbstractDocument.Release;
 begin
-  fCriticalSection.Acquire;
-  Free;
+  if Assigned(self) then begin
+    fCriticalSection.Acquire;
+    Free;
+  end;
 end;
 
 destructor TAbstractDocument.Destroy;

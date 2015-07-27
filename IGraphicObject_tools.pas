@@ -216,8 +216,7 @@ const //crRotate = crHandPoint;
 
 implementation
 
-uses actnList,extCtrls,sysUtils,menus,clipbrd,
-  streaming_class_lib,math;
+uses actnList,extCtrls,sysUtils,menus,clipbrd,streaming_class_lib,math;
 
 procedure Register;
 begin

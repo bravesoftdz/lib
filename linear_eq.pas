@@ -139,7 +139,7 @@ function VarManySolutionsDataCreate(data: TManySolutionsDataType): Variant;
 function VarIsManySolutions(V: Variant): Boolean;
 function VarManySolutionsIsNumber(V: Variant): Boolean;
 
-function GetLengthSquared(value: Variant): Real;
+//function GetLengthSquared(value: Variant): Real;
 
 implementation
 
@@ -170,14 +170,17 @@ begin
     (TWrapperVarData(V).Data as TManySolutionsDataType).IsPlainNumber);
 end;
 
+(*
 function GetLengthSquared(value: Variant): Real;
 begin
-  if VarIsNumeric(value) then
+  if value=null then Result:=-1
+  else if VarIsNumeric(value) then
    result:=Sqr(value)
   else if VarIsComplex(value) then
     result:=VarComplexAbsSqr(value)
   else Result:=value.GetLengthSquared;  //если не поддерживается - выругается, делов-то!
 end;
+*)
 
 (*
       TSimpleGaussLEQ
@@ -273,14 +276,14 @@ begin
     col_num:=-1;
     for i:=j to fNumOfVars-1 do
       for k:=j to fNumOfEqs-1 do
-        if GetLengthSquared(fmatrix[i,k])>max_elem then begin
-          max_elem:=GetLengthSquared(fmatrix[i,k]);
+        if VarGetLengthSquared(fmatrix[i,k])>max_elem then begin
+          max_elem:=VarGetLengthSquared(fmatrix[i,k]);
           row_num:=k;
           col_num:=i;
         end;
     if max_elem<=ftolerance then begin  //сплошь одни нули, не можем новый диаг. элем найти
       for i:=j to fNumOfEqs-1 do
-        if GetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
+        if VarGetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
           fstatus:=slNoSolution;  //получилось уравнение вида 0=1 - все тлен
           Exit;
         end;
@@ -291,7 +294,7 @@ begin
     SwitchCols(j,col_num);
     //элем (j,j) - лучший из лучших!
     ratio:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
-    if (not IsDimensionless(ratio)) or (GetLengthSquared(ratio-1)>ftolerance) then begin
+    if (not IsDimensionless(ratio)) or (VarGetLengthSquared(ratio-1)>ftolerance) then begin
       ratio:=1/ratio;
       fmatrix[j,j]:=1;
       for i:=j+1 to fNumOfVars do
@@ -300,7 +303,7 @@ begin
 
     //вычитаем строку из нижних, чтобы получить нули в столбце j
     for i:=j+1 to fNumOfEqs-1 do begin
-      if GetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
+      if VarGetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
       ratio:=fmatrix[j,i];
       fmatrix[j,i]:=0;
       for k:=j+1 to fNumOfVars do
@@ -338,14 +341,14 @@ begin
     col_num:=-1;
     for i:=j to fNumOfVars-1 do
       for k:=j to fNumOfEqs-1 do
-        if GetLengthSquared(fmatrix[i,k])>max_elem then begin
-          max_elem:=GetLengthSquared(fmatrix[i,k]);
+        if VarGetLengthSquared(fmatrix[i,k])>max_elem then begin
+          max_elem:=VarGetLengthSquared(fmatrix[i,k]);
           row_num:=k;
           col_num:=i;
         end;
     if max_elem<=ftolerance then begin  //сплошь одни нули, не можем новый диаг. элем найти
       for i:=j to fNumOfEqs-1 do
-        if GetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
+        if VarGetLengthSquared(fmatrix[fNumOfVars,i])>ftolerance then begin
           fstatus:=slNoSolution;  //получилось уравнение вида 0=1 - все тлен
           Exit;
         end;
@@ -356,7 +359,7 @@ begin
     SwitchCols(j,col_num);
     //элем (j,j) - лучший из лучших!
     ratio:=fmatrix[j,j]; //чтобы знак не потерять, вверху же абс. знач
-    if GetLengthSquared(ratio-1)>ftolerance then begin
+    if VarGetLengthSquared(ratio-1)>ftolerance then begin
       ratio:=1/ratio;
       fmatrix[j,j]:=1;
       for i:=j+1 to fNumOfVars do
@@ -368,7 +371,7 @@ begin
     //вычитаем строку из всех прочих, чтобы получить нули в столбце j
     for i:=0 to fNumOfEqs-1 do
       if i<>j then begin
-        if GetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
+        if VarGetLengthSquared(fmatrix[j,i])<=ftolerance then continue; //довольно частый случай
         ratio:=fmatrix[j,i];
         fmatrix[j,i]:=0;
         for k:=j+1 to fNumOfVars do
@@ -420,11 +423,15 @@ end;
 procedure TSimpleGaussLEQ.SolveOneSolution;
 var i,j: Integer;
     val: Variant;
+    tmp: Variant;
 begin
   for j:=fNumOfEqs-1 downto 0 do begin
     val:=fmatrix[fNumOfVars,j];
-    for i:=j+1 to fNumOfVars-1 do
-      val:=val-fvariables[i]*fmatrix[i,j];
+    for i:=j+1 to fNumOfVars-1 do begin
+      tmp:=fvariables[i]*fmatrix[i,j];
+//      if VarGetLengthSquared(tmp)>ftolerance then
+        val:=val-tmp;
+    end;
     fvariables[j]:=val;
   end;
 end;
@@ -672,7 +679,7 @@ procedure TSimpleGaussLEQForKirhgof.AddEquation(vars: TVariableForEqArray; equal
 var i,j: Integer;
 begin
   if Length(vars)=0 then begin
-    if GetLengthSquared(equals)>fsolver.ftolerance then
+    if VarGetLengthSquared(equals)>fsolver.ftolerance then
       //0=1 - сразу нет решений
       Raise Exception.Create('AddEquation: 0=1 type adding, it''s absurd')
     else
@@ -712,7 +719,7 @@ begin
   for j:=0 to fsolver.fNumOfEqs-1 do begin
     notfirst:=false;
     for i:=0 to fsolver.fNumOfVars-1 do
-      if GetLengthSquared(fsolver.GetMatrix(i,j))>fsolver.ftolerance then begin
+      if VarGetLengthSquared(fsolver.GetMatrix(i,j))>fsolver.ftolerance then begin
         if (not VarIsNumeric(fsolver.GetMatrix(i,j))) or ((fsolver.GetMatrix(i,j)>0) and notfirst) then
           Result:=Result+'+'
         else if  VarIsNumeric(fsolver.GetMatrix(i,j)) and (fsolver.GetMatrix(i,j)<0) then

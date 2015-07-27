@@ -1383,7 +1383,7 @@ var fComponent: TComponent;
     s: string;
 begin
 //должна остаться одна лексема
-  if b<e then raise ESyntaxErr.Create(TwoOrMoreLexemsError);
+  if b<e then raise ESyntaxErr.Create(TwoOrMoreLexemsError+':'+fstring);
   //остается b=e
   Case Lexems[b].LType of
     ltNumber: if IsPhysUnit(Lexems[b].Num) then

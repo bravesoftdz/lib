@@ -53,10 +53,14 @@ type
     fTestBtmp: TBitmap;
     fTypeData: PTypeData;
     fTypeInfo: PPTypeInfo;
+    fExpressionRoot: TComponent;
     function get_value: Integer;
     procedure set_value(value: Integer);
     procedure SetTypeInfo(value: PPTypeInfo);
     function WithinBounds(value: Integer; out errmsg: string): boolean;
+  protected
+    procedure SetExpressionRoot(value: TComponent); override;
+    function GetExpressionRoot: TComponent; override;
   public
     procedure Change; override;
     function isValid: boolean;
@@ -69,8 +73,12 @@ type
 
   TFloatEdit = class(TCautiousEdit)
   private
+    fExpressionRoot: TComponent;
     function get_value: Real;
     procedure set_value(value: Real);
+  protected
+    procedure SetExpressionRoot(value: TComponent); override;
+    function GetExpressionRoot: TComponent; override;
   public
     constructor Create(owner: TComponent); override;
     procedure Change; override;
@@ -243,7 +251,7 @@ var res: Extended;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     if expr.isCorrect then Result:=expr.getValue
     else begin
@@ -275,7 +283,7 @@ resourcestring
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     if expr.isCorrect then ReturnToNormal
     else TurnRed(expr.errorMsg);
@@ -305,13 +313,23 @@ var t: Extended;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     Result:=expr.isCorrect;
     expr.Free;
   end
   else
     Result:=TryStrToFloat(text,t);
+end;
+
+procedure TFloatEdit.SetExpressionRoot(value: TComponent);
+begin
+  fExpressionRoot:=value;
+end;
+
+function TFloatEdit.GetExpressionRoot: TComponent;
+begin
+  Result:=fExpressionRoot;
 end;
 
 (*
@@ -338,7 +356,7 @@ var res: Integer;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     if expr.isCorrect then begin
       Result:=expr.getIntegerValue;
@@ -375,7 +393,7 @@ var t: Integer;
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     Result:=expr.isCorrect and WithinBounds(expr.getIntegerValue,errmsg);
     expr.Free;
@@ -393,7 +411,7 @@ resourcestring
 begin
   if AllowExpressions then begin
     expr:=TFloatExpression.Create(nil);
-//    expr.SetRootComponent(ExpressionRootComponent);
+    expr.SetRootComponent(fExpressionRoot);
     expr.SetString(text);
     if expr.isCorrect then
       if WithinBounds(expr.getIntegerValue,errMsg) then
@@ -442,6 +460,16 @@ begin
     ma:=fTestBtmp.Canvas.TextWidth(IntToStr(fTypeData^.MaxValue));
     ClientWidth:=Max(mi,ma)+5;
   end;
+end;
+
+procedure TIntegerEdit.SetExpressionRoot(value: TComponent);
+begin
+  fExpressionRoot:=value;
+end;
+
+function TIntegerEdit.GetExpressionRoot: TComponent;
+begin
+  Result:=fExpressionRoot;
 end;
 
 

@@ -39,6 +39,7 @@ contains
   streaming_class_lib in '..\streaming_class_lib.pas',
   formHistory in 'formHistory.pas' {frmHistory},
   formMergeOrRewrite in 'formMergeOrRewrite.pas' {frmMergeOrRewrite},
-  abstract_command_lib in '..\abstract_command_lib.pas';
+  abstract_command_lib in '..\abstract_command_lib.pas',
+  Cautious_controls in 'Cautious_controls.pas';
 
 end.
