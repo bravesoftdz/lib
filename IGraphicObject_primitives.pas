@@ -6,9 +6,30 @@ uses IGraphicObject_commands,streaming_class_lib,types,classes,graphics;
 
 type
 
+TScreenCoord = 0..9999; //тут главное - правильный размер окошечка
+
+TPointGraphicObject = class (TStreamingClass, IGraphicObject)
+  protected
+    fx,fy: TScreenCoord;
+  public
+    function Rect: TRect; virtual; //реальные размеры
+    function SymbolRect: TRect; virtual; //как оно отобр. на экране
+    function DistanceSquaredFromPoint(x,y: Integer): Real; virtual;
+    function DistanceTo(ax,ay: Integer): Real; virtual;
+    procedure Move(dx,dy: Integer); virtual;
+    procedure Resize(dx1,dy1,dx2,dy2: Integer;Corrector: TGraphicResizeCorrector=nil); virtual;
+    procedure Rotate(alpha: Real; Xcenter,Ycenter: Integer; corrector: TGraphicResizeCorrector=nil); virtual;
+    function ResizableByX: boolean; virtual;
+    function ResizableByY: boolean; virtual;
+    function isOkToPaste: boolean; virtual;
+    function Implementor: TComponent; virtual;
+    procedure Draw(canvas: TCanvas); virtual;
+end;
+
+
 TLineGraphicObject = class (TStreamingClass, IGraphicObject)
   protected
-    fc: array [0..3] of Integer;  //0:x1, 1:y1, 2: x2, 3:y2
+    fc: array [0..3] of TScreenCoord;  //0:x1, 1:y1, 2: x2, 3:y2
   public
     function Rect: TRect; virtual; //реальные размеры
     function SymbolRect: TRect; virtual; //как оно отобр. на экране
@@ -25,6 +46,106 @@ TLineGraphicObject = class (TStreamingClass, IGraphicObject)
 end;
 
 implementation
+
+(*
+    TPointGraphicObject
+                            *)
+function TPointGraphicObject.Rect: TRect;
+begin
+  Result:=types.Rect(fx,fy,fx,fy);
+end;
+
+function TPointGraphicObject.SymbolRect: TRect;
+begin
+  Result:=types.Rect(fx-5,fy-5,fx+5,fy+5); //дальнейшее сделают производные классы, если захотят
+end;
+
+function TPointGraphicObject.DistanceSquaredFromPoint(x,y: Integer): real;
+begin
+  Result:=Sqr(x-fx)+Sqr(y-fy);
+end;
+
+function TPointGraphicObject.DistanceTo(ax,ay: Integer): Real;
+begin
+  Result:=Sqrt(DistanceSquaredFromPoint(ax,ay));
+end;
+
+procedure TPointGraphicObject.Draw(canvas: TCanvas);
+begin
+  canvas.FillRect(types.Rect(fx-5,fy-5,fx+5,fy+5));  //почему б и нет?
+end;
+
+function TPointGraphicObject.Implementor: TComponent;
+begin
+  Result:=self;
+end;
+
+function TPointGraphicObject.isOkToPaste: Boolean;
+begin
+  Result:=true; //производные классы могут не согласиться, их право
+end;
+
+procedure TPointGraphicObject.Move(dx,dy: Integer);
+begin
+  inc(fx,dx);
+  inc(fy,dy);
+end;
+
+function TPointGraphicObject.ResizableByX: Boolean;
+begin
+  Result:=false;
+end;
+
+function TPointGraphicObject.ResizableByY: Boolean;
+begin
+  Result:=false;
+end;
+
+procedure TPointGraphicObject.Resize(dx1,dy1,dx2,dy2: Integer; corrector: TGraphicResizeCorrector=nil);
+begin
+  //никаких хитростей, действие обратимо
+  fx:=fx+(dx1+dx2) div 2;
+  fy:=fy+(dy1+dy2) div 2;
+end;
+
+procedure TPointGraphicObject.Rotate(alpha: Real; Xcenter,YCenter: Integer; corrector: TGraphicResizeCorrector=nil);
+var dx,dy,bux,buy: Integer;
+    si,co: Real;
+    corRect: TRect;
+begin
+  dx:=fx-Xcenter;
+  dy:=fy-Ycenter;
+  bux:=fx;
+  buy:=fy;
+  si:=sin(alpha);
+  co:=cos(alpha);
+  fx:=Xcenter+Round(dx*co-dy*si);
+  fy:=Ycenter+Round(dx*si+dy*co);
+  if Assigned(corrector) then
+    if corrector.reverse then begin
+      corRect:=corrector.Pop;
+      inc(fx,corRect.Left);
+      inc(fy,corRect.Top);
+    end
+    else begin
+      dx:=fx-Xcenter;
+      dy:=fy-Ycenter;
+      corRect.Left:=Xcenter+Round(dx*co+dy*si);
+      corRect.Top:=Ycenter+Round(-dx*si+dy*co);
+      corRect.Left:=bux-correct.Left;
+      corRect.Top:=buy-correct.Top;
+      corRect.Right:=0;
+      corRect.Bottom:=0;
+      corrector.Push(corRect);
+    end;
+end;
+
+
+
+(*
+      TLineGraphicObject
+                            *)
+
 
 function TLineGraphicObject.Rect: TRect;
 begin

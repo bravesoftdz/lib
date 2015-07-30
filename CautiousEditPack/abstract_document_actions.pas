@@ -2,7 +2,7 @@ unit abstract_document_actions;
 
 interface
 
-uses actnlist,command_class_lib,classes,dialogs,menus,formHistory,controls;
+uses windows,actnlist,command_class_lib,classes,dialogs,menus,controls,HistoryFrame,graphics;
 
 type
 
@@ -12,6 +12,7 @@ PAbstractDocument=^TabstractDocument;
 
 TAbstractDocumentActionList=class(TActionList)
   private
+    btmp: TBitmap; //тестовая картинка, проверять длину текста
     ColumnsCount: Integer;
     MaxAvailRow: array of Integer;
     ColWidth: array of Integer;
@@ -19,22 +20,27 @@ TAbstractDocumentActionList=class(TActionList)
     fButtonHeight: Integer;
     fCellPadding: Integer;
     fMaxCount: Integer;
+    fHistoryFrame: TFrameHistory;
 //    procedure SetDoc(value: PAbstractDocument);
     procedure DrawBranch(br: TAbstractTreeCommand; level: Integer=0; row: Integer=-1);
     procedure MakeHistory;
+    procedure SetHistoryFrame(value: TFrameHistory);
   public
     Doc: PAbstractDocument;
     constructor Create(owner: TComponent); override;
+    destructor Destroy; override;
     function ExecuteAction(Action: TBasicAction): boolean; override;
     procedure ShowHistory;
     procedure ChangeHistory;
     procedure HistoryClickEvent(Sender: TObject);
     procedure RefreshHistoryHighlights;
     procedure SetupTool;
+    procedure Notification(aComponent: TComponent; operation: TOperation); override;
 //    property Doc: PAbstractDocument read fDoc write SetDoc;
   published
     property ButtonHeight: Integer read fButtonHeight write fButtonHeight;
     property CellPadding: Integer read fCellPadding write FCellPadding;
+    property HistoryFrame: TFrameHistory read fHistoryFrame write SetHistoryFrame;
 end;
 
 TNewProjectAction=class(TAbstractDocumentAction)
@@ -119,12 +125,13 @@ TRedoPopup=class(TUndoPopup)
   end;
 
 const CurProjectFileName: string='current_project.txt'; //not to translate
+var default_dir: string;
 
 procedure Register;
 
 implementation
 
-uses forms,windows,sysutils,buttons,graphics,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
+uses forms,sysutils,buttons,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
 
 procedure Register;
 begin
@@ -141,7 +148,30 @@ begin
   doc:=nil;
   ButtonHeight:=40;
   CellPadding:=10;
-  frmHistory:=TFrmHistory.Create(self);
+  btmp:=TBitmap.Create;
+  btmp.Canvas.Font.Style:=[fsbold];
+end;
+
+destructor TAbstractDocumentActionList.Destroy;
+begin
+  btmp.free;
+  inherited Destroy;
+end;
+
+procedure TAbstractDocumentActionList.SetHistoryFrame(value: TFrameHistory);
+begin
+  if Assigned(fHistoryFrame) then
+    fHistoryFrame.RemoveFreeNotification(self);
+  fHistoryFrame:=value;
+  if Assigned(fHistoryFrame) then
+    fHistoryFrame.FreeNotification(self);
+end;
+
+procedure TAbstractDocumentActionList.Notification(aComponent: TCOmponent; operation: TOperation);
+begin
+  inherited;
+  if (aComponent=fHistoryFrame) and (operation = opRemove) then
+    fHistoryFrame:=nil;
 end;
 
 (*
@@ -178,11 +208,8 @@ var w,wmax,i: Integer;
     item,pr: TAbstractTreeCommand;
     btn: TBitBtn;
     buttons: array of TBitBtn;
-    btmp: TBitmap;
     my_row: Integer;
 begin
-  btmp:=TBitmap.Create;
-  btmp.Canvas.Font.Style:=[fsbold];
   //сначала определяем ширину колонки в пикселях и кол-во команд в этой ветви
   item:=br;
   CommandsCount:=0;
@@ -190,8 +217,8 @@ begin
   pr:=nil;
   while Assigned(item) do begin
     //и немедленно создаем соотв. кнопочку
-    btn:=TBitBtn.Create(frmHistory);
-    btn.Parent:=frmHistory;
+    btn:=TBitBtn.Create(HistoryFrame.PaintBox1);
+    btn.Parent:=HistoryFrame;
     btn.Caption:=item.caption;
     btn.Tag:=Integer(item);
     btn.OnClick:=HistoryClickEvent;
@@ -235,7 +262,7 @@ begin
     buttons[i].Height:=ButtonHeight;
   end;
   //еще стрелочку нарисовать
-  frmHistory.AddLine(ColLeft[row+1]-CellPadding-5,Colleft[my_row],level*ButtonHeight+ButtonHeight div 2);
+  HistoryFrame.AddLine(ColLeft[row+1]-CellPadding-5,Colleft[my_row],level*ButtonHeight+ButtonHeight div 2);
   //обновляем
   //вот, худо-бедно сделали эту часть, теперь пора веточки приделать
   if (level+CommandsCount)>fMaxCount then
@@ -246,13 +273,12 @@ begin
     if Assigned(pr.Branch) then DrawBranch(pr.Branch,level+CommandsCount,my_row);
     pr:=pr.Prev;
   end;
-  btmp.Free;
 end;
 
 procedure TAbstractDocumentActionList.MakeHistory;
 begin
-  frmHistory.DestroyComponents; //жестоко!
-  frmHistory.ClearLines;
+  HistoryFrame.PaintBox1.DestroyComponents; //жестоко!
+  HistoryFrame.ClearLines;
   fMaxCount:=0;
 
   //создаем по-новой
@@ -265,11 +291,8 @@ begin
   ColLeft[0]:=10;
   DrawBranch(doc.UndoTree.Root);
 
-  frmHistory.ClientWidth:=Min(ColLeft[ColumnsCount-1]+ColWidth[ColumnsCount-1],(owner as TControl).ClientWidth);
-  frmHistory.ClientHeight:=Min(fMaxCount*ButtonHeight,(Owner as TControl).clientHeight);
-
-  frmHistory.Top:=(owner as TControl).Top;
-  frmHistory.Left:=(owner as TControl).Left+(owner as TControl).ClientWidth-frmHistory.Width;
+//  HistoryFrame.ClientWidth:=Min(ColLeft[ColumnsCount-1]+ColWidth[ColumnsCount-1],(owner as TControl).ClientWidth);
+//  HistoryFrame.ClientHeight:=Min(fMaxCount*ButtonHeight,(Owner as TControl).clientHeight);
 
   RefreshHistoryHighlights;
 end;
@@ -277,18 +300,19 @@ end;
 procedure TAbstractDocumentActionList.ChangeHistory;
 begin
   //вызывается каждый раз, когда выполняется новое действие
-  if frmHistory.Visible then begin
+  if HistoryFrame.Visible then begin
     MakeHistory;
-    frmHistory.FormPaint(self);
+    HistoryFrame.FormPaint(self);
   end;
 end;
 
 procedure TAbstractDocumentActionList.ShowHistory;
 begin
-  if not frmHistory.Visible then begin
+  if not Assigned(HistoryFrame) then Exit;
+  if not HistoryFrame.Visible then begin
     MakeHistory;
-    frmHistory.Show;
-    frmHistory.FormPaint(self);
+    HistoryFrame.Show;
+    HistoryFrame.FormPaint(self);
   end;
 end;
 
@@ -308,9 +332,9 @@ var i: Integer;
     btn: TBitBtn;
     item: TAbstractTreeCommand;
 begin
-  for i:=0 to frmHistory.ComponentCount-1 do begin
-    if frmHistory.Components[i] is TBitBtn then begin
-      btn:=TBitBtn(frmHistory.Components[i]);
+  for i:=0 to HistoryFrame.PaintBox1.ComponentCount-1 do begin
+    if HistoryFrame.paintBox1.Components[i] is TBitBtn then begin
+      btn:=TBitBtn(HistoryFrame.PaintBox1.Components[i]);
       item:=TAbstractTreeCommand(btn.Tag);
       if item.ActiveBranch then begin
 //        if not (item is TInfoCommand) then btn.Font.Style:=[fsBold];
@@ -777,4 +801,6 @@ begin
   end;
 end;
 
+initialization
+  default_dir:=GetCurrentDir;
 end.

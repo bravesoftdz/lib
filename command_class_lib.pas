@@ -233,6 +233,7 @@ type
       function Changed: Boolean;
       function DispatchCommand(command: TAbstractCommand): boolean;
       procedure Save;
+      procedure Autosave;
       procedure Change; virtual;
       procedure DoLoad; virtual;
       function Hash: T4x4LongWordRecord; virtual;
@@ -984,10 +985,29 @@ procedure TAbstractDocument.Save;
 begin
   Assert(FileName<>'','WTF: empty filename');
   TSavingThread.Create(self);
-//  self.SaveToFile(FileName);
   initial_pos:=UndoTree.current;
   new_commands_added:=false;
 end;
+
+procedure TAbstractDocument.Autosave;
+var buCurDir: string;
+    buSaveFormat: StreamingClassSaveFormat;
+    buSaveWithUndo: boolean;
+begin
+  buCurDir:=GetCurrentDir;
+  buSaveFormat:=saveFormat;
+  buSaveWithUndo:=SaveWithUndo;
+  SetCurrentDir(default_dir);
+  SaveFormat:=fCyr;
+  SaveWithUndo:=true;
+  SaveToFile(CurProjectFileName);
+
+  saveFormat:=buSaveFormat;
+  SaveWithUndo:=buSaveWithUndo;
+  SetCurrentDir(buCurDir);
+end;
+
+
 
 procedure TAbstractDocument.Undo;
 begin
