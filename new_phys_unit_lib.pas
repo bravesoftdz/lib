@@ -235,6 +235,7 @@ type
       procedure DefineProperties(filer: TFiler); override;
       function AddArbitraryUnit(ConvType: TPhysUnit; Exponent: Real): Real;
       procedure ShowLocalized(proc: TShowLocalizedName; dest: TLocalizedName);
+      procedure SimplifiedShowLocalized(proc: TShowLocalizedName; dest: TLocalizedName);
     public
       procedure Clear;
       procedure Assign(source: TPersistent); override;
@@ -980,18 +981,6 @@ begin
         end;
     end;
     objlist.Free;
-    //еще нужно лист привести в порядок немножко
-    //костыль - должно в AddToMegaList делать все необходимое
-(*
-    fMegaList.Sorted:=false;
-    fAutocompleteList.Sorted:=false;
-    for j:=0 to fMegaList.Count-1 do begin
-     fMegaList[j]:=NoSpaces(fMegaList[j]);
-     fAutocompleteList[j]:=NoSpaces(fAutocompleteList[j]);
-    end;
-    fMegaList.Sorted:=true;
-    fAutocompleteList.Sorted:=true;
-*)
 
     //на этом этапе TUnitsWithExponents должна стать работоспособной
     for j:=0 to fFamilyList.Count-1 do begin
@@ -1618,9 +1607,31 @@ begin
   end;
 end;
 
+procedure TUnitsWithExponents.SimplifiedShowLocalized(proc: TShowLocalizedName; dest: TLocalizedName);
+var i: Integer;
+begin
+  dest.MakeEmptyNeutral;
+  for i:=0 to fCount-1 do begin
+    if Exponents[i]=1 then
+      dest.RightConcat(proc(UnitTypes[i]))
+    else begin
+      dest.RightConcat(proc(UnitTypes[i]));
+      dest.RightConcat('^');
+(*
+      if Exponents[i]<0 then
+        Result.RightConcat('('+FloatToStr(Exponents[i])+')')
+      else
+        Result.RightConcat(FloatToStr(Exponents[i]));
+        *)
+      dest.RightConcat(FloatToStr(Exponents[i]));
+    end;
+    if i<fCount-1 then dest.RightConcat('*');
+  end;
+end;
+
 procedure TUnitsWithExponents.ShowLocFormula(dest: TLocalizedName);
 begin
-  ShowLocalized(ConvTypeToLocFamilyLetter,dest);
+  SimplifiedShowLocalized(ConvTypeToLocFamilyLetter,dest);
 end;
 
 procedure TUnitsWithExponents.ShowLocShortName(dest: TLocalizedName);

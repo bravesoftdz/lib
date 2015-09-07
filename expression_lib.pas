@@ -1216,30 +1216,35 @@ procedure TVariantExpression.Par(b,e: Integer; var treeNode: TEvaluationTreeNode
 var i,brCount,last_plus: Integer;
     children: array of TEvaluationTreeNode;
 begin
-  brCount:=0;
-  last_plus:=b;
-  for i:=b to e do begin
-    if brCount=0 then
-      if Lexems[i].LType = ltPar then begin
-        SetLength(children,Length(children)+1);
-        MulDiv(last_plus,i-1,children[Length(children)-1]);
-        last_plus:=i+1;
+  try
+    brCount:=0;
+    last_plus:=b;
+    for i:=b to e do begin
+      if brCount=0 then
+        if Lexems[i].LType = ltPar then begin
+          SetLength(children,Length(children)+1);
+          MulDiv(last_plus,i-1,children[Length(children)-1]);
+          last_plus:=i+1;
+        end;
+      case Lexems[i].LType of
+        ltRightBracket: dec(brCount);
+        ltLeftBracket: inc(brCount);
       end;
-    case Lexems[i].LType of
-      ltRightBracket: dec(brCount);
-      ltLeftBracket: inc(brCount);
     end;
-  end;
-  if Length(children)=0 then MulDiv(b,e,treeNode)
-  else begin
-    treeNode:=TParNode.Create(nil);
-    for i:=0 to Length(children)-1 do begin
-      treeNode.InsertComponent(children[i]);
-      children[i]:=nil;
+    if Length(children)=0 then MulDiv(b,e,treeNode)
+    else begin
+      treeNode:=TParNode.Create(nil);
+      for i:=0 to Length(children)-1 do begin
+        treeNode.InsertComponent(children[i]);
+        children[i]:=nil;
+      end;
+      MulDiv(last_plus,e,children[0]);
+      treeNode.InsertComponent(children[0]);
+      children[0]:=nil;
     end;
-    MulDiv(last_plus,e,children[0]);
-    treeNode.InsertComponent(children[0]);
-    children[0]:=nil;
+  finally
+    for i:=0 to Length(children)-1 do
+      children[i].Free;
   end;
 end;
 
