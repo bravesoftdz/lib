@@ -2,7 +2,8 @@ unit abstract_document_actions;
 
 interface
 
-uses windows,actnlist,command_class_lib,classes,dialogs,menus,controls,HistoryFrame,graphics;
+uses windows,actnlist,command_class_lib,classes,dialogs,menus,controls,
+  HistoryFrame,graphics,buttons;
 
 type
 
@@ -21,7 +22,11 @@ TAbstractDocumentActionList=class(TActionList)
     fCellPadding: Integer;
     fMaxCount: Integer;
     fHistoryFrame: TFrameHistory;
+    fLastCommand: TAbstractTreeCommand;
+    fCurLevel: Integer;
+    wmax: Integer; //ширина текущего столбца
 //    procedure SetDoc(value: PAbstractDocument);
+    function CreateButton(item: TAbstractTreeCommand; out w: Integer): TBitBtn;
     procedure DrawBranch(br: TAbstractTreeCommand; level: Integer=0; row: Integer=-1);
     procedure MakeHistory;
     procedure SetHistoryFrame(value: TFrameHistory);
@@ -131,7 +136,7 @@ procedure Register;
 
 implementation
 
-uses forms,sysutils,buttons,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
+uses forms,sysutils,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
 
 procedure Register;
 begin
@@ -202,14 +207,30 @@ begin
   end;
 end;
 
+function TAbstractDocumentActionList.CreateButton(item: TAbstractTreeCommand; out w: Integer): TBitBtn;
+begin
+    Result:=TBitBtn.Create(HistoryFrame.PaintBox1);
+    Result.Parent:=HistoryFrame;
+    Result.Caption:=item.caption;
+    Result.Tag:=Integer(item);
+    Result.OnClick:=HistoryClickEvent;
+    Result.Margin:=5;
+    w:=btmp.Canvas.TextWidth(item.caption)+15;
+    if Assigned(Images) then begin
+      Images.GetBitmap(item.ImageIndex,Result.Glyph);
+      inc(w,Result.Glyph.Width+5);
+    end;
+end;
+
 procedure TAbstractDocumentActionList.DrawBranch(br: TAbstractTreeCommand;level:Integer=0;row: Integer=-1);
-var w,wmax,i: Integer;
+var w,i: Integer;
     CommandsCount: Integer;
     item,pr: TAbstractTreeCommand;
     btn: TBitBtn;
     buttons: array of TBitBtn;
     my_row: Integer;
 begin
+  if br=nil then Exit;
   //сначала определ€ем ширину колонки в пиксел€х и кол-во команд в этой ветви
   item:=br;
   CommandsCount:=0;
@@ -217,23 +238,16 @@ begin
   pr:=nil;
   while Assigned(item) do begin
     //и немедленно создаем соотв. кнопочку
-    btn:=TBitBtn.Create(HistoryFrame.PaintBox1);
-    btn.Parent:=HistoryFrame;
-    btn.Caption:=item.caption;
-    btn.Tag:=Integer(item);
-    btn.OnClick:=HistoryClickEvent;
-    btn.Margin:=5;
-    w:=btmp.Canvas.TextWidth(item.caption)+15;
-    if Assigned(Images) then begin
-      Images.GetBitmap(item.ImageIndex,btn.Glyph);
-      inc(w,btn.Glyph.Width+5);
-    end;
+    btn:=CreateButton(item,w);
     if w>wmax then wmax:=w;
     inc(CommandsCount); //текущую уже надо подсчитать
     SetLength(buttons,CommandsCount);
     buttons[CommandsCount-1]:=btn;
     pr:=item;
-    item:=item.Next;
+    if item.ActiveBranch and item.TurnLeft then
+      item:=item.Branch
+    else
+      item:=item.Next;
   end;
   //сейчас wmax выражает макс. ширину данной колонки, CommandCount-общее число команд в ней
   //мы должны разместить в колонку с номером не менее row, чем меньше номер-тем лучше
@@ -264,13 +278,18 @@ begin
   //еще стрелочку нарисовать
   HistoryFrame.AddLine(ColLeft[row+1]-CellPadding-5,Colleft[my_row],level*ButtonHeight+ButtonHeight div 2);
   //обновл€ем
+  if pr.ActiveBranch then begin
+    fLastCommand:=pr;
+    fCurLevel:=level+CommandsCount-1;
+  end;
   //вот, худо-бедно сделали эту часть, теперь пора веточки приделать
   if (level+CommandsCount)>fMaxCount then
     fMaxCount:=level+CommandsCount;
 
   while pr<>br.Prev do begin
     dec(CommandsCount);
-    if Assigned(pr.Branch) then DrawBranch(pr.Branch,level+CommandsCount,my_row);
+    if pr.ActiveBranch and pr.TurnLeft then DrawBranch(pr.Next,level+CommandsCount,my_row)
+    else DrawBranch(pr.Branch,level+CommandsCount,my_row);
     pr:=pr.Prev;
   end;
 end;
@@ -298,9 +317,30 @@ begin
 end;
 
 procedure TAbstractDocumentActionList.ChangeHistory;
+var cur: TAbstractTreeCommand;
+    btn: TBitBtn;
+    w: Integer;
 begin
   //вызываетс€ каждый раз, когда выполн€етс€ новое действие
   if HistoryFrame.Visible then begin
+    cur:=doc^.UndoTree.Current;
+    if (cur.Prev=fLastCommand) then begin
+      btn:=CreateButton(cur,w);
+      if w<=ColWidth[0] then begin
+      //просто добавим новую кнопку, » ¬—≈
+      //она строго слева пока что
+        inc(fCurLevel);
+        btn.Left:=ColLeft[0];
+        btn.Top:=fCurLevel*ButtonHeight;
+        btn.Width:=ColWidth[0];
+        btn.Height:=ButtonHeight;
+        fLastCommand:=cur;
+        RefreshHistoryHighlights;
+        Exit;
+      end
+      else
+        btn.Free;
+    end;
     MakeHistory;
     HistoryFrame.FormPaint(self);
   end;

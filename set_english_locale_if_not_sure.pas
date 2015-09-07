@@ -57,6 +57,7 @@ type
       function GetResourceLang: string;
     public
       constructor Create(Owner: TComponent); override;
+      constructor CreateDefault;
       destructor Destroy; override;
       procedure Loaded; override;
       function GetAppropriateLang(list: TListWithID): Integer;
@@ -341,6 +342,19 @@ begin
   LangPrefMatrix:=TLangPrefMatrix.Create(self);
   LangPrefMatrix.SetSubComponent(true);
   fAvailLanguageList:=TList.Create;
+end;
+
+constructor TLocalePreferences.CreateDefault;
+var lst: TListWithID;
+begin
+  Create(nil);
+  //англ. язык необходим
+  LangID.Add('English',9,1);
+  lst:=TListWithID.Create;
+  lst.ID:=1033;
+  lst.Add(Pointer(0));  //neutral/any на первом месте
+  lst.Add(Pointer(1033)); //след. - английский
+  LangPrefMatrix.Add(lst);
 end;
 
 destructor TLocalePreferences.Destroy;
@@ -696,8 +710,9 @@ end;
 
 initialization
   if FileExists(GetCurrentDir+'\data\Lang\LanguageSettings.txt') then
-    localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt');
-
+    localePreferences:=TLocalePreferences.LoadFromFile(GetCurrentDir+'\data\Lang\LanguageSettings.txt')
+  else
+    localePreferences:=TLocalePreferences.CreateDefault;
 finalization
   FreeAndNil(localePreferences);
 

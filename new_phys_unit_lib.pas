@@ -48,6 +48,7 @@ type
       function Convert(value: Variant; var ConvType: TPhysUnit): Variant; virtual;
       function Family: TPhysFamily;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); virtual;
+      procedure Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); virtual;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; virtual; abstract;
       function isNumericallyEqual(un: TPhysUnit): Boolean; virtual; abstract;
       function UniqueName: string;
@@ -69,6 +70,7 @@ type
       function ConvertFromBase(value: Variant): Variant; override;
       function CreateScaled(mult: Real): TPhysUnit; override;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
+      procedure Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
       function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
@@ -77,7 +79,8 @@ type
 
   TAffineConvType=class(TPhysUnit)
     private
-      fMultiplier, fOffset,fFactor: Real;
+      fMultiplier, fOffset: Real;
+      fFactor: Variant;
       fBaseAffine: TAffineConvType;
       fListOfDerived: TObjectList;
       procedure SetBaseAffine(value: TAffineConvType);
@@ -89,13 +92,14 @@ type
       function Convert(value: Variant;var ConvType: TPhysUnit): Variant; override;
       function CreateScaled(mult: Real): TPhysUnit; override;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
+      procedure Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
-      function GetAffineUnit(Factor: Real): TAffineConvType;
+      function GetAffineUnit(Factor: Variant): TAffineConvType;
       function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
       property Multiplier: Real read fMultiplier write fMultiplier;
       property Offset: Real read fOffset write fOffset;
-      property Factor: Real read fFactor write fFactor;
+      property Factor: Variant read fFactor write fFactor;
       property BaseAffine: TAffineConvType read fBaseAffine write SetBaseAffine;
     end;
 
@@ -108,6 +112,7 @@ type
       function ConvertFromBase(value: Variant): Variant; override;
       function CreateScaled(mult: Real): TPhysUnit; override;
       procedure Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);override;
+      procedure Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit); override;      
       function MultiplyByNumber(v1,num: Variant; var ConvType: TPhysUnit): Variant; override;
       function isNumericallyEqual(un: TPhysUnit): Boolean; override;
     published
@@ -254,6 +259,7 @@ type
       ExplicitConversion: boolean;  //флаг, что величину "насильно" привели к данному виду
       constructor Create(text: string); reintroduce; overload;
       constructor CreateFromVariant(source: Variant; aConvType: TPhysUnit);
+      destructor Destroy; override; //debug purposes
       procedure Assign(source: TPersistent); override;
       procedure Negate; override; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); override;
@@ -274,6 +280,7 @@ type
     procedure Cast(var Dest: TVarData; const Source: TVarData); override;
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
     function CompareOp(const Left, Right: TVarData; const Operator: Integer): Boolean; override;
+    function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
   end;
 
   TPhysUnitParser = class (TSimpleParser)
@@ -295,10 +302,13 @@ type
   function IsDimensionless(V: Variant): Boolean;
   procedure PhysUnitCreateInto(var ADest: Variant; const Adata: TVarWithUnit);
   function TryPhysUnitCreate(text: string; out Res: Variant): boolean;  
-  function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
-  function PhysUnitCreate(text: string): Variant;
+  function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant; overload;
+  function PhysUnitCreateFromVariant(source: Variant; ConvType: string): Variant; overload;
+  function PhysUnitCreate(text: string): Variant; overload;
+  function PhysUnitCreate(value: Real; ConvType: string): Variant; overload;
   function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant; overload;
   function PhysUnitConvert(source: Variant; DestType: string): Variant; overload;
+  function PhysUnitPar(const a,b: Variant): Variant;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
   function PhysUnitSqrt(source: Variant): Variant;
   function PhysUnitAbs(source: Variant): Variant;
@@ -308,13 +318,13 @@ type
   function PhysUnitFindGoodPrefix(V: Variant): Variant;
   function PhysUnitGetNumberIn(source: Variant; UnitName: TPhysUnit): Variant; overload;
   function PhysUnitGetNumberIn(source: Variant; UnitName: string): Variant; overload;
-  function PhysUnitGetNumber(source: Variant): Variant;  
+  function PhysUnitGetNumber(source: Variant): Variant;
   function NoSpaces(str: string): String;
   function StrToPhysFamily(str: string): TPhysFamily;
   function StrToPhysUnit(str: string): TPhysUnit;
   function IsPhysUnitSameFamily(v1,v2: Variant): Boolean;
   function PhysUnitGetConvType(source: Variant): TPhysUnit;
-  function VarGetLengthSquared(value: Variant): Real;    
+  function VarGetLengthSquared(value: Variant): Real;
 
   var PhysUnitData: TPhysUnitData;
       VarWithUnitVariantType: TVarWithUnitType;
@@ -325,6 +335,7 @@ uses Variants,math,strUtils,VarCmplx,expression_lib;
 
 resourcestring
   AbstractErrorAdd = 'could not add %s and %s';
+  AbstractErrorPar = 'could not compute %s || %s ("parallel connection")';
   LogarithmicConvTypeRequiresRealNum = 'Лог. единицы измерения допустимы только для положительных действительных значений';
   StrCanReferTo = '%s can refer to:';
   ConvTypeWeUsedIs = 'we used %s';
@@ -334,7 +345,7 @@ resourcestring
   NonConsistentConstraints = 'Добавление условия %s=1 приводит к противоречию';
   FundPhysConstMustBeRealPositive='Fund phys const %s must be real and positive';
   FundConstMustBePhys = 'Phys unit const expected, %s found';
-  AlreadyHasDimension = '%s уже имеет размерность';          
+  AlreadyHasDimension = '%s уже имеет размерность';
 (*
       General procedures
                             *)
@@ -455,9 +466,13 @@ begin
 end;
 
 procedure TPhysUnit.Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
-
 begin
-  Raise Exception.CreateFmt(AbstractErrorAdd,[Caption.Caption,t.Caption.Caption]);
+  Raise EPhysUnitError.CreateFmt(AbstractErrorAdd,[Caption.Caption,t.Caption.Caption]);
+end;
+
+procedure TPhysUnit.Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
+begin
+  Raise EPhysUnitError.CreateFmt(AbstractErrorPar,[Caption.Caption,t.Caption.Caption]);
 end;
 
 function TPhysUnit.Convert(value: Variant; var ConvType: TPhysUnit): Variant;
@@ -494,7 +509,24 @@ end;
 procedure TNormalConvType.Add(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
 begin
   if Owner=t.Owner then begin //same family
-    v1:=v1+ConvertFromBase(t.ConvertToBase(v2));
+    if t=self then
+      v1:=v1+v2
+    else
+      v1:=v1+ConvertFromBase(t.ConvertToBase(v2));
+    ConvType:=self;
+  end
+  else inherited;
+end;
+
+procedure TNormalConvType.Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
+begin
+  if Owner=t.Owner then begin //same family
+    if v1<>0 then begin //иначе заведомо ноль - пусть он и останется!
+      if t=self then
+        v1:=v1*v2/(v1+v2)
+      else
+        v1:=1/(1/v1+1/ConvertFromBase(t.ConvertToBase(v2))); //даже Normal||Log - правильно преобр
+    end;
     ConvType:=self;
   end
   else inherited;
@@ -535,10 +567,11 @@ end;
 { TAffineConvType }
 
 constructor TAffineConvType.Create(aOwner: TComponent);
+const one: Real = 1;
 begin
   inherited Create(aOwner);
   fListOfDerived:=TObjectList.Create(false);
-  Factor:=1;
+  Factor:=one;  //чтобы это получился именно real!
   BaseAffine:=self;
 end;
 
@@ -592,6 +625,23 @@ begin
   else inherited;
 end;
 
+procedure TAffineConvType.Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
+begin
+  if Owner = t.Owner then begin
+    if (self=t) and (self=Family.BaseType) then begin
+      if v1<>0 then
+        v1:=v1*v2/(v1+v2) //в противном случае пусть остается 0
+    end
+    else begin
+      v1:=ConvertToBase(v1);
+      if v1<>0 then
+        v1:=1/(1/v1+1/ConvertToBase(v2));
+    end;
+    ConvType:=Family.BaseType;
+  end
+  else inherited;
+end;
+
 function TAffineConvType.MultiplyByNumber(v1,num: Variant;
   var ConvType: TPhysUnit): Variant;
 begin
@@ -599,7 +649,7 @@ begin
   ConvType:=GetAffineUnit(Factor*num);
 end;
 
-function TAffineConvType.GetAffineUnit(Factor: Real): TAffineConvType;
+function TAffineConvType.GetAffineUnit(Factor: Variant): TAffineConvType;
 var i: Integer;
     der: TAffineConvType;
 begin
@@ -613,7 +663,7 @@ begin
   end;
   //не нашли
   der:=TAffineConvType.Clone(baseAffine);
-  der.Factor:=Factor;
+  der.Factor:=VarComplexSimplify(Factor);
   der.Offset:=der.Offset*Factor;
   der.BaseAffine:=BaseAffine; //на этом этапе он должен автоматом появиться в списке
   //теперь украшательства - имя ему изменяем
@@ -621,12 +671,12 @@ begin
     if Factor=0 then
       der.ShortName.strings[i]:=Format('%s{dif}',[der.ShortName.strings[i]])
     else
-      der.ShortName.strings[i]:=Format('%s{%g}',[der.ShortName.strings[i],Factor]);
+      der.ShortName.strings[i]:=Format('%s{%s}',[der.ShortName.strings[i],der.Factor]);
   for i:=0 to der.Caption.strings.Count-1 do
     if Factor=0 then
       der.Caption.strings[i]:=Format('%s{dif}',[der.Caption.strings[i]])
     else
-      der.Caption.strings[i]:=Format('%s{%g}',[der.Caption.strings[i],Factor]);
+      der.Caption.strings[i]:=Format('%s{%s}',[der.Caption.strings[i],der.Factor]);
   der.ensureCorrectName(ToAcceptableName(der.Caption.InEnglish),owner);
   owner.InsertComponent(der);
   Result:=der;
@@ -656,31 +706,49 @@ begin
   else inherited;
 end;
 
+procedure TLogarithmicConvType.Par(var V1: Variant; out ConvType: TPhysUnit; V2: Variant; t: TPhysUnit);
+begin
+  if Owner = t.Owner then begin
+    if self=t then
+      V1:=V1+V2-fLog10Mult*log10(Power(10,V1/fLog10Mult)+Power(10,V2/fLog10Mult))
+    else
+      V1:=V1+fLog10Mult*log10(t.ConvertToBase(V2)/(fZeroValue*Power(10,V1/fLog10Mult)+t.ConvertToBase(V2)));
+    ConvType:=self;
+  end
+  else inherited;
+end;
+
 function TLogarithmicConvType.ConvertFromBase(value: Variant): Variant;
 begin
-  if VarIsNumeric(value) then
-    Result:=Log10Multiplier*log10(value/ZeroValue)
-  else
-    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
+//  if VarIsNumeric(value) then
+//    Result:=Log10Multiplier*log10(value/ZeroValue)
+//  else
+    Result:=Log10Multiplier*VarComplexLog10(value/ZeroValue);
+//    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
 
 function TLogarithmicConvType.ConvertToBase(value: Variant): Variant;
 begin
-  if VarIsNumeric(value) then
-    Result:=ZeroValue*power(10.0,(value/Log10Multiplier))
-  else
-    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
+//  if VarIsNumeric(value) then
+//    Result:=ZeroValue*power(10.0,(value/Log10Multiplier))
+//  else
+    Result:=VarComplexSimplify(ZeroValue*VarComplexExp(value*ln(10)/Log10Multiplier))
+//    Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
 end;
 
 function TLogarithmicConvType.MultiplyByNumber(v1,num: Variant;
   var ConvType: TPhysUnit): Variant;
 begin
+  Result:=v1+log10multiplier*VarComplexLog10(num);
+  ConvType:=self;
+(*
   if VarIsNumeric(v1) and VarIsNumeric(num) and (num>0) then begin
     Result:=v1+log10multiplier*log10(num);
     ConvType:=self;
   end
   else
     Raise EPhysUnitError.Create(LogarithmicConvTypeRequiresRealNum);
+    *)
 end;
 
 function TLogarithmicConvType.CreateScaled(mult: Real): TPhysUnit;
@@ -782,6 +850,9 @@ end;
 
 destructor TPhysUnitData.Destroy;
 begin
+  //debug
+//  fMegaList.SaveToFile('megalist.txt');
+  //end of debug
   fMegaList.Free;
   fAutocompleteList.Free;
   fWarningList.Free;
@@ -801,8 +872,8 @@ var fam: TPhysFamily;
       for i:=0 to nm.strings.Count-1 do begin
         if fMegaList.IndexOf(nm.strings[i])>=0 then
           fWarningList.Add(Format('%s ident ambiguity',[nm.strings[i]]));
-        fMegaList.AddObject(nm.strings[i],ct);
-        fAutocompleteList.AddObject(nm.strings[i],ct);
+        fMegaList.AddObject(NoSpaces(nm.strings[i]),ct);
+        fAutocompleteList.AddObject(NoSpaces(nm.strings[i]),ct);
       end;
     end;
 
@@ -910,6 +981,8 @@ begin
     end;
     objlist.Free;
     //еще нужно лист привести в порядок немножко
+    //костыль - должно в AddToMegaList делать все необходимое
+(*
     fMegaList.Sorted:=false;
     fAutocompleteList.Sorted:=false;
     for j:=0 to fMegaList.Count-1 do begin
@@ -918,7 +991,7 @@ begin
     end;
     fMegaList.Sorted:=true;
     fAutocompleteList.Sorted:=true;
-
+*)
 
     //на этом этапе TUnitsWithExponents должна стать работоспособной
     for j:=0 to fFamilyList.Count-1 do begin
@@ -971,7 +1044,7 @@ var i,j,k: Integer;
     NormalRslt: TNormalConvType absolute Result;
     p: TSimpleParser;
 begin
-  i:=fMegaList.IndexOf(str);
+  i:=fMegaList.IndexOf(NoSpaces(str));
   if i>=0 then begin
     j:=i+1;
     while (j<fMegaList.Count) and (fMegaList[j]=str) do inc(j);
@@ -1052,6 +1125,19 @@ begin
   v:=expr.GetVariantValue;
   Assign(TVarWithUnitVarData(v).Data);
   expr.free;
+end;
+
+constructor TVarWithUnit.CreateFromVariant(source: Variant;
+  aConvType: TPhysUnit);
+begin
+  Create;
+  instance:=source;
+  ConvType:=aConvType;
+end;
+
+destructor TVarWithUnit.Destroy;
+begin
+  inherited Destroy;
 end;
 
 function TVarWithUnit.AsString: string;
@@ -1146,14 +1232,6 @@ begin
       end;
     end;
   end;
-end;
-
-constructor TVarWithUnit.CreateFromVariant(source: Variant;
-  aConvType: TPhysUnit);
-begin
-  Create;
-  instance:=source;
-  ConvType:=aConvType;
 end;
 
 procedure TVarWithUnit.DoAdd(value: TAbstractWrapperData);
@@ -1310,6 +1388,13 @@ begin
     opCmpGT: Result:=(L.instance>R.instance);
     opCmpGE: Result:=(L.instance>=R.instance);
   end;
+end;
+
+function TVarWithUnitType.RightPromotion(const V: TVarData;
+  const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+  RequiredVarType:=V.VType; //пусть остается как есть, Cast от правого операнда работает хреново
+  Result:=true;
 end;
 
 { TUnitsWithExponents }
@@ -1604,7 +1689,7 @@ begin
       Exit;
     end;
   end;
-
+(*
   if fcount>2 then begin
     if Assigned(PhysUnitData.infoproc) then
       PhysUnitData.infoproc('creating new family');
@@ -1642,7 +1727,7 @@ begin
     end;
 
   end;
-
+*)
 
   //не нашли подходящую семью - придется создать!
   fam:=TPhysFamily.Create(PhysUnitData);
@@ -1970,6 +2055,11 @@ begin
   PhysUnitCreateInto(Result,TVarWithUnit.Create(text));
 end;
 
+function PhysUnitCreate(value: Real; ConvType: string): Variant;
+begin
+  PhysUnitCreateInto(Result,TVarWithUnit.CreateFromVariant(value,StrToPhysUnit(ConvType)));
+end;
+
 function PhysUnitCreateFromVariant(source: Variant; ConvType: TPhysUnit): Variant;
 begin
   if IsPhysUnit(source) then
@@ -1981,6 +2071,11 @@ begin
       Raise EPhysUnitError.CreateFmt(AlreadyHasDimension,[source])
   else
     PhysUnitCreateInto(Result,TVarWithUnit.CreateFromVariant(source,ConvType));
+end;
+
+function PhysUnitCreateFromVariant(source: Variant; ConvType: string): Variant;
+begin
+  Result:=PhysUnitCreateFromVariant(source,StrToPhysUnit(ConvType));
 end;
 
 function PhysUnitConvert(source: Variant; DestConvType: TPhysUnit; explicit: boolean=false): Variant;
@@ -2015,6 +2110,23 @@ end;
 function PhysUnitSqrt(source: Variant): Variant;
 begin
   Result:=PhysUnitPower(source,0.5);
+end;
+
+function PhysUnitPar(const a,b: Variant): Variant;
+var v,tmp: Variant;
+    ctype: TPhysUnit;
+begin
+
+  v:=TVarWithUnitVarData(a).Data.instance;
+  if IsPhysUnitSameFamily(a,b) then
+    TVarWithUnitVarData(a).Data.ConvType.Par(v,ctype,TVarWithUnitVarData(b).Data.instance,TVarWithUnitVarData(b).Data.ConvType)
+  else begin
+    tmp:=PhysUnitConvert(b,TVarWithUnitVarData(a).Data.ConvType);
+    TVarWithUnitVarData(a).Data.ConvType.Par(v,ctype,TVarWithUnitVarData(tmp).Data.instance,TVarWithUnitVarData(tmp).Data.ConvType);
+  end;
+  Result:=PhysUnitCreateFromVariant(v,ctype); //утекает память: TVarWithUnit x 1
+
+//  Result:=PhysUnitCreateFromVariant(1.0,'m');
 end;
 
 function PhysUnitAbs(source: Variant): Variant;

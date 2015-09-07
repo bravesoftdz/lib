@@ -113,14 +113,19 @@ begin
 end;
 
 procedure TAbstractWrapperVariantType.BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp);
+var CastedRight: TVarData;
 begin
 //сложить, вычесть, умножить, поделить, остаток от деления и битовые операции (сдвиги, лог. и пр)
-  if Right.VType = VarType then
+  if Right.vType<>VarType then
+    Cast(CastedRight,Right)
+  else
+    CastedRight:=Right;
+    
     case Left.VType of
       varString:
         case Operator of
           opAdd:
-            Variant(Left) := Variant(Left) + TWrapperVarData(Right).Data.AsString;
+            Variant(Left) := Variant(Left) + TWrapperVarData(CastedRight).Data.AsString;
         else
           RaiseInvalidOp;
         end;
@@ -128,21 +133,19 @@ begin
       if Left.VType = VarType then
         case Operator of
           opAdd:
-            TWrapperVarData(Left).data.DoAdd(TWrapperVarData(Right).Data);
+            TWrapperVarData(Left).data.DoAdd(TWrapperVarData(CastedRight).Data);
           opSubtract:
-            TWrapperVarData(Left).data.DoSubtract(TWrapperVarData(Right).Data);
+            TWrapperVarData(Left).data.DoSubtract(TWrapperVarData(CastedRight).Data);
           opMultiply:
-            TWrapperVarData(Left).data.DoMultiply(TWrapperVarData(Right).Data);
+            TWrapperVarData(Left).data.DoMultiply(TWrapperVarData(CastedRight).Data);
           opDivide:
-            TWrapperVarData(Left).data.DoDivide(TWrapperVarData(Right).Data);
+            TWrapperVarData(Left).data.DoDivide(TWrapperVarData(CastedRight).Data);
         else
           RaiseInvalidOp;
         end
       else
         RaiseInvalidOp;
-    end
-  else
-    RaiseInvalidOp;
+    end;
 end;
 
 function TAbstractWrapperVariantType.LeftPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;

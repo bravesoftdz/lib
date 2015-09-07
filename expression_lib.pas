@@ -383,14 +383,20 @@ end;
                       *)
 function TParNode.getVariantValue: Variant;
 var i: Integer;
-  t: Variant;
+  t,t1,t2: Variant;
 begin
   if ComponentCount=0 then Raise Exception.Create('ParNode: zero elements');
   //ошибка не должна возникать у пользователя
   Result:=(Components[0] as TEvaluationTreeNode).getVariantValue;
   for i:=1 to ComponentCount-1 do begin
     t:=(Components[i] as TEvaluationTreeNode).getVariantValue;
-    Result:=Result*t/(Result+t);
+    t1:=Result;
+//    t2:=t+t1;
+    Result:=PhysUnitPar(t,t1);
+//    Result:=PhysUnitPar(Result,t);
+//    Result:=Result*t/(Result+t);
+//    Result:=t*t1/(t+t1);
+//      Result:=t/t2;
   end;
 end;
 
@@ -451,35 +457,13 @@ begin
 end;
 
 function TPowNode.getVariantValue: Variant;
-var a,b,inst,tmp: Variant;
+var a: Variant;
+    pow: Real;
 begin
-  //возведение в степень физ. величины-это бред
-  //возведение физ. величины в комплексную степень - тоже
-  b:=(Components[1] as TEvaluationTreeNode).getVariantValue;
-  if IsPhysUnit(b) then
-    if IsDimensionless(b) then begin
-      b:=PhysUnitConvert(b,PhysUnitData.Unity);
-      tmp:=TVarWithUnitVarData(b).Data.instance;
-      b:=tmp;
-    end
-    else
-      Raise ESyntaxErr.Create(ExponentShouldBeDimensionless);
+  //показатель степени должен быть безразмерной действительной величиной, и никак иначе
+  pow:=PhysUnitGetNumberIn((Components[1] as TEvaluationTreeNode).getVariantValue,PhysUnitData.Unity);
   a:=(Components[0] as TEvaluationTreeNode).getVariantValue;
-  if IsPhysUnit(a) then begin
-    if IsDimensionless(a) then begin
-      inst:=TVarWithUnitVarData(a).Data.instance;
-      //если a=()a.instance, то unassigned становится, видимо, рубит сук на котором сидит
-      Result:=VarComplexSimplify(VarComplexPower(inst,b));
-    end
-    else begin
-      b:=VarComplexSimplify(b);
-      if VarIsComplex(b) then
-        Raise ESyntaxErr.Create(ExponentShouldBeReal);
-      //возведение размерной величины в действ. степень - уже лучше
-      Result:=PhysUnitPower(a,b);
-    end;
-  end
-  else Result:=VarComplexSimplify(VarComplexPower(a,b));
+  Result:=PhysUnitPower(a,pow);
 end;
 
 (*
@@ -1130,11 +1114,18 @@ begin
   if (b+1<e) and (Lexems[b+1].LType=ltAssign) then begin
     if (Lexems[b].LType<>ltIdent) then
       Raise ESyntaxErr.Create(SomeCrapLeftOfAssign);
-    TreeNode:=TAssignNode.Create(nil);
-    ConstsAndVars(b,b,tmp);
-    TreeNode.InsertComponent(tmp);  //переменную вставили
-    AssignOperators(b+2,e,tmp);
-    TreeNode.InsertComponent(tmp);
+    TreeNode:=TAssignNode.Create(nil);  //при ошибке эта удалится
+    tmp:=nil;
+    try
+      ConstsAndVars(b,b,tmp); //может возникнуть исключение, тогда освобождаем tmp
+      TreeNode.InsertComponent(tmp);  //переменную вставили
+      tmp:=nil;
+      AssignOperators(b+2,e,tmp);
+      TreeNode.InsertComponent(tmp);
+    except
+      FreeAndNil(tmp);
+      raise;
+    end;
   end
   else
     UnitConversionOperators(b,e,TreeNode);
