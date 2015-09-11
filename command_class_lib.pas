@@ -13,11 +13,8 @@ type
     protected
       fActiveBranch: Boolean;
     public
-      constructor Create(Aowner: TComponent); override;
       procedure Clear; override;
       procedure ResolveMemory; virtual;
-      function NameToDateTime: TDateTime;
-      function NameToDate(aName: TComponentName): Integer;
       function EqualsByAnyOtherName(what: TStreamingClass): boolean; override;
     published
       property Prev: TAbstractTreeCommand read fPrev write fPrev;
@@ -308,19 +305,6 @@ end;
 (*
         TAbstractCommand
                                  *)
-constructor TAbstractTreeCommand.Create(AOwner: TComponent);
-var t: TTimeStamp;
-begin
-  inherited Create(AOwner);
-  //у любой уважающей себя команды должно быть имя
-  //закодируем в него время и дату создания компоненты
-  t:=DateTimeToTimeStamp(Now);
-  //дата и время до мс еще не гарантируют уникальность - много команд может возн.
-  //одновременно
-  ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),AOwner);
-  Clear;
-end;
-
 procedure TAbstractTreeCommand.Clear;
 begin
   Next:=nil;
@@ -329,7 +313,6 @@ begin
   ActiveBranch:=false;
   fImageIndex:=-1;
 end;
-
 
 function TAbstractTreeCommand.EqualsByAnyOtherName(what: TStreamingClass): boolean;
 var t: TAbstractTreeCommand absolute what;
@@ -405,20 +388,6 @@ begin
       HashedT.fHash:=buHash;
   end
   else Result:=false;
-end;
-
-
-function TAbstractTreeCommand.NameToDateTime: TDateTime;
-var t: TTimeStamp;
-begin
-  t.Date:=StrToInt('0x'+midstr(Name,2,8));
-  t.Time:=StrToInt('0x'+MidStr(Name,10,8));
-  Result:=TimeStampToDateTime(t);
-end;
-
-function TAbstractTreeCommand.NameToDate(aname: TComponentName): Integer;
-begin
-  Result:=StrToInt('0x'+midstr(aName,2,8));
 end;
 
 procedure TAbstractTreeCommand.ResolveMemory;

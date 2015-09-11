@@ -42,14 +42,7 @@ constructor TCommandList.Create(AOwner: TComponent);
 var tmp: TComponent;
 begin
   inherited Create(AOwner);
-  if Aowner=nil then FRoot:=self
-  else begin
-    tmp:=Aowner;
-    repeat
-      FRoot:=tmp;
-      tmp:=tmp.Owner;
-    until tmp=nil;
-  end;
+  FRoot:=FindOwner;
 end;
 
 procedure TCommandList.Add(command: TAbstractCommand);

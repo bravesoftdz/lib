@@ -2,7 +2,7 @@ unit abstract_command_lib;
 
 interface
 
-uses streaming_class_lib;
+uses streaming_class_lib,classes;
 
 type
 
@@ -10,9 +10,12 @@ TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хр
   protected
     fImageIndex: Integer; //картиночку показать
   public
+    constructor Create(Aowner: TComponent); override;
     function Execute: Boolean; virtual; abstract;
     function Undo: boolean; virtual; abstract;
     function caption: string; virtual;
+    function NameToDateTime: TDateTime;
+    function NameToDate(aName: TComponentName): Integer;
   published
     property ImageIndex: Integer read fImageIndex write fImageIndex;
   end;
@@ -35,9 +38,37 @@ TAbstractCommandContainer=class(TStreamingClass)
 
 implementation
 
+uses sysutils,strutils;
+
+constructor TAbstractCommand.Create(AOwner: TComponent);
+var t: TTimeStamp;
+begin
+  inherited Create(AOwner);
+  //у любой уважающей себя команды должно быть имя
+  //закодируем в него время и дату создания компоненты
+  t:=DateTimeToTimeStamp(Now);
+  //дата и время до мс еще не гарантируют уникальность - много команд может возн.
+  //одновременно
+  ensureCorrectName('c'+IntToHex(t.Date,8)+IntToHex(t.Time,8),AOwner);
+  Clear;
+end;
+
 function TAbstractCommand.caption: string;
 begin
   result:=self.ClassName;
+end;
+
+function TAbstractCommand.NameToDateTime: TDateTime;
+var t: TTimeStamp;
+begin
+  t.Date:=StrToInt('0x'+midstr(Name,2,8));
+  t.Time:=StrToInt('0x'+MidStr(Name,10,8));
+  Result:=TimeStampToDateTime(t);
+end;
+
+function TAbstractCommand.NameToDate(aname: TComponentName): Integer;
+begin
+  Result:=StrToInt('0x'+midstr(aName,2,8));
 end;
 
 end.

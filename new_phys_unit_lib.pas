@@ -1686,12 +1686,16 @@ end;
 
 
 function TUnitsWithExponents.GetConvType: TPhysUnit;
-var i,j: Integer;
+var i: Integer;
     fam: TPhysFamily;
     un: TNormalConvType;
+
+(*
+    j: Integer;
     solver: IAbstractSLEQ;
     nvars,neq: Integer;
     s: string;
+    *)
 begin
   for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
     fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
@@ -2135,9 +2139,7 @@ begin
     tmp:=PhysUnitConvert(b,TVarWithUnitVarData(a).Data.ConvType);
     TVarWithUnitVarData(a).Data.ConvType.Par(v,ctype,TVarWithUnitVarData(tmp).Data.instance,TVarWithUnitVarData(tmp).Data.ConvType);
   end;
-  Result:=PhysUnitCreateFromVariant(v,ctype); //утекает память: TVarWithUnit x 1
-
-//  Result:=PhysUnitCreateFromVariant(1.0,'m');
+  Result:=PhysUnitCreateFromVariant(v,ctype);
 end;
 
 function PhysUnitAbs(source: Variant): Variant;

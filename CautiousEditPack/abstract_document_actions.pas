@@ -326,7 +326,7 @@ begin
     cur:=doc^.UndoTree.Current;
     if (cur.Prev=fLastCommand) then begin
       btn:=CreateButton(cur,w);
-      if w<=ColWidth[0] then begin
+      if (Length(ColWidth)>0) and (w<=ColWidth[0]) then begin
       //просто добавим новую кнопку, И ВСЕ
       //она строго слева пока что
         inc(fCurLevel);

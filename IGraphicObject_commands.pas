@@ -46,7 +46,7 @@ TDocumentWithImage = class(TAbstractDocument)
   public
     constructor Create(owner: TComponent); override;
     function XPix2Val(X: Integer): Integer; virtual; //implemented using Get_scale method
-    function YPix2Val(Y: Integer): Integer; virtual; //image is centered
+    function YPix2Val(Y: Integer): Integer; virtual; //image is NOT centered
     function XVal2Pix(X: Integer): Integer; virtual;
     function YVal2Pix(Y: Integer): Integer; virtual;
     function Get_square_size: Integer; virtual; //default impl: 10

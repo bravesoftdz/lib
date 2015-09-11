@@ -383,20 +383,14 @@ end;
                       *)
 function TParNode.getVariantValue: Variant;
 var i: Integer;
-  t,t1,t2: Variant;
+  t: Variant;
 begin
   if ComponentCount=0 then Raise Exception.Create('ParNode: zero elements');
   //ошибка не должна возникать у пользователя
   Result:=(Components[0] as TEvaluationTreeNode).getVariantValue;
   for i:=1 to ComponentCount-1 do begin
     t:=(Components[i] as TEvaluationTreeNode).getVariantValue;
-    t1:=Result;
-//    t2:=t+t1;
-    Result:=PhysUnitPar(t,t1);
-//    Result:=PhysUnitPar(Result,t);
-//    Result:=Result*t/(Result+t);
-//    Result:=t*t1/(t+t1);
-//      Result:=t/t2;
+    Result:=PhysUnitPar(t,Result);
   end;
 end;
 

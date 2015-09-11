@@ -10,7 +10,8 @@ TScreenCoord = 0..9999; //тут главное - правильный размер окошечка
 
 TPointGraphicObject = class (TStreamingClass, IGraphicObject)
   protected
-    fx,fy: TScreenCoord;
+    fx,fy: Integer; //кто знает, с какими размерами мы работаем?
+                    //иначе с Geofrac конкретные проблемы
   public
     function Rect: TRect; virtual; //реальные размеры
     function SymbolRect: TRect; virtual; //как оно отобр. на экране
@@ -29,7 +30,8 @@ end;
 
 TLineGraphicObject = class (TStreamingClass, IGraphicObject)
   protected
-    fc: array [0..3] of TScreenCoord;  //0:x1, 1:y1, 2: x2, 3:y2
+    fc: array [0..3] of Integer;  //0:x1, 1:y1, 2: x2, 3:y2
+                                  //не знаем масштабов исп. чисел
   public
     function Rect: TRect; virtual; //реальные размеры
     function SymbolRect: TRect; virtual; //как оно отобр. на экране
