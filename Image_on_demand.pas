@@ -65,6 +65,7 @@ TRasterImageDocument = class (TDocumentWithImage)
     destructor Destroy; override;
     function Get_Image: TImage; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
+    property Btmp: TAsyncSavePNG read fBtmp;
   end;
 
 TSaveDocThread = class (TThread)
@@ -333,7 +334,8 @@ end;
 
 procedure TRasterImageDocument.SaveAndFree;
 begin
-
+  if Assigned(self) then
+    TSaveDocThread.Create(self);
 end;
 
 initialization
