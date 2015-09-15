@@ -194,8 +194,6 @@ type
   TAbstractToolAction=class;
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
-      initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
-      new_commands_added: Boolean;  //и добавлены ли новые команды
       fOnDocumentChange: TNotifyEvent;
       fOnLoad: TNotifyEvent;
       fCriticalSection: TCriticalSection;
@@ -203,6 +201,8 @@ type
       procedure SetOnDocumentChange(value: TNotifyEvent);
       procedure SetOnLoad(value: TNotifyEvent);
     protected
+      initial_pos: TAbstractCommand;  //узнать, сместилось ли состояние после сохр.
+      new_commands_added: Boolean;  //и добавлены ли новые команды
       procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
       procedure Notification(aComponent: TComponent; operation: TOperation); override;
     public

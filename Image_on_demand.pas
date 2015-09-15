@@ -86,7 +86,7 @@ TSaveDocThread = class (TThread)
     constructor Create(doc: TRasterImageDocument);
 end;
 
-TRasterImageDocumentCommand = class (THashedCommand)
+TRasterImageDocumentCommand = class (TAbstractTreeCommand)
   public
     function GetDoc: TRasterImageDocument;
   end;
@@ -111,7 +111,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     property diff: TPngObject read fDiff write fDiff;
   end;
 
-TRectBrushImageCommand = class (TPatchImageCommand)
+TRectBrushCommand = class (TPatchImageCommand)
 //закрашивает прямоугольник текущей ширины (заданной в BrushSize) осн. цветом
 //реальное движение кисти порождает десятки, сотни таких команд.
 //если после прохода ничего вообще не поменялось, команда не сохраняется
@@ -339,12 +339,15 @@ end;
 procedure TRasterImageDocument.SaveToFile(filename: string);
 var s: string;
 begin
-  if Changed then
+  if Changed or not FileExists(filename) then
     inherited SaveToFile(filename);
   s:=ExtractFilePath(filename);
   s:=LeftStr(s,Length(s)-5);
+  filename:=s+ChangeFileExt(ExtractFileName(filename),'.png');
   If Changed or not FileExists(filename) then
-    btmp.SaveToFile(s+ChangeFileExt(ExtractFileName(filename),'.png'));
+    btmp.SaveToFile(filename);
+  initial_pos:=UndoTree.current;
+  new_commands_added:=false;
 end;
 
 constructor TRasterImageDocument.LoadFromFile(aFilename: string);
@@ -445,16 +448,16 @@ begin
 end;
 
 (*
-    TRectBrushImageCommand
+    TRectBrushCommand
                               *)
-constructor TRectBrushImageCommand.Create(aX,aY: Integer);
+constructor TRectBrushCommand.Create(aX,aY: Integer);
 begin
   Create(nil);
   X:=aX;
   Y:=aY;
 end;
 
-procedure TRectBrushImageCommand.GetBounds;
+procedure TRectBrushCommand.GetBounds;
 var size: Integer;
 begin
   size:=GetDoc.BrushSize;
@@ -464,7 +467,7 @@ begin
   fBottom:=Y+size;
 end;
 
-function TRectBrushImageCommand.InternalExecute: Boolean;
+function TRectBrushCommand.InternalExecute: Boolean;
 begin
   //пока поступим упрощенно
   with GetDoc.Btmp.Canvas do begin
@@ -476,7 +479,7 @@ end;
 
 
 initialization
-  RegisterClasses([TRasterImageDocument]);
+  RegisterClasses([TRasterImageDocument,TRectBrushCommand]);
   ImageSavingProgress:=TImageSavingProgress.Create;
   DocumentsSavingProgress:=TDocumentsSavingProgress.Create;
 finalization
