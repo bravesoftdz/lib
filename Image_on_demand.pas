@@ -3,7 +3,7 @@ unit Image_on_demand;
 interface
 
 uses classes,streaming_class_lib, syncObjs, pngImage, command_class_lib,graphics,
-  IGraphicObject_commands, ExtCtrls;
+  IGraphicObject_commands, ExtCtrls, Types;
 
 type
 (*
@@ -59,13 +59,22 @@ TDocumentsSavingProgress = class (TObject)
 TRasterImageDocument = class (TDocumentWithImage)
   private
     fBtmp: TAsyncSavePNG;
+    fPrimaryColor: TColor;
+    fSecondaryColor: TColor;
+    fBrushSize: Integer;
   public
     Image: TImage;
     constructor Create(aOwner: TComponent); override;
+    constructor LoadFromFile(aFilename: string); override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
-    property Btmp: TAsyncSavePNG read fBtmp;
+    procedure SaveToFile(filename: string); override;
+  published
+    property Btmp: TAsyncSavePNG read fBtmp write fBtmp stored false;
+    property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
+    property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
+    property BrushSize: Integer read fBrushSize write fBrushSize;
   end;
 
 TSaveDocThread = class (TThread)
@@ -77,23 +86,45 @@ TSaveDocThread = class (TThread)
     constructor Create(doc: TRasterImageDocument);
 end;
 
-TPatchImageCommand = class (THashedCommand)
-  private //базовая команда при работе с растровыми изображениями
-    fLeft,fRight,fTop,fBottom: Integer; //рабочий участок
+TRasterImageDocumentCommand = class (THashedCommand)
+  public
+    function GetDoc: TRasterImageDocument;
+  end;
+
+TPatchImageCommand = class (TRasterImageDocumentCommand)
+//базовая команда при работе с растровыми изображениями
+  protected
     fDiff: TPngObject;
+    fPredictor: TPngObject;
+    fLeft,fTop,fRight,fBottom: Integer; //расположение заплатки
+    procedure GetBounds; virtual; abstract;//инициализировать fRect
+    function UndoPrediction: Boolean; virtual;  //false означает
+    //что мы ничего не можем предсказать, поэтому оставляем картинку как есть
+    function InternalExecute: Boolean; virtual; abstract; //false означает,
+    //что применение команды ничего не изменило и ее стоит изъять из дерева
   public
     constructor Create(aOwner: TComponent); overload; override;
-    constructor Create(aLeft,aTop,aRight,aBottom: Integer; aPatch: TBitmap); reintroduce; overload;
     destructor Destroy; override;
     function Execute: Boolean; override;
     function Undo: Boolean; override;
-    function Caption: string; override;
   published
-    property Left: Integer read fLeft write fLeft;
-    property Top: Integer read fTop write fTop;
-    property Right: Integer read fRight write fRight;
-    property Bottom: Integer read fBottom write fBottom;
     property diff: TPngObject read fDiff write fDiff;
+  end;
+
+TRectBrushImageCommand = class (TPatchImageCommand)
+//закрашивает прямоугольник текущей ширины (заданной в BrushSize) осн. цветом
+//реальное движение кисти порождает десятки, сотни таких команд.
+//если после прохода ничего вообще не поменялось, команда не сохраняется
+  private
+    fX,fY: Integer; //коорд. центра
+  protected
+    procedure GetBounds; override;
+    function InternalExecute: Boolean; override;
+  public
+    constructor Create(aX,aY: Integer); reintroduce; overload;
+  published
+    property X: Integer read fX write fX;
+    property Y: Integer read fY write fY;
   end;
 
 var
@@ -102,7 +133,7 @@ var
 
 
 implementation
-uses SysUtils;
+uses SysUtils,strUtils,gamma_function;
 (*
       TAsyncSavePNG
                           *)
@@ -138,7 +169,9 @@ constructor TSaveDocThread.Create(doc: TRasterImageDocument);
 begin
   inherited Create(false);
   fDoc:=doc;
+  DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
   FreeOnTerminate:=true;
+  Priority:=tpLower;
   Resume;
 end;
 
@@ -153,13 +186,18 @@ begin
   finally
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
   end;
-  fDoc.SaveToFile(fDoc.FileName);
+  fDoc.CriticalSection.Acquire;
+    fDoc.SaveToFile(fDoc.FileName);
+  fDoc.CriticalSection.Release;
   //если мы в списке, значит, пора уходить, а вот если нет, значит народ уже передумал
   try
     with DocumentsSavingProgress.fDocumentsSaving.LockList do begin
       i:=IndexOf(fDoc);
       INeedAVacation:=(i>=0);
-      if INeedAVacation then Delete(i);
+      if INeedAVacation then begin
+        Delete(i);
+        if Count=0 then DocumentsSavingProgress.fAllDocsClearEvent.SetEvent;
+      end;
     end;
   finally
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
@@ -266,50 +304,8 @@ begin
   finally
     fDocumentsSaving.UnlockList;
   end;
-  if Result=nil then
-    Result:=TAbstractDocument.LoadComponentFromFile(filename) as TAbstractDocument;
 end;
 
-
-(*
-      TPatchImageCommand
-                            *)
-constructor TPatchImageCommand.Create(aOwner: TComponent);
-begin
-  inherited Create(aOwner);
-  fDiff:=TPngObject.CreateBlank(color_RGB,8,0,0);
-end;
-
-destructor TPatchImageCommand.Destroy;
-begin
-  fDiff.Free;
-  inherited Destroy;
-end;
-
-constructor TPatchImageCommand.Create(aLeft,aTop,aRight,aBottom: Integer; aPatch: TBitmap);
-begin
-  Create(nil);
-  fLeft:=aLeft;
-  fTop:=aTop;
-  fRight:=aRight;
-  fBottom:=aBottom;
-
-end;
-
-function TPatchImageCommand.Execute: Boolean;
-begin
-
-end;
-
-function TPatchImageCommand.Undo: Boolean;
-begin
-
-end;
-
-function TPatchImageCommand.Caption: string;
-begin
-
-end;
 
 (*
     TRasterImageDocument
@@ -319,6 +315,8 @@ begin
   inherited Create(aOwner);
   fBtmp:=TAsyncSavePng.CreateBlank(color_RGB,8,0,0);
 
+  BrushSize:=10;
+  PrimaryColor:=clWhite;
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -338,7 +336,147 @@ begin
     TSaveDocThread.Create(self);
 end;
 
+procedure TRasterImageDocument.SaveToFile(filename: string);
+var s: string;
+begin
+  if Changed then
+    inherited SaveToFile(filename);
+  s:=ExtractFilePath(filename);
+  s:=LeftStr(s,Length(s)-5);
+  If Changed or not FileExists(filename) then
+    btmp.SaveToFile(s+ChangeFileExt(ExtractFileName(filename),'.png'));
+end;
+
+constructor TRasterImageDocument.LoadFromFile(aFilename: string);
+var s: string;
+begin
+  inherited LoadFromFile(aFilename);
+  s:=ExtractFilePath(aFilename);
+  s:=LeftStr(s,Length(s)-5);
+  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+end;
+
+(*
+      TRasterImageDocumentCommand
+                                      *)
+function TRasterImageDocumentCommand.GetDoc: TRasterImageDocument;
+begin
+  Result:=FindOwner as TRasterImageDocument;
+end;
+
+(*
+      TPatchImageCommand
+                            *)
+constructor TPatchImageCommand.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  fDiff:=TPngObject.CreateBlank(color_RGB,8,0,0); //будет сохраняться в файл
+  fDiff.Filters:=[pfNone, pfSub, pfUp, pfAverage, pfPaeth];
+  fDiff.CompressionLevel:=9;
+  fPredictor:=TPngObject.CreateBlank(color_RGB,8,0,0);  //хранится временно
+end;
+
+destructor TPatchImageCommand.Destroy;
+begin
+  fDiff.Free;
+  fPredictor.Free;
+  inherited Destroy;
+end;
+
+function TPatchImageCommand.Execute: Boolean;
+var i,j: Integer;
+  C1,C2: RGBColor;
+begin
+  getBounds;
+  //обозначили заплатку
+  fDiff.Resize(fRight-fLeft,fBottom-fTop);
+  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),GetDoc.Btmp.Canvas,
+    Rect(fLeft,fTop,fRight,fBottom));
+  //храним в fDiff копию того фрагмента, который начнем мучать
+  Result:=InternalExecute;
+  if Result then begin
+    fPredictor.Resize(fDiff.Width,fDiff.Height);
+    if UndoPrediction then
+      //нарисует на Predictor исх. картинку исходя из того, что он
+      //может знать по конечному результату
+      //сейчас "скользкая" часть - вычесть одну картинку из другой
+      //может оказаться довольно долгой
+      for j:=0 to fDiff.Height-1 do
+        for i:=0 to fDiff.Width-1 do begin
+          C1.Color:=fDiff.Pixels[i,j];
+          C2.Color:=fPredictor.Pixels[i,j];
+          C1.R:=128+C1.R-C2.R;
+          C1.G:=128+C1.G-C2.G;
+          C1.B:=128+C1.B-C2.B;
+          fDiff.Pixels[i,j]:=C1.Color;
+        end;
+    //а на нет и суда нет
+  end;
+  //в противном случае команда вот-вот будет удалена, нет нужды освобождать
+  //память впереди паровоза
+end;
+
+function TPatchImageCommand.Undo: Boolean;
+var i,j: Integer;
+    C1,C2: RGBColor;
+begin
+  getBounds;  //размеры заплатки мы могли бы по изображению понять, но расположение
+  //все равно узнавать надо!
+  fPredictor.Resize(fDiff.Width,fDiff.Height);
+  if UndoPrediction then
+    for j:=0 to fDiff.Height-1 do
+      for i:=0 to fDiff.Width-1 do begin
+        C1.Color:=fDiff.Pixels[i,j];
+        C2.Color:=fPredictor.Pixels[i,j];
+        C1.R:=C1.R+C2.R-128;
+        C1.G:=C1.G+C2.G-128;
+        C1.B:=C1.B+C2.B-128;
+        fDiff.Pixels[i,j]:=C1.Color;
+      end;
+    //а на нет и суда нет
+  //осталось вправить картинку на место
+  GetDoc.Btmp.Canvas.CopyRect(Rect(fLeft,fTop,fRight,fBottom),fDiff.Canvas,Rect(0,0,fDiff.Width,fDiff.Height));
+  Result:=true;
+end;
+
+function TPatchImageCommand.UndoPrediction: Boolean;
+begin
+  Result:=false;
+end;
+
+(*
+    TRectBrushImageCommand
+                              *)
+constructor TRectBrushImageCommand.Create(aX,aY: Integer);
+begin
+  Create(nil);
+  X:=aX;
+  Y:=aY;
+end;
+
+procedure TRectBrushImageCommand.GetBounds;
+var size: Integer;
+begin
+  size:=GetDoc.BrushSize;
+  fLeft:=X-size;
+  fRight:=X+size;
+  fTop:=Y-size;
+  fBottom:=Y+size;
+end;
+
+function TRectBrushImageCommand.InternalExecute: Boolean;
+begin
+  //пока поступим упрощенно
+  with GetDoc.Btmp.Canvas do begin
+    Brush.Color:=GetDoc.PrimaryColor;
+    FillRect(Rect(fLeft,fTop,fRight,fBottom));
+  end;
+  Result:=true;
+end;
+
+
 initialization
+  RegisterClasses([TRasterImageDocument]);
   ImageSavingProgress:=TImageSavingProgress.Create;
   DocumentsSavingProgress:=TDocumentsSavingProgress.Create;
 finalization

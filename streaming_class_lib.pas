@@ -28,7 +28,7 @@ TstreamingClass=class(TComponent)
     class function CloneComponent(source: TStreamingClass; owner: TComponent=nil): TComponent; 
     procedure Clear; virtual;
     //будет вызываться перед Assign, чтобы инициализировать объект нач. значениями
-    procedure SaveToFile(filename: string);
+    procedure SaveToFile(filename: string); virtual;
     procedure SaveBinaryToFile(filename: string);
     procedure LoadBinaryFromFile(filename: string);
     function SaveToString: string;
