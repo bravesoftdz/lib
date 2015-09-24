@@ -3,7 +3,7 @@ unit new_phys_unit_lib;
 interface
 uses set_english_locale_if_not_sure,streaming_class_lib,classes,
   variantWrapper,Contnrs,sysUtils,simple_parser_lib,linear_eq,
-  autocomplete_string_list;
+  autocomplete_string_list,syncObjs;
 
 type
   TPhysUnit =class;
@@ -17,12 +17,19 @@ type
       fFormula: TUnitsWithExponents;
       fstrformula: string;
       fLocalList: TStringList;
+
+      fMultiplicationList: TBucketList;
+      fInversed: TPhysFamily;
     public
       constructor Create(aOwner: TComponent); override;
       destructor Destroy; override;
       procedure SetupFormula;
       function index: Integer;
       function BaseIndex: Integer;
+
+      function GetMultipliedBy(fam: TPhysFamily): TPhysFamily;
+      function GetDividedBy(fam: TPhysFamily): TPhysFamily;
+      function GetInversed: TPhysFamily;
     published
       property IsBase: Boolean read fIsBase write fIsBase;
       property IsGoodName: Boolean read fIsGoodName write fIsGoodName default false;
@@ -199,6 +206,7 @@ type
     fSuspiciousList: TStringList;
 
     fTmpFormula: TUnitsWithExponents;
+    fLocName: TLocalizedName;
     fCriticalSection: TCriticalSection;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
@@ -251,7 +259,8 @@ type
       function AsString: string;
       procedure ShowLocFormula(dest: TLocalizedName);
       procedure ShowLocShortName(dest: TLocalizedName);
-      function GetConvType: TPhysUnit;
+      function GetPhysFamily: TPhysFamily;
+      function GetConvType: TPhysUnit;  //должен от нее однажды избавиться
       function IsUnity: Boolean;
   end;
 
@@ -271,6 +280,9 @@ type
       procedure DoInverse;
       procedure DoDivide(Right: TAbstractWrapperData); override;
       procedure DoPower(pow: Real);
+      procedure DoSquare;
+      procedure DoAbsSquared;
+      procedure DoCube;
       function AsString: string; override;
       function GetLengthSquared: Real;
       procedure Conversion(DestConv: TPhysUnit);
@@ -314,6 +326,9 @@ type
   function PhysUnitConvert(source: Variant; DestType: string): Variant; overload;
   function PhysUnitPar(const a,b: Variant): Variant;
   function PhysUnitPower(source: Variant; pow: Real): Variant;
+  function PhysUnitSquare(source: Variant): Variant;
+  function PhysUnitCube(source: Variant): Variant;
+  function PhysUnitAbsSquared(source: Variant): Variant;
   function PhysUnitSqrt(source: Variant): Variant;
   function PhysUnitAbs(source: Variant): Variant;
   function PhysUnitArg(source: Variant): Variant;
@@ -414,11 +429,14 @@ begin
   fLocalList.Sorted:=true;
   fLocalList.Duplicates:=dupError;
   fLocalList.CaseSensitive:=true;
+
+  fMultiplicationList:=TBucketList.Create;
 end;
 
 destructor TPhysFamily.Destroy;
 begin
   fLocalList.Free;
+  fMultiplicationList.Free;
   inherited Destroy;
 end;
 
@@ -438,6 +456,39 @@ begin
   else fFormula.TakeFromString(formula);
 end;
 
+function TPhysFamily.GetMultipliedBy(fam: TPhysFamily): TPhysFamily;
+var link: Pointer;
+    fla: TUnitsWithExponents;
+begin
+  if fMultiplicationList.Find(Pointer(fam),link) then
+    Result:=TPhysFamily(link)
+  else begin
+    fla:=TUnitsWithExponents.Create(self);
+    fla.Assign(fFormula);
+    fla.Multiply(fam.fFormula);
+    Result:=fla.GetPhysFamily;
+    fMultiplicationList.Add(Pointer(fam),Pointer(Result));
+    fla.Free;
+  end;
+end;
+
+function TPhysFamily.GetDividedBy(fam: TPhysFamily): TPhysFamily;
+begin
+  Result:=GetMultipliedBy(fam.GetInversed);
+end;
+
+function TPhysFamily.GetInversed: TPhysFamily;
+var fla: TUnitsWithExponents;
+begin
+  if not Assigned(finversed) then begin
+    fla:=TUnitsWithExponents.Create(self);
+    fla.Assign(fFormula);
+    fla.DoPower(-1);
+    fInversed:=fla.GetPhysFamily;
+    fla.Free;
+  end;
+  Result:=fInversed;
+end;
 
 (*
     TPhysUnit
@@ -837,6 +888,9 @@ end;
 constructor TPhysUnitData.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
+  fLocName:=TLocalizedName.Create(self);
+  fTmpFormula:=TUnitsWithExponents.Create(self);
+  fCriticalSection:=TCriticalSection.Create;
   PhysUnitData:=self; //буахахахахаха!
   fFamilyList:=TObjectList.Create(false);
   fBaseFamilyList:=TObjectList.Create(false);
@@ -852,6 +906,7 @@ begin
   fWarningList:=TStringList.Create;
   fSuspiciousList:=TStringList.Create;
   fSuspiciousList.CaseSensitive:=true;
+
 end;
 
 destructor TPhysUnitData.Destroy;
@@ -865,42 +920,44 @@ begin
   fFamilyList.Free;
   fBaseFamilyList.Free;
   fSuspiciousList.Free;
+  fCriticalSection.Free;
   inherited Destroy;
 end;
 
 procedure TPhysUnitData.AddToMegalist(ct: TPhysUnit);
 var fam: TPhysFamily;
-    nm: TLocalizedName;
 
     procedure AddToList;
     var i: Integer;
     begin
-      for i:=0 to nm.strings.Count-1 do begin
-        if fMegaList.IndexOf(nm.strings[i])>=0 then
-          fWarningList.Add(Format('%s ident ambiguity',[nm.strings[i]]));
-        fMegaList.AddObject(NoSpaces(nm.strings[i]),ct);
-        fAutocompleteList.AddObject(NoSpaces(nm.strings[i]),ct);
+      for i:=0 to fLocName.strings.Count-1 do begin
+        if fMegaList.IndexOf(fLocName.strings[i])>=0 then
+          fWarningList.Add(Format('%s ident ambiguity',[fLocName.strings[i]]));
+        fMegaList.AddObject(NoSpaces(fLocName.strings[i]),ct);
+        fAutocompleteList.AddObject(NoSpaces(fLocName.strings[i]),ct);
       end;
     end;
 
 begin
+  //в каждый момент времени должна создаваться только одна ед. изм., иначе
+  //могут пойти повторы
+  //поэтому где-то мы уже вошли в крит. секцию, прежде чем вызывать AddToMegaList
+  //безопасно пользоваться fLocName
   fam:=ct.Family;
-  nm:=TLocalizedName.Create(nil);
-  nm.Assign(ct.ShortName);
+  fLocName.Assign(ct.ShortName);
   AddToList;
-  nm.LeftConcat(fam.Caption,'.');
+  fLocName.LeftConcat(fam.Caption,'.');
   AddToList;
-  nm.Assign(ct.ShortName);
-  nm.LeftConcat(fam.ShortName,'.');
+  fLocName.Assign(ct.ShortName);
+  fLocName.LeftConcat(fam.ShortName,'.');
   AddToList;
-  nm.Assign(ct.Caption);
+  fLocName.Assign(ct.Caption);
   AddToList;
-  nm.LeftConcat(fam.Caption,'.');
+  fLocName.LeftConcat(fam.Caption,'.');
   AddToList;
-  nm.Assign(ct.Caption);
-  nm.LeftConcat(fam.ShortName,'.');
+  fLocName.Assign(ct.Caption);
+  fLocName.LeftConcat(fam.ShortName,'.');
   AddToList;
-  nm.Free;
 end;
 
 procedure InitPhysUnitData;
@@ -1038,6 +1095,8 @@ var i,j,k: Integer;
     NormalRslt: TNormalConvType absolute Result;
     p: TSimpleParser;
 begin
+  //здесь, случается, создается новая величина, но только при пользовательском
+  //вводе и на стадиях всяких иниц. вообще нужно сделать "железный" thread-safe
   i:=fMegaList.IndexOf(NoSpaces(str));
   if i>=0 then begin
     j:=i+1;
@@ -1124,6 +1183,7 @@ end;
 constructor TVarWithUnit.CreateFromVariant(source: Variant;
   aConvType: TPhysUnit);
 begin
+  inc(NumberOfGuesses);
   Create;
   instance:=source;
   ConvType:=aConvType;
@@ -1256,49 +1316,31 @@ begin
 end;
 
 procedure TVarWithUnit.DoInverse;
-var U: TUnitsWithExponents;
 begin
-  U:=TUnitsWithExponents.Create(nil);
-  try
-    U.Assign(ConvType.Family.fFormula);
-    Conversion(ConvType.Family.BaseType);
-    instance:=1/instance; //это можно, поскольку баз. тип - нормальный!
-    U.DoPower(-1);
-    ConvType:=U.GetConvType;
-  finally
-    U.Free;
-  end;
+  Conversion(ConvType.Family.BaseType);
+  instance:=1/instance; //это можно, поскольку баз. тип - нормальный!
+  ConvType:=ConvType.family.GetInversed.BaseType;
 end;
 
 procedure TVarWithUnit.DoMultiply(Right: TAbstractWrapperData);
 var v: TVarWithUnit absolute Right;
-  UL,UR,f: TUnitsWithExponents;
-  tmp: Variant;
+    tmp: Variant;
 begin
   if Right is TVarWithUnit then begin
-    UL:=ConvType.Family.fFormula;
-    UR:=v.ConvType.Family.fFormula;
-    if UR.IsUnity then begin  //безразмерная, но может быть и % или ppm
+    if v.ConvType.Family.fFormula.IsUnity then begin  //безразмерная, но может быть и % или ppm
       tmp:=instance;
       instance:=ConvType.MultiplyByNumber(tmp,v.ConvType.ConvertToBase(v.instance),ConvType);
     end
-    else if UL.IsUnity then
+    else if ConvType.Family.fFormula.IsUnity then
       instance:=v.ConvType.MultiplyByNumber(v.instance,ConvType.ConvertToBase(instance),ConvType)
     else begin
       //основная процедура
       Conversion(ConvType.family.BaseType);
-      f:=TUnitsWithExponents.Create(nil);
-      try
-        f.Assign(UL);
-        f.Multiply(UR);
-        instance:=instance*v.ConvType.ConvertToBase(v.instance);
-        ConvType:=f.GetConvType;
-        //если получилась афинная величина на выходе, нужно сделать ее {0}
-        if ConvType is TAffineConvType then
-          ConvType:=(ConvType as TAffineConvType).GetAffineUnit(0);
-      finally
-        f.Free;
-      end;
+      instance:=instance*v.ConvType.ConvertToBase(v.instance);
+      ConvType:=ConvType.family.GetMultipliedBy(v.ConvType.Family).BaseType;
+      //если получилась афинная величина на выходе, нужно сделать ее {0}
+      if ConvType is TAffineConvType then
+        ConvType:=(ConvType as TAffineConvType).GetAffineUnit(0);
     end
   end
   else inherited;
@@ -1321,6 +1363,30 @@ begin
     U.Free;
   end;
 end;
+
+procedure TVarWithUnit.DoSquare;
+begin
+  Conversion(ConvType.family.BaseType);
+  instance:=instance*instance;
+  ConvType:=ConvType.family.getMultipliedBy(ConvType.Family).fBaseType;
+end;
+
+procedure TVarWithUnit.DoAbsSquared;
+begin
+  Conversion(ConvType.family.BaseType);
+  instance:=VarComplexAbsSqr(instance);
+  ConvType:=ConvType.Family.getMultipliedBy(ConvType.Family).fBaseType;
+end;
+
+procedure TVarWithUnit.DoCube;
+begin
+  Conversion(ConvType.family.BaseType);
+  instance:=instance*instance*instance;
+  ConvType:=ConvType.family.getMultipliedBy(ConvType.Family).
+                              GetMultipliedBy(ConvType.Family).fBaseType;
+end;
+
+
 
 procedure TVarWithUnit.Negate;
 begin
@@ -1690,6 +1756,33 @@ begin
 end;
 
 
+function TUnitsWithExponents.GetPhysFamily: TPhysFamily;
+var i: Integer;
+    un: TNormalConvType;
+begin
+  for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
+    Result:=PhysUnitData.fFamilyList[i] as TPhysFamily;
+    if SameFamily(Result.fFormula) then Exit;
+  end;
+  //не нашли подходящую семью - придется создать!
+  Result:=TPhysFamily.Create(PhysUnitData);
+  Result.fFormula.Assign(self);
+  //утечка памяти
+  ShowLocFormula(Result.ShortName);
+  Result.Name:=ToAcceptableName(Result.ShortName.InEnglish);
+  //и еще подходящую единицу измерения создадим
+  //нормальную, других нельзя
+  un:=TNormalConvType.Create(Result);
+  un.Name:=ToAcceptableName(AsString);
+  un.Multiplier:=1;
+  //нужно ей и название сформировать, чтоб находить на всех языках
+  //или хотя бы на одном
+  //shortname или caption - пофиг по большому счету!
+  ShowLocShortName(un.ShortName);
+  Result.BaseType:=un;
+  PhysUnitData.AddToMegalist(un);
+end;
+
 function TUnitsWithExponents.GetConvType: TPhysUnit;
 var i: Integer;
     fam: TPhysFamily;
@@ -1703,7 +1796,7 @@ var i: Integer;
     *)
 begin
   for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
-    inc(numberOfGuesses);
+//    inc(numberOfGuesses);
     fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
     if SameFamily(fam.fFormula) then begin
       Result:=fam.BaseType;
@@ -2128,6 +2221,18 @@ begin
   TVarWithUnitVarData(Result).Data.DoPower(pow);
 end;
 
+function PhysUnitSquare(source: Variant): Variant;
+begin
+  Result:=source;
+  TVarWithUnitVarData(Result).Data.DoSquare;
+end;
+
+function PhysUnitCube(source: Variant): Variant;
+begin
+  Result:=source;
+  TVarWithUnitVarData(Result).Data.DoCube;
+end;
+
 function PhysUnitSqrt(source: Variant): Variant;
 begin
   Result:=PhysUnitPower(source,0.5);
@@ -2156,6 +2261,16 @@ begin
   end
   else
     Result:=PhysUnitCreateFromVariant(VarComplexAbs(source),PhysUnitData.Unity);
+end;
+
+function PhysUnitAbsSquared(source: Variant): Variant;
+begin
+  if IsPhysUnit(source) then begin
+    Result:=source;
+    TVarWithUnitVarData(Result).Data.DoAbsSquared;
+  end
+  else
+    Result:=PhysUnitCreateFromVariant(VarComplexAbsSqr(source),PhysUnitData.Unity);
 end;
 
 function PhysUnitArg(source: Variant): Variant;
