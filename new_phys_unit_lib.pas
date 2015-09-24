@@ -197,6 +197,9 @@ type
     fWarningList: TStringList;
     fUnity,fDMS,fRadian: TPhysUnit;
     fSuspiciousList: TStringList;
+
+    fTmpFormula: TUnitsWithExponents;
+    fCriticalSection: TCriticalSection;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
@@ -329,6 +332,8 @@ type
 
   var PhysUnitData: TPhysUnitData;
       VarWithUnitVariantType: TVarWithUnitType;
+
+      numberOfGuesses: Integer;
 
 implementation
 
@@ -1698,6 +1703,7 @@ var i: Integer;
     *)
 begin
   for i:=0 to PhysUnitData.fFamilyList.Count-1 do begin
+    inc(numberOfGuesses);
     fam:=PhysUnitData.fFamilyList[i] as TPhysFamily;
     if SameFamily(fam.fFormula) then begin
       Result:=fam.BaseType;
@@ -2296,6 +2302,8 @@ end;
 initialization
   RegisterClasses([TAffineConvType,TLogarithmicConvType,TNormalConvType,
   TPhysUnitData,TPhysFamily,TUnitPrefix,TUnitPrefixes,TPhysConst]);
+
+  VarCmplx.ComplexNumberDefuzzAtZero:=false;
 
   PhysUnitData:=TPhysUnitData.Create(nil);
   InitPhysUnitData;

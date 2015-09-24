@@ -468,13 +468,23 @@ begin
 end;
 
 function TRectBrushCommand.InternalExecute: Boolean;
+var PrimeCol: TColor;
+    i,j: Integer;
 begin
+  PrimeCol:=GetDoc.PrimaryColor;
   //пока поступим упрощенно
   with GetDoc.Btmp.Canvas do begin
-    Brush.Color:=GetDoc.PrimaryColor;
-    FillRect(Rect(fLeft,fTop,fRight,fBottom));
+    Brush.Color:=PrimeCol;
+    for i:=fLeft to fRight-1 do
+      for j:=fTop to fBottom-1 do
+        if Pixels[i,j]<>PrimeCol then begin
+          FillRect(Rect(fLeft,fTop,fRight,fBottom));
+          Result:=true;
+          Exit;
+        end;
   end;
-  Result:=true;
+  //дошли досюда, значит, так ничего и не закрасили
+  Result:=false;
 end;
 
 

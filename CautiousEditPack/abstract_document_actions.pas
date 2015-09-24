@@ -36,6 +36,7 @@ TAbstractDocumentActionList=class(TActionList)
     destructor Destroy; override;
     function ExecuteAction(Action: TBasicAction): boolean; override;
     procedure ShowHistory;
+    procedure HideHistory;
     procedure ChangeHistory;
     procedure HistoryClickEvent(Sender: TObject);
     procedure RefreshHistoryHighlights;
@@ -330,8 +331,8 @@ begin
       //просто добавим новую кнопку, И ВСЕ
       //она строго слева пока что
         inc(fCurLevel);
-        btn.Left:=ColLeft[0];
-        btn.Top:=fCurLevel*ButtonHeight;
+        btn.Left:=ColLeft[0]-HistoryFrame.HorzScrollBar.Position;
+        btn.Top:=fCurLevel*ButtonHeight-HistoryFrame.VertScrollBar.Position;
         btn.Width:=ColWidth[0];
         btn.Height:=ButtonHeight;
         fLastCommand:=cur;
@@ -349,11 +350,19 @@ end;
 procedure TAbstractDocumentActionList.ShowHistory;
 begin
   if not Assigned(HistoryFrame) then Exit;
-  if not HistoryFrame.Visible then begin
+//  if not HistoryFrame.Visible then begin
+    HistoryFrame.HideWithSplitter;
     MakeHistory;
-    HistoryFrame.Show;
+    if (Length(ColWidth)>0) and (HistoryFrame.ClientWidth<ColWidth[0]+2*fCellPadding) then
+      HistoryFrame.Width:=HistoryFrame.Width+(ColWidth[0]+2*fCellPadding-HistoryFrame.ClientWidth);
+    HistoryFrame.ShowWithSplitter;
     HistoryFrame.FormPaint(self);
-  end;
+//  end;
+end;
+
+procedure TAbstractDocumentActionList.HideHistory;
+begin
+  HistoryFrame.HideWithSplitter;
 end;
 
 procedure TAbstractDocumentActionList.HistoryClickEvent(Sender: TObject);
@@ -386,8 +395,13 @@ begin
         btn.Font.Color:=clGray;
       end;
 
-      if (item=Doc^.UndoTree.Current) then
+      if (item=Doc^.UndoTree.Current) then begin
         btn.Font.Color:=clBlue;
+        if (btn.top<0) or (btn.top>HistoryFrame.ClientHeight) then
+          HistoryFrame.VertScrollBar.Position:=HistoryFrame.VertScrollBar.Position+btn.Top+fButtonHeight-HistoryFrame.ClientHeight;
+//        HistoryFrame.HorzScrollBar.Position:=btn.Left;
+
+      end;
     end;
   end;
 end;
@@ -710,11 +724,20 @@ begin
   caption:=ShowHistoryActionCaption;
   Hint:=ShowHistoryActionHint;
   ShortCut:=TextToShortCut('Ctrl+H');
+  GroupIndex:=1;
+//  self.AutoCheck:=true;
 end;
 
 procedure TDocShowHistoryAction.ExecuteTarget(Target: TObject);
 begin
-  (ActionList as TAbstractDocumentActionList).ShowHistory;
+  if Checked then begin
+    (ActionList as TAbstractDocumentActionList).HideHistory;
+    Checked:=false;
+  end
+  else begin
+    (ActionList as TAbstractDocumentActionList).ShowHistory;
+    Checked:=true;
+  end;
 end;
 
 (*

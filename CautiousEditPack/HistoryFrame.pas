@@ -7,19 +7,26 @@ uses Windows, SysUtils, Classes, Graphics, Forms, Controls, StdCtrls,
 
 type
   TFrameHistory = class(TFrame)
-    PaintBox1: TPaintBox;
+  private
+    fSplitter: TSplitter;
+    procedure SetSplitter(value: TSplitter);
+    { Private declarations }
+  protected
+    procedure Notification(aComponent: TComponent; operation: TOperation); override;
+  public
+    { Public declarations }
+    procedure AddLine(Xs,Xe,Y: Integer);
+    procedure ClearLines;
+    procedure HideWithSplitter;
+    procedure ShowWithSplitter;
   published
+    PaintBox1: TPaintBox;
     procedure FormMouseWheelUp(Sender: TObject; Shift: TShiftState;
       MousePos: TPoint; var Handled: Boolean);
     procedure FormMouseWheelDown(Sender: TObject; Shift: TShiftState;
       MousePos: TPoint; var Handled: Boolean);
     procedure FormPaint(Sender: TObject);
-  private
-    { Private declarations }
-  public
-    { Public declarations }
-    procedure AddLine(Xs,Xe,Y: Integer);
-    procedure ClearLines;
+    property Splitter: TSplitter read fSplitter write SetSplitter;
   end;
 
   TLineRec=record
@@ -83,6 +90,38 @@ begin
     Position:=Position+increment
   else if Shift=[ssShift] then with HorzScrollBar do
     Position:=Position+increment
+end;
+
+procedure TFrameHistory.SetSplitter(value: TSplitter);
+begin
+  if Assigned(fSplitter) then
+    fSplitter.RemoveFreeNotification(self);
+  fSplitter:=value;
+  if Assigned(fSplitter) then
+    fSplitter.FreeNotification(self);
+end;
+
+procedure TFrameHistory.Notification(aComponent: TComponent; operation: TOperation);
+begin
+  inherited;
+  if (aComponent=fSplitter) and (operation=opRemove) then
+    fSplitter:=nil;
+end;
+
+procedure TFrameHistory.HideWithSplitter;
+begin
+  if Assigned(splitter) then splitter.Visible:=false;
+  visible:=false;
+end;
+
+procedure TFrameHistory.ShowWithSplitter;
+begin
+  Left:=0;
+  Visible:=true;
+  if Assigned(splitter) then begin
+    splitter.Left:=Left-1;
+    splitter.Visible:=true;
+  end;
 end;
 
 end.
