@@ -16,6 +16,9 @@ type
 
   TAbstractWrapperData = class(TPersistent) //чтобы можно было и запоминать в файле
     public
+      procedure Release; virtual; //возратить в пул - должно быть
+                                          //значительно быстрее create/free
+      class function GetInstance: TAbstractWrapperData; virtual; //вместо Create
       procedure Negate; virtual; abstract; //взять обратный знак
       procedure DoAdd(value: TAbstractWrapperData); virtual; abstract;
       procedure DoSubtract(Right: TAbstractWrapperData); virtual;
@@ -47,10 +50,20 @@ type
   end;
 
 implementation
-
+uses new_phys_unit_lib,sysUtils;
 (*
     TAbstractWrapperData
                               *)
+procedure TAbstractWrapperData.Release;
+begin
+  free;
+end;
+
+class function TAbstractWrapperData.getInstance: TAbstractWrapperData;
+begin
+  Result:=Create;
+end;
+
 procedure TAbstractWrapperData.DoSubtract(Right: TAbstractWrapperData);
 begin
   Right.Negate;
@@ -69,21 +82,25 @@ end;
 
 procedure TAbstractWrapperVariantType.Clear(var V: TVarData);
 begin
+//  inc(NumberOfGuesses);
   V.VType:=varEmpty;
-  TWrapperVarData(V).Data.Free; //очевидно, и переписывания в конкр. классах не нужно
+//  FreeAndNil(TWrapperVarData(V).Data);
+//  TWrapperVarData(V).Data.Free; //очевидно, и переписывания в конкр. классах не нужно
+  TWrapperVarData(V).Data.Release;
 end;
 
 procedure TAbstractWrapperVariantType.Copy(var Dest: TVarData; const Source: TVarData; const Indirect: Boolean);
 var WrapperClass: TWrapperDataClass;  //задается в Create конкретного класса
 begin
-  if Indirect and VarDataIsByRef(Source) then
-    VarDataCopyNoInd(Dest, Source)
-  else
+//  if Indirect and VarDataIsByRef(Source) then
+//    VarDataCopyNoInd(Dest, Source)
+//  else
+// для custom variant'а никогда не будет передачи по ссылке
     with TWrapperVarData(Dest) do
     begin
       VType := VarType;
       WrapperClass:=TWrapperDataClass(TWrapperVarData(Source).Data.ClassType);
-      Data:=WrapperClass.Create;  //нужно при создании конкретного VariantType указать WrapperClass!
+      Data:=WrapperClass.GetInstance;  //нужно при создании конкретного VariantType указать WrapperClass!
       Data.Assign(TWrapperVarData(Source).Data);
     end;
 end;
@@ -120,11 +137,12 @@ begin
     Cast(CastedRight,Right)
   else
     CastedRight:=Right;
-    
+  try
     case Left.VType of
       varString:
         case Operator of
           opAdd:
+//            Variant(Left) := Variant(Left) + TWrapperVarData(Right).Data.AsString;
             Variant(Left) := Variant(Left) + TWrapperVarData(CastedRight).Data.AsString;
         else
           RaiseInvalidOp;
@@ -134,17 +152,26 @@ begin
         case Operator of
           opAdd:
             TWrapperVarData(Left).data.DoAdd(TWrapperVarData(CastedRight).Data);
+//            TWrapperVarData(Left).data.DoAdd(TWrapperVarData(Right).Data);
           opSubtract:
             TWrapperVarData(Left).data.DoSubtract(TWrapperVarData(CastedRight).Data);
+//            TWrapperVarData(Left).data.DoSubtract(TWrapperVarData(Right).Data);
           opMultiply:
             TWrapperVarData(Left).data.DoMultiply(TWrapperVarData(CastedRight).Data);
+//            TWrapperVarData(Left).data.DoMultiply(TWrapperVarData(Right).Data);
           opDivide:
+//            TWrapperVarData(Left).data.DoDivide(TWrapperVarData(Right).Data);
             TWrapperVarData(Left).data.DoDivide(TWrapperVarData(CastedRight).Data);
         else
           RaiseInvalidOp;
         end
       else
         RaiseInvalidOp;
+    end;
+    finally
+      if Right.VType<>VarType then
+        VarDataClear(CastedRight);  //поскольку мы обращаемся с ним не как с Variant'ом,
+      //счетчик ссылок не работает, надо ручками его удалить!
     end;
 end;
 

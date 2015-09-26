@@ -1381,8 +1381,8 @@ begin
       else treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(Lexems[b].Num,PhysUnitData.Unity),nil);
     ltIdent: begin
       s:=Lexems[b].Ident;
-      if uppercase(s)='PI' then treeNode:=TConstantNode.Create(pi,nil)
-      else if uppercase(s)='E' then treeNode:=TConstantNode.Create(exp(1),nil)
+      if uppercase(s)='PI' then treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(pi,PhysUnitData.Unity),nil)
+      else if uppercase(s)='E' then treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(exp(1),physUnitData.Unity),nil)
       else if (uppercase(s)='I') then treeNode:=TConstantVariantNode.Create(PhysUnitCreateFromVariant(VarComplexCreate(0,1),PhysUnitData.Unity),nil)
       else if Assigned(fRootComponent) then begin
       //видать, переменная
