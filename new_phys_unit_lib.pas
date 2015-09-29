@@ -1411,7 +1411,7 @@ end;
 procedure TVarWithUnit.DoAdd(const value: TAbstractWrapperData);
 var v: TVarWithUnit absolute value;
 begin
-//  if value is TVarWithUnit then begin
+  if value is TVarWithUnit then begin
     if ConvType.Owner<>v.ConvType.Owner then begin
       if instance=0 then begin
         instance:=v.instance;
@@ -1421,8 +1421,8 @@ begin
       v.Conversion(ConvType);
     end;
     ConvType.Add(instance,ConvType,v.instance,v.ConvType);
-//  end
-//  else inherited;
+  end
+  else inherited;
 //  else if value<>0 then begin  //прибавляем число
 end;
 
@@ -2587,10 +2587,21 @@ begin
 end;
 
 function PhysUnitExp(const source: Variant): Variant;
+var un: TVarWithUnit;
 begin
   if isPhysUnit(source) then begin
-    Result:=source;
-    TVarWithUnitVarData(Result).Data.instance:=VarComplexExp(TVarWithUnitVarData(Result).Data.instance);
+    with TVarWithUnitVarData(source).data do begin
+      un:=TVarWithUnit(TVarWithUnit.GetInstance);
+      un.ConvType:=PhysUnitData.Unity;
+      if ConvType=un.ConvType then
+        un.instance:=VarComplexExp(instance)
+      else
+        un.instance:=VarComplexExp(TVarWithUnitVarData(PhysUnitConvert(source,
+                                                        un.ConvType)).Data.instance);
+      PhysUnitCreateInto(Result,un);
+    end;
+//    Result:=source;
+//    TVarWithUnitVarData(Result).Data.instance:=VarComplexExp(TVarWithUnitVarData(Result).Data.instance);
   end
   else
     Result:=PhysUnitCreateFromVariant(VarComplexExp(source),PhysUnitData.Unity);

@@ -110,6 +110,11 @@ uses
 type
   { Complex variant type handler }
   TComplexVariantType = class(TAbstractWrapperVariantType, IVarStreamable)
+  protected
+    function LeftPromotion(const V: TVarData; const Operator: TVarOp;
+      out RequiredVarType: TVarType): Boolean; override;
+    function RightPromotion(const V: TVarData; const Operator: TVarOp;
+      out RequiredVarType: TVarType): Boolean; override;
   public
     function IsClear(const V: TVarData): Boolean; override;
     procedure Cast(var Dest: TVarData; const Source: TVarData); override;
@@ -178,10 +183,15 @@ type
     procedure DoDivide(const Right: TAbstractWrapperData); overload; override;
     procedure DoDivide(const AReal, AImaginary: Double);reintroduce; overload;
 
+    procedure AddReal(const Right: Double);
+    procedure SubReal(const Right: Double);
+    procedure InvSubReal(const Left: Double);
+    procedure MulReal(const Right: Double);
+    procedure DivReal(const Right: Double);
+    procedure InvDivReal(const Left: Double);
+
     // inverted versions of the above (ie. value - self instead of self - value)
-    procedure DoInvAdd(const AReal, AImaginary: Double);
     procedure DoInvSubtract(const AReal, AImaginary: Double);
-    procedure DoInvMultiply(const AReal, AImaginary: Double);
     procedure DoInvDivide(const AReal, AImaginary: Double);
 
     procedure DoNegate; override;
@@ -269,16 +279,17 @@ end;
 
 class function TComplexData.Create(const AData: TComplexData): TComplexData;
 begin
-  Result:=TComplexData(TComplexData.GetInstance);
-  Result.SetValue(AData.Real, AData.Imaginary);
+  Result:=TComplexData(TComplexData.GetInstance); //Create
+  Result.fReal:=AData.Real;
+  Result.fImaginary:=AData.Imaginary;
 end;
 
 procedure TComplexData.Assign(source: TPersistent);
 var t: TComplexData absolute source;
 begin
   if source is TComplexData then begin
-    Real:=t.Real;
-    Imaginary:=t.Imaginary;
+    fReal:=t.Real;
+    fImaginary:=t.Imaginary;
   end
   else inherited;
 end;
@@ -311,7 +322,9 @@ end;
 
 procedure TComplexData.DoNegate;
 begin
-  SetValue(-Real, -Imaginary);
+  fReal:=-fReal;
+  fImaginary:=-fImaginary;
+//  SetValue(-Real, -Imaginary);
 end;
 
 procedure TComplexData.DoSign;
@@ -451,7 +464,9 @@ end;
 procedure TComplexData.DoAdd(const Right: TAbstractWrapperData);
 var t: TComplexData absolute Right;
 begin
-  SetValue(Real + t.Real, Imaginary + t.Imaginary);
+  fReal:=fReal+t.FReal;
+  fImaginary:=fImaginary+t.FImaginary;
+//  SetValue(Real + t.Real, Imaginary + t.Imaginary);
 end;
 
 procedure TComplexData.DoAdd(const AReal, AImaginary: Double);
@@ -459,20 +474,33 @@ begin
   SetValue(Real + AReal, Imaginary + AImaginary);
 end;
 
-procedure TComplexData.DoInvAdd(const AReal, AImaginary: Double);
+procedure TComplexData.AddReal(const Right: Double);
 begin
-  SetValue(AReal + Real, AImaginary + Imaginary);
+  fReal:=fReal+Right;
 end;
 
 procedure TComplexData.DoSubtract(const Right: TAbstractWrapperData);
 var t: TComplexData absolute Right;
 begin
-  SetValue(Real - t.Real, Imaginary - t.Imaginary);
+  fReal:=fReal-t.FReal;
+  fImaginary:=fImaginary-t.FImaginary;
+//  SetValue(Real - t.Real, Imaginary - t.Imaginary);
 end;
 
 procedure TComplexData.DoSubtract(const AReal, AImaginary: Double);
 begin
   SetValue(Real - AReal, Imaginary - AImaginary);
+end;
+
+procedure TComplexData.SubReal(const Right: Double);
+begin
+  Real:=Real-Right;
+end;
+
+procedure TComplexData.InvSubReal(const Left: Double);
+begin
+  Real:=Left-Real;
+  Imaginary:=-Imaginary;
 end;
 
 procedure TComplexData.DoInvSubtract(const AReal, AImaginary: Double);
@@ -483,7 +511,8 @@ end;
 procedure TComplexData.DoMultiply(const Right: TAbstractWrapperData);
 var t: TComplexData absolute Right;
 begin
-  DoMultiply(t.Real, t.Imaginary);
+  SetValue((fReal*t.FReal-fImaginary*t.FImaginary),(fReal*t.FImaginary+fImaginary*t.FReal));
+//  DoMultiply(t.Real, t.Imaginary);
 end;
 
 procedure TComplexData.DoMultiply(const AReal, AImaginary: Double);
@@ -492,10 +521,10 @@ begin
           (Real * AImaginary) + (Imaginary * AReal));
 end;
 
-procedure TComplexData.DoInvMultiply(const AReal, AImaginary: Double);
+procedure TComplexData.MulReal(const Right: Double);
 begin
-  SetValue((AReal * Real) - (AImaginary * Imaginary),
-          (AReal * Imaginary) + (AImaginary * Real));
+  fReal:=fReal*Right;
+  fImaginary:=fImaginary*Right;
 end;
 
 procedure TComplexData.DoDivide(const Right: TAbstractWrapperData);
@@ -513,6 +542,21 @@ begin
     raise EZeroDivide.Create(SDivByZero);
   SetValue(((Real * AReal) + (Imaginary * AImaginary)) / LDenominator,
           ((Imaginary * AReal) - (Real * AImaginary)) / LDenominator);
+end;
+
+procedure TComplexData.DivReal(const Right: Double);
+begin
+  fReal:=fReal/Right;
+  fImaginary:=fImaginary/Right;
+end;
+
+procedure TComplexData.InvDivReal(const Left: Double);
+var
+  LDenominator: Double;
+begin
+  LDenominator:=Left/(Real*Real+Imaginary*Imaginary);
+  Real:=Real*LDenominator;
+  Imaginary:=Imaginary*LDenominator;
 end;
 
 procedure TComplexData.DoInvDivide(const AReal, AImaginary: Double);
@@ -652,7 +696,7 @@ begin
     DoAdd(LTemp);
     DoLn;
     DoTimesImaginary(1);
-    DoInvAdd(PI / 2, 0);
+    DoAdd(PI / 2, 0);
   finally
     LTemp.Free;
   end;
@@ -694,7 +738,7 @@ begin
       LTemp2 := TComplexData.Create(LTemp1);
       LTemp1.DoInvSubtract(1, 0);
       LTemp1.DoLn;
-      LTemp2.DoInvAdd(1, 0);
+      LTemp2.DoAdd(1, 0);
       LTemp2.DoLn;
       LTemp1.DoSubtract(LTemp2);
       SetValue(0, 1);
@@ -1071,8 +1115,29 @@ end;
 
 { TComplexVariantType }
 
+
+function TComplexVariantType.LeftPromotion(const V: TVarData;
+  const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+  RequiredVarType:=V.VType; //если слева строка или числ. значение - все хорошо
+ //остальное само вскроется позже.
+  Result:=true;
+
+end;
+
+function TComplexVariantType.RightPromotion(const V: TVarData;
+  const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+//  RequiredVarType:=VarType;
+  RequiredVarType:=V.VType;
+//  Result:=(RequiredVarType=VarType) or IsNumeric(RequiredVarType) or
+//    ((RequiredVarType=varString) and (Operator=opAdd))
+  Result:=true;
+end;
+
 procedure TComplexVariantType.BinaryOp(var Left: TVarData;
   const Right: TVarData; const Operator: TVarOp);
+var co: TComplexData;
 begin
   if Right.VType = VarType then
     case Left.VType of
@@ -1097,11 +1162,40 @@ begin
         else
           RaiseInvalidOp;
         end
-      else
-        RaiseInvalidOp;
+      else begin
+        co:=TComplexData.Create(TComplexVarData(Right).VComplex);
+//возможны утечки памяти при возн. ошибки
+        case Operator of
+          opAdd:
+            co.AddReal(Variant(Left));
+          opSubtract:
+            co.InvSubReal(Variant(Left));
+          opMultiply:
+            co.MulReal(Variant(Left));
+          opDivide:
+            co.InvDivReal(Variant(Left));
+        else
+          RaiseInvalidOp;
+        end;
+        //Left был numeric, значит, память не пропадает, мы его просто сейчас
+        //перезапишем
+        Left.VType:=VarType;
+        TComplexVarData(Left).VComplex:=co;
+      end
     end
   else
-    RaiseInvalidOp;
+    case Operator of
+      opAdd:
+        TComplexVarData(Left).VComplex.AddReal(Variant(Right));
+      opSubtract:
+        TComplexVarData(Left).VComplex.SubReal(Variant(Right));
+      opMultiply:
+        TComplexVarData(Left).VComplex.MulReal(Variant(Right));
+      opDivide:
+        TComplexVarData(Left).VComplex.DivReal(Variant(Right));
+      else
+      RaiseInvalidOp;
+    end;
 end;
 
 procedure TComplexVariantType.Cast(var Dest: TVarData; const Source: TVarData);
@@ -1169,6 +1263,28 @@ begin
         Result := not TComplexVarData(Left).VComplex.Equals(TComplexVarData(Right).VComplex);
     else
       RaiseInvalidOp;
+    end
+  else if Left.VType=VarType then
+    case Operator of
+      opCmpEq:
+        Result:= (TComplexVarData(Left).VComplex.Imaginary=0) and
+           (TComplexVarData(Left).VComplex.FReal=Variant(Right));
+      opCmpNE:
+        Result:= (TComplexVarData(Left).VComplex.Imaginary<>0) or
+          (TComplexVarData(Left).VComplex.FReal<>Variant(Right));
+      else
+        RaiseInvalidOp;
+    end
+  else if Right.VType=VarType then
+    case Operator of
+      opCmpEq:
+        Result:=(TComplexVarData(Right).VComplex.Imaginary=0) and
+          (TComplexVarData(Right).VComplex.Real=Variant(Left));
+      opCmpNE:
+        Result:= (TComplexVarData(Right).VComplex.Imaginary<>0) or
+          (TComplexVarData(Right).VComplex.Real<>Variant(Left));
+      else
+        RaiseInvalidOp;
     end
   else
     RaiseInvalidOp;
@@ -1274,11 +1390,11 @@ end;
 { Complex variant support }
 
 function VarComplexAbsSqr(const AValue: Variant): Double;
-var
-  LTemp: Variant;
 begin
-  VarCast(LTemp, AValue, VarComplex);
-  Result := TComplexVarData(LTemp).VComplex.GetAbsSqr;
+  if VarIsComplex(AValue) then
+    Result:=TComplexVarData(AValue).VComplex.GetAbsSqr
+  else
+    Result:=AValue*AValue;
 end;
 
 function VarComplexAbs(const AValue: Variant): Double;
