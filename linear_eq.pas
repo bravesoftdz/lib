@@ -63,17 +63,17 @@ public
   tolerance: Real;
   VarNames: array of string;
   procedure Assign(Source: TPersistent); override;
-  procedure DoAdd(value: TAbstractWrapperData); override;
-  procedure DoSubtract(right: TAbstractWrapperData); override;
+  procedure DoAdd(const value: TAbstractWrapperData); override;
+  procedure DoSubtract(const right: TAbstractWrapperData); override;
   procedure Mul(value: Real);
-  procedure DoMultiply(right: TAbstractWrapperData); override;
+  procedure DoMultiply(const right: TAbstractWrapperData); override;
   procedure Divide(value: Real);
-  procedure DoDivide(right: TAbstractWrapperData); override;
-  procedure Negate; override;
+  procedure DoDivide(const right: TAbstractWrapperData); override;
+  procedure DoNegate; override;
   function IsPlainNumber: boolean;
 //  function AreProportional(other: TManySolutionsDataType): boolean;
 //  procedure SetString(value: string);
-  function AsString: string; override;
+  function GetAsString: string; override;
 end;
 
 TManySolutionsVariantType=class(TAbstractWrapperVariantType)
@@ -485,7 +485,7 @@ begin
     Result:=FloatToStr(value)+'*';
 end;
 
-function TManySolutionsDataType.AsString: string;
+function TManySolutionsDataType.GetAsString: string;
 var i: Integer;
 begin
   if abs(InitValue)<=tolerance then Result:=''
@@ -521,7 +521,7 @@ begin
 
 end;
 *)
-procedure TManySolutionsDataType.DoAdd(value: TAbstractWrapperData);
+procedure TManySolutionsDataType.DoAdd(const value: TAbstractWrapperData);
 var i: Integer;
     v: TManySolutionsDataType absolute value;
 begin
@@ -535,7 +535,7 @@ begin
   else inherited;
 end;
 
-procedure TManySolutionsDataType.DoSubtract(right: TAbstractWrapperData);
+procedure TManySolutionsDataType.DoSubtract(const right: TAbstractWrapperData);
 var i: Integer;
     v: TManySolutionsDataType absolute right;
 begin
@@ -557,12 +557,12 @@ begin
     Vars[i]:=Vars[i]*value;
 end;
 
-procedure TManySolutionsDataType.Negate;
+procedure TManySolutionsDataType.DoNegate;
 begin
   Mul(-1);
 end;
 
-procedure TManySolutionsDataType.DoMultiply(right: TAbstractWrapperData);
+procedure TManySolutionsDataType.DoMultiply(const right: TAbstractWrapperData);
 var v: TManySolutionsDataType absolute right;
 begin
   if right is TManySolutionsDataType then begin
@@ -580,7 +580,7 @@ begin
     Vars[i]:=Vars[i]/value;
 end;
 
-procedure TManySolutionsDataType.DoDivide(right: TAbstractWrapperData);
+procedure TManySolutionsDataType.DoDivide(const right: TAbstractWrapperData);
 var v: TManySolutionsDataType absolute right;
 begin
   if right is TManySolutionsDataType then begin
@@ -628,13 +628,13 @@ begin
     if Source.VType = VarType then //бывает еще не определенный Variant
       case AVarType of
         varOleStr:
-          VarDataFromOleStr(Dest, data.AsString);
+          VarDataFromOleStr(Dest, data.GetAsString);
         varString:
-          VarDataFromStr(Dest, data.AsString);
+          VarDataFromStr(Dest, data.GetAsString);
       else
         VarDataInit(LTemp);
         try
-          VarDataFromStr(Ltemp,data.AsString);
+          VarDataFromStr(Ltemp,data.GetAsString);
           VarDataCastTo(Dest, LTemp, AVarType);
         finally
           VarDataClear(LTemp);

@@ -274,7 +274,7 @@ const
   EmptyEvaluationTreeErrStr = 'empty evaluation tree';
 implementation
 
-uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplx;
+uses TypInfo,StrUtils,math,variants,simple_parser_lib,VarCmplxMk2;
 
 (*
     TEvaluationTreeNode
