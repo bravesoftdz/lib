@@ -63,7 +63,8 @@ type
   TVarOpProcedure = procedure(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
 
   //только для вещественных чисел и custom variant - мне большего не надо...
-  procedure _MyVarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
+  procedure MyVarAdd(var Left: TVarData; const Right: TVarData);
+//  procedure VarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
 
 var numberOfGuesses: Integer;
     VarOpProc: TVarOpProcedure;
@@ -71,6 +72,17 @@ var numberOfGuesses: Integer;
 implementation
 uses sysUtils;
 
+
+procedure MyVarAdd(var Left: TVarData; const Right: TVarData);
+asm
+  call Variants.@VarAdd;
+end;
+(*
+procedure VarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
+asm
+  call Variants.@VarOp;
+end;
+*)
 //const
 (*
     TAbstractWrapperData

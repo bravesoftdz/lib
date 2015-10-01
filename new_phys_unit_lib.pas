@@ -291,10 +291,16 @@ type
       procedure Assign(source: TPersistent); override;
       procedure DoNegate; override; //взять обратный знак
       procedure DoAdd(const value: TAbstractWrapperData); override;
+      procedure DoAddNumber(const Right: TVarData);
       procedure DoSubtract(const Right: TAbstractWrapperData); override;
+//      procedure DoSubtractNumber(const Right: TVarData);
+//      procedure DoInvSubtractNumber(const Left: TVarData);
       procedure DoMultiply(const Right: TAbstractWrapperData); override;
+//      procedure DoMultiplyNumber(const value: TVarData);
       procedure DoInverse;
       procedure DoDivide(const Right: TAbstractWrapperData); override;
+//      procedure DoDivideNumber(const Right: TVarData);
+//      procedure DoInvDivideNumber(const Left: TVarData);
       procedure DoPower(pow: Real);
       procedure DoSquare;
       procedure DoAbsSquared;
@@ -632,7 +638,8 @@ begin
 //  if Owner=t.Owner then begin //same family
     if t=self then
       {$ifdef Dirtyhack}
-        VarOpProc(TVarData(v1),TVarData(v2),opAdd)
+        MyVarAdd(TVarData(v1),TVarData(v2))
+//        VarOpProc(TVarData(v1),TVarData(v2),opAdd)
       {$ELSE}
         v1:=v1+v2
       {$ENDIF}
@@ -1411,7 +1418,7 @@ end;
 procedure TVarWithUnit.DoAdd(const value: TAbstractWrapperData);
 var v: TVarWithUnit absolute value;
 begin
-  if value is TVarWithUnit then begin
+//  if value is TVarWithUnit then begin
     if ConvType.Owner<>v.ConvType.Owner then begin
       if instance=0 then begin
         instance:=v.instance;
@@ -1421,9 +1428,17 @@ begin
       v.Conversion(ConvType);
     end;
     ConvType.Add(instance,ConvType,v.instance,v.ConvType);
-  end
-  else inherited;
+//  end
+//  else inherited;
 //  else if value<>0 then begin  //прибавляем число
+end;
+
+procedure TVarWithUnit.DoAddNumber(const Right: TVarData);
+begin
+  if ConvType=PhysUnitData.Unity then
+    
+
+
 end;
 
 procedure TVarWithUnit.DoSubtract(const Right: TAbstractWrapperData);

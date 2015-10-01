@@ -466,7 +466,6 @@ var t: TComplexData absolute Right;
 begin
   fReal:=fReal+t.FReal;
   fImaginary:=fImaginary+t.FImaginary;
-//  SetValue(Real + t.Real, Imaginary + t.Imaginary);
 end;
 
 procedure TComplexData.DoAdd(const AReal, AImaginary: Double);
@@ -510,9 +509,11 @@ end;
 
 procedure TComplexData.DoMultiply(const Right: TAbstractWrapperData);
 var t: TComplexData absolute Right;
+    tmp: Double;
 begin
-  SetValue((fReal*t.FReal-fImaginary*t.FImaginary),(fReal*t.FImaginary+fImaginary*t.FReal));
-//  DoMultiply(t.Real, t.Imaginary);
+  tmp:=fReal;
+  fReal:=fReal*t.FReal-fImaginary*t.FImaginary;
+  fImaginary:=tmp*t.FImaginary+fImaginary*t.FReal;
 end;
 
 procedure TComplexData.DoMultiply(const AReal, AImaginary: Double);
