@@ -22,6 +22,7 @@ type
 
   TAbstractWrapperData = class(TPersistent) //чтобы можно было и запоминать в файле
     public
+      procedure FastAssign(source: TAbstractWrapperData); virtual;    
       procedure Release; virtual; //возратить в пул - должно быть
                                           //значительно быстрее create/free
       class function GetInstance: TAbstractWrapperData; virtual; //вместо Create
@@ -48,11 +49,6 @@ type
     procedure BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp); override;
   end;
 
-  THackedCustomVariantType = class(TCustomVariantType); //чтобы обратиться к
-                                          //LeftPromotion/RightPromotion
-
-
-
   TWrapperVarData = record
     VType: TVarType;
     Reserved1, Reserved2, Reserved3: Word;
@@ -60,30 +56,40 @@ type
     Reserved4: LongInt;
   end;
 
-  TVarOpProcedure = procedure(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
+  procedure CallVarAdd(var Left: Variant; const Right: Variant);
+  procedure CallVarSub(var Left: Variant; const Right: Variant);
+  procedure CallVarMul(var Left: Variant; const Right: Variant);
+  procedure CallVarDiv(var Left: Variant; const Right: Variant);
 
-  //только для вещественных чисел и custom variant - мне большего не надо...
-  procedure MyVarAdd(var Left: TVarData; const Right: TVarData);
-//  procedure VarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
 
 var numberOfGuesses: Integer;
-    VarOpProc: TVarOpProcedure;
 
 implementation
 uses sysUtils;
 
 
-procedure MyVarAdd(var Left: TVarData; const Right: TVarData);
+procedure CallVarAdd(var Left: Variant; const Right: Variant);
 asm
-  call Variants.@VarAdd;
+  jmp Variants.@VarAdd;
 end;
-(*
-procedure VarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
+
+procedure CallVarSub(var Left: Variant; const Right: Variant);
 asm
-  call Variants.@VarOp;
+  jmp Variants.@VarSub;
 end;
-*)
-//const
+
+procedure CallVarMul(var Left: Variant; const Right: Variant);
+asm
+  jmp Variants.@VarMul;
+end;
+
+procedure CallVarDiv(var Left: Variant; const Right: Variant);
+asm
+  jmp Variants.@VarrDiv;
+end;
+
+
+
 (*
     TAbstractWrapperData
                               *)
@@ -103,6 +109,11 @@ begin
   DoAdd(Right);
   Right.DoNegate; //вернули, как было. Не очень красиво, лучше бы копию сделать,
   //но тогда нужно уметь создавать клон TAbstractWrapperData
+end;
+
+procedure TAbstractWrapperData.FastAssign(source: TAbstractWrapperData);
+begin
+  Assign(source);
 end;
 
 (*
@@ -135,7 +146,7 @@ begin
       VType := VarType;
       WrapperClass:=TWrapperDataClass(TWrapperVarData(Source).Data.ClassType);
       Data:=WrapperClass.GetInstance;  //нужно при создании конкретного VariantType указать WrapperClass!
-      Data.Assign(TWrapperVarData(Source).Data);
+      Data.FastAssign(TWrapperVarData(Source).Data);
     end;
 end;
 
@@ -221,168 +232,6 @@ begin
   Result := True;
 //слева допускаем только строку, иначе "ассимилируем"
 end;
-
-(*
-    Variants codegen functions
-                                  *)
-
-procedure _MyVarOp(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
-begin
-//  call Variants._VarOp;
-end;
-
-(*
-procedure VarOpRare(var Left: TVarData; const Right: TVarData; const OpCode: TVarOp);
-var
-  LNewLeftType, LNewRightType: TVarType;
-  LLeftHandler, LRightHandler: TCustomVariantType;
-  LLeftHacked: THackedCustomVariantType absolute LLeftHandler;
-  LRightHacked: THackedCustomVariantType absolute LRightHandler;
-  LTemp: TVarData;
-begin
-  // simple and ???
-
-  if not FindCustomVariantType(Left.VType,LLeftHandler) then
-  begin
-    // simple and custom but the custom doesn't really exist (nasty but possible )
-    if not FindCustomVariantType(Right.VType, LRightHandler) then
-      VarInvalidOp
-
-    // does the custom want to take over?
-    else if LRightHacked.LeftPromotion(Left, OpCode, LNewLeftType) then
-    begin
-
-      // convert the left side
-      if Left.VType <> LNewLeftType then
-      begin
-        LRightHacked.VarDataInit(LTemp);
-//        VariantInit(LTemp);
-        try
-          LRightHacked.VarDataCastTo(LTemp,Left,LNewLeftType);
-//         _VarCast(LTemp, Left, LNewLeftType);
-          LRightHacked.VarDataCopy(Left,LTemp);
-//          _VarCopy(Left, LTemp);
-          if Left.VType <> LNewLeftType then
-            VarCastError;
-        finally
-          LRightHacked.VarDataClear(LTemp);
-//          _VarClear(LTemp);
-        end;
-      end;
-      LRightHandler.BinaryOp(Left, Right, OpCode);
-    end
-
-    // simple then converts custom then
-    else
-    begin
-      LRightHacked.VarDataInit(LTemp);
-//      VariantInit(LTemp);
-      try
-        // convert the right side to the left side's type
-        LRightHacked.VarDataCastTo(LTemp,Right,Left.VType);
-//        _VarCast(LTemp, Right, Left.VType);
-        if LTemp.VType <> Left.VType then
-          VarCastError;
-        _VarOp(Left, LTemp, OpCode);
-      finally
-        LRightHacked.VarDataClear(LTemp);
-//        _VarClear(LTemp);
-      end;
-    end;
-  end
-
-  // custom and something else
-  else
-  begin
-    // does the left side like what is in the right side?
-    if LLeftHandler.RightPromotion(Right, OpCode, LNewRightType) then
-    begin
-
-      // make the right side right
-      if Right.VType <> LNewRightType then
-      begin
-        VariantInit(LTemp);
-        try
-          _VarCast(LTemp, Right, LNewRightType);
-          if LTemp.VType <> LNewRightType then
-            VarCastError;
-          LLeftHandler.BinaryOp(Left, LTemp, OpCode);
-        finally
-          _VarClear(LTemp);
-        end;
-      end
-
-      // type is correct so lets go!
-      else
-        LLeftHandler.BinaryOp(Left, Right, OpCode);
-    end
-
-    // custom and simple and the right one can't convert the simple
-    else if (Right.VType and varTypeMask) < CFirstUserType then
-    begin
-
-      // convert the left side to the right side's type
-      if Left.VType <> Right.VType then
-      begin
-        VariantInit(LTemp);
-        try
-          _VarCast(LTemp, Left, Right.VType);
-          _VarCopy(Left, LTemp);
-          if Left.VType <> Right.VType then
-            VarCastError;
-        finally
-          _VarClear(LTemp);
-        end;
-      end;
-      _VarOp(Left, Right, OpCode);
-    end
-
-    // custom and custom but the right one doesn't really exist (nasty but possible )
-    else if not FindCustomVariantType(Right.VType, LRightHandler) then
-      VarInvalidOp
-
-    // custom and custom and the right one can handle the left's type
-    else if LRightHandler.LeftPromotion(Left, OpCode, LNewLeftType) then
-    begin
-
-      // convert the left side
-      if Left.VType <> LNewLeftType then
-      begin
-        VariantInit(LTemp);
-        try
-          _VarCast(LTemp, Left, LNewLeftType);
-          _VarCopy(Left, LTemp);
-          if Left.VType <> LNewLeftType then
-            VarCastError;
-        finally
-          _VarClear(LTemp);
-        end;
-      end;
-      LRightHandler.BinaryOp(Left, Right, OpCode);
-    end
-
-    // custom and custom but neither type can deal with each other
-    else
-      VarInvalidOp;
-  end;
-
-end;
-
-procedure _VarAdd(var Left: TVarData; const Right: TVarData);
-var
-  LLeftType, LRightType: TVarType;
-  LLeftHandler, LRightHandler: TCustomVariantType;
-begin
-  if (Left.VType=varDouble) and (Right.VType=varDouble) then
-    Left.VDouble:=Left.VDouble+Right.VDouble
-  else VarOpRare(Left,Right,opAdd);
-//  else Variant(Left):=Variant(Left)+Variant(Right);
-end;
-*)
-
-initialization
-  VarOpProc:=Pointer($00417238);
-
 
 end.
 

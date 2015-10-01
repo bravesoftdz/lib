@@ -289,17 +289,18 @@ type
       class function CreateFromVariant(const source: Variant; aConvType: TPhysUnit): TVarWithUnit;
       destructor Destroy; override; //debug purposes
       procedure Assign(source: TPersistent); override;
+      procedure FastAssign(source: TAbstractWrapperData); override;
       procedure DoNegate; override; //взять обратный знак
       procedure DoAdd(const value: TAbstractWrapperData); override;
-      procedure DoAddNumber(const Right: TVarData);
+      procedure DoAddNumber(const Right: Variant);
       procedure DoSubtract(const Right: TAbstractWrapperData); override;
-//      procedure DoSubtractNumber(const Right: TVarData);
+      procedure DoSubtractNumber(const Right: Variant);
 //      procedure DoInvSubtractNumber(const Left: TVarData);
       procedure DoMultiply(const Right: TAbstractWrapperData); override;
-//      procedure DoMultiplyNumber(const value: TVarData);
+      procedure DoMultiplyNumber(const value: Variant);
       procedure DoInverse;
       procedure DoDivide(const Right: TAbstractWrapperData); override;
-//      procedure DoDivideNumber(const Right: TVarData);
+      procedure DoDivideNumber(const Right: Variant);
 //      procedure DoInvDivideNumber(const Left: TVarData);
       procedure DoPower(pow: Real);
       procedure DoSquare;
@@ -315,11 +316,13 @@ type
   end;
 
   TVarWithUnitType = class (TAbstractWrapperVariantType)
+  protected
+    function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
   public
     procedure Cast(var Dest: TVarData; const Source: TVarData); override;
     procedure CastTo(var Dest: TVarData; const Source: TVarData; const AVarType: TVarType); override;
+    procedure BinaryOp(var Left: TVarData; const Right: TVarData; const Operator: TVarOp); override;    
     function CompareOp(const Left, Right: TVarData; const Operator: Integer): Boolean; override;
-//    function RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean; override;
     function DoProcedure(const V: TVarData; const Name: string; const Arguments: TVarDataArray): Boolean; override;
   end;
 
@@ -638,14 +641,13 @@ begin
 //  if Owner=t.Owner then begin //same family
     if t=self then
       {$ifdef Dirtyhack}
-        MyVarAdd(TVarData(v1),TVarData(v2))
-//        VarOpProc(TVarData(v1),TVarData(v2),opAdd)
+        CallVarAdd(v1,v2)
       {$ELSE}
         v1:=v1+v2
       {$ENDIF}
     else
       {$ifdef Dirtyhack}
-        VarOpProc(TVarData(v1),TVarData(ConvertFromBase(t.ConvertToBase(v2))),opAdd);
+        CallVarAdd(v1,ConvertFromBase(t.ConvertToBase(v2)));
       {$else}
         v1:=v1+ConvertFromBase(t.ConvertToBase(v2));
       {$ENDIF}
@@ -659,13 +661,13 @@ begin
   //уже проверено, что размерности совпадают
   if t=self then
     {$ifdef DirtyHack}
-      VarOpProc(TVarData(v1),TVarData(v2),opSubtract)
+      CallVarSub(v1,v2)
     {$else}
       v1:=v1-v2
     {$endif}
   else
     {$ifdef DirtyHack}
-      VarOpProc(TVarData(v1),TVarData(ConvertFromBase(t.ConvertToBase(v2))),opSubtract);
+      CallVarSub(v1,ConvertFromBase(t.ConvertToBase(v2)));
     {$else}
       v1:=v1-ConvertFromBase(t.ConvertToBase(v2));
     {$endif}
@@ -700,7 +702,7 @@ procedure TNormalConvType.MultiplyByNumber(var V: Variant;const num: Variant;
   var ConvType: TPhysUnit);
 begin
   {$ifdef dirtyhack}
-    VarOpProc(TVarData(V),TVarData(num),opMultiply);
+    CallVarMul(V,num);
   {$else}
     v:=v*num;
   {$endif}
@@ -711,7 +713,7 @@ procedure TNormalConvType.DivideByNumber(var V: Variant; const num: Variant;
   var ConvType: TPhysUnit);
 begin
   {$ifdef dirtyhack}
-    VarOpProc(TVarData(V),TVarData(num),opDivide);
+    CallVarDiv(V,num);
   {$else}
     v:=v/num;
   {$endif}
@@ -1296,6 +1298,12 @@ begin
   else inherited Assign(source);
 end;
 
+procedure TVarWithUnit.FastAssign(source: TAbstractWrapperData);
+begin
+  instance:=TVarWithUnit(source).instance;
+  ConvType:=TVarWithUnit(source).ConvType;
+end;
+
 class function TVarWithUnit.CreateFromText(text: string): TVarWithUnit;
 var expr: TVariantExpression;
     v: Variant;
@@ -1304,7 +1312,7 @@ begin
   expr:=TVariantExpression.Create(nil);
   expr.SetString(text);
   v:=expr.GetVariantValue;  //сейчас так сделано, что v может и не быть VarWithUnit
-  Result.Assign(TVarWithUnitVarData(v).Data);
+  Result.FastAssign(TVarWithUnitVarData(v).Data);
   expr.free;
 end;
 
@@ -1418,27 +1426,69 @@ end;
 procedure TVarWithUnit.DoAdd(const value: TAbstractWrapperData);
 var v: TVarWithUnit absolute value;
 begin
-//  if value is TVarWithUnit then begin
-    if ConvType.Owner<>v.ConvType.Owner then begin
-      if instance=0 then begin
-        instance:=v.instance;
-        ConvType:=v.ConvType;
-        Exit;
-      end;
-      v.Conversion(ConvType);
+  if ConvType.Owner<>v.ConvType.Owner then begin
+    if instance=0 then begin
+      instance:=v.instance;
+      ConvType:=v.ConvType;
+      Exit;
     end;
-    ConvType.Add(instance,ConvType,v.instance,v.ConvType);
-//  end
-//  else inherited;
-//  else if value<>0 then begin  //прибавляем число
+    v.Conversion(ConvType);
+  end;
+  ConvType.Add(instance,ConvType,v.instance,v.ConvType);
 end;
 
-procedure TVarWithUnit.DoAddNumber(const Right: TVarData);
+procedure TVarWithUnit.DoAddNumber(const Right: Variant);
+var un: TVarWithUnit;
 begin
   if ConvType=PhysUnitData.Unity then
-    
+    CallVarAdd(instance,Right)
+  else if instance=0 then begin
+    instance:=Right;
+    ConvType:=PhysUnitData.Unity;
+  end
+  else begin
+    un:=TVarWithUnit(TVarWithUnit.GetInstance);
+    try
+      un.instance:=Right;
+      un.ConvType:=PhysUnitData.Unity;
+      un.Conversion(ConvType);
+      DoAdd(un);
+    finally
+      un.Free;
+    end;
+  end;
+end;
 
+procedure TVarWithUnit.DoSubtractNumber(const Right: Variant);
+var un: TVarWithUnit;
+begin
+  if ConvType=PhysUnitData.Unity then
+    CallVarSub(instance,Right)
+  else if instance=0 then begin
+    instance:=-Right;
+    ConvType:=PhysUnitData.Unity;
+  end
+  else begin
+    un:=TVarWithUnit(TVarWithUnit.GetInstance);
+    try
+      un.instance:=Right;
+      un.ConvType:=PhysUnitData.Unity;
+      un.Conversion(ConvType);
+      DoSubtract(un);
+    finally
+      un.Free;
+    end;
+  end;
+end;
 
+procedure TVarWithUnit.DoMultiplyNumber(const value: Variant);
+begin
+  ConvType.MultiplyByNumber(instance,value,ConvType);
+end;
+
+procedure TVarWithUnit.DoDivideNumber(const Right: Variant);
+begin
+  ConvType.DivideByNumber(instance,Right,ConvType);  
 end;
 
 procedure TVarWithUnit.DoSubtract(const Right: TAbstractWrapperData);
@@ -1488,13 +1538,13 @@ begin
         Conversion(ConvType.family.BaseType);
       if v.ConvType.fIsBase then
         {$ifdef Dirtyhack}
-        VarOpProc(TVarData(instance),TVarData(v.instance),opDivide)
+        CallVarDiv(instance,v.instance)
         {$ELSE}
         instance:=instance/v.instance
         {$ENDIF}
       else
         {$ifdef Dirtyhack}
-        VarOpProc(TVarData(instance),TVarData(v.ConvType.ConvertToBase(v.instance)),opDivide);
+        CallVarDiv(instance,v.ConvType.ConvertToBase(v.instance));
         {$ELSE}
         instance:=instance/v.ConvType.ConvertToBase(v.instance);
         {$ENDIF}
@@ -1516,7 +1566,17 @@ end;
 
 procedure TVarWithUnit.DoMultiply(const Right: TAbstractWrapperData);
 var v: TVarWithUnit absolute Right;
-    tmp: Variant;
+  procedure DealWithLeftUnity;
+  var tmp: Variant;
+  begin
+    tmp:=v.instance;
+    if ConvType.fIsBase then
+      v.ConvType.MultiplyByNumber(tmp,instance,ConvType)
+    else
+      v.ConvType.MultiplyByNumber(tmp,ConvType.ConvertToBase(instance),ConvType);
+    instance:=tmp;
+  end;
+
 begin
 //  if Right is TVarWithUnit then begin
     if v.ConvType.Family.fFormula.IsUnity then  //безразмерная, но может быть и % или ppm
@@ -1524,27 +1584,20 @@ begin
         ConvType.MultiplyByNumber(instance,v.instance,ConvType)
       else
         ConvType.MultiplyByNumber(instance,v.ConvType.ConvertToBase(v.instance),ConvType)
-    else if ConvType.Family.fFormula.IsUnity then begin
-      tmp:=v.instance;
-      if ConvType.fIsBase then
-        v.ConvType.MultiplyByNumber(tmp,instance,ConvType)
-      else
-        v.ConvType.MultiplyByNumber(tmp,ConvType.ConvertToBase(instance),ConvType);
-      instance:=tmp;
-    end
+    else if ConvType.Family.fFormula.IsUnity then DealWithLeftUnity
     else begin
       //основная процедура
       if not ConvType.fIsBase then
         Conversion(ConvType.family.BaseType);
       if v.ConvType.fIsBase then
         {$ifdef Dirtyhack}
-        VarOpProc(TVarData(instance),TVarData(v.instance),opMultiply)
+        CallVarMul(instance,v.instance)
         {$ELSE}
         instance:=instance*v.instance
         {$ENDIF}
       else
         {$ifdef Dirtyhack}
-        VarOpProc(TVarData(instance),TVarData(v.ConvType.ConvertToBase(v.instance)),opMultiply);
+        CallVarMul(instance,v.ConvType.ConvertToBase(v.instance));
         {$ELSE}
         instance:=instance*v.ConvType.ConvertToBase(v.instance);
         {$ENDIF}
@@ -1614,6 +1667,103 @@ end;
 
 { TVarWithUnitType }
 
+function TVarWithUnitType.RightPromotion(const V: TVarData; const Operator: TVarOp; out RequiredVarType: TVarType): Boolean;
+begin
+  RequiredVarType:=V.VType;
+  Result:=true;
+end;
+
+procedure TVarWithUnitType.BinaryOp(var Left: TVarData;
+  const Right: TVarData; const Operator: TVarOp);
+
+  procedure DealWithNumPlusPhysUnit;
+  var t: TVarWithUnit;
+  begin
+  //возможны утечки памяти при возн. ошибки
+    case Operator of
+      opAdd: begin
+        if TVarWithUnitVarData(Right).data.ConvType=PhysUnitData.Unity then
+          CallVarAdd(Variant(Left),TVarWithUnitVarData(Right).Data.instance)
+        else begin
+          t:=TVarWithUnit(TVarWithUnit.GetInstance);
+          t.FastAssign(TVarWithUnitVarData(Right).data);
+          if Variant(Left)<>0 then
+            t.DoAddNumber(Variant(Left));
+          //Left был numeric, значит, память не пропадает, мы его просто сейчас
+          //перезапишем
+          Left.VType:=VarType;
+          TVarWithUnitVarData(Left).data:=t;
+        end;
+      end;
+      opSubtract: begin
+        if TVarWithUnitVarData(Right).Data.ConvType=PhysUnitData.Unity then
+          CallVarSub(Variant(Left),TVarWithUnitVarData(Right).Data.instance)
+        else begin
+          t:=TVarWithUnit(TVarWithUnit.GetInstance);
+          t.FastAssign(TVarWithUnitVarData(Right).data);
+          t.DoNegate;
+          if Variant(Left)<>0 then
+            t.DoAddNumber(Variant(Left));
+          //Left был numeric, значит, память не пропадает, мы его просто сейчас
+          //перезапишем
+          Left.VType:=VarType;
+          TVarWithUnitVarData(Left).data:=t;
+        end;
+      end;
+      opMultiply:
+        RaiseInvalidOp;
+//            co.MulReal(Variant(Left));
+      opDivide:
+        RaiseInvalidOp;
+//            co.InvDivReal(Variant(Left));
+      else
+          RaiseInvalidOp;
+    end;
+  end;
+
+begin
+  if Right.VType = VarType then
+    case Left.VType of
+      varString:
+        case Operator of
+          opAdd:
+            Variant(Left) := Variant(Left) + TVarWithUnitVarData(Right).Data.GetAsString;
+        else
+          RaiseInvalidOp;
+        end;
+      else
+        if Left.VType = VarType then
+          case Operator of
+            opAdd:
+              TVarWithUnitVarData(Left).Data.DoAdd(TVarWithUnitVarData(Right).Data);
+            opSubtract:
+              TVarWithUnitVarData(Left).Data.DoSubtract(TVarWithUnitVarData(Right).Data);
+            opMultiply:
+              TVarWithUnitVarData(Left).Data.DoMultiply(TVarWithUnitVarData(Right).Data);
+            opDivide:
+              TVarWithUnitVarData(Left).Data.DoDivide(TVarWithUnitVarData(Right).Data);
+          else
+            RaiseInvalidOp;
+          end
+        else
+          DealWithNumPlusPhysUnit
+    end
+  else  //справа число, а не PhysUnit
+    case Operator of
+      opAdd:
+        TVarWithUnitVarData(Left).data.DoAddNumber(Variant(Right));
+      opSubtract:
+        TVarWithUnitVarData(Left).data.DoSubtractNumber(Variant(Right));
+      opMultiply:
+        TVarWithUnitVarData(Left).Data.ConvType.MultiplyByNumber(TVarWithUnitVarData(Left).data.instance,Variant(Right),TVarWithUnitVarData(Left).data.convtype);
+      opDivide:
+//        TVarWithUnitVarData(Left).Data.DoDivideNumber(Variant(Right));
+        TVarWithUnitVarData(Left).Data.ConvType.DivideByNumber(TVarWithUnitVarData(Left).data.instance,Variant(Right),TVarWithUnitVarData(Left).data.convtype);
+      else
+      RaiseInvalidOp;
+    end;
+end;
+
 procedure TVarWithUnitType.Cast(var Dest: TVarData;
   const Source: TVarData);
 begin
@@ -1628,7 +1778,14 @@ end;
 
 procedure TVarWithUnitType.CastTo(var Dest: TVarData;
   const Source: TVarData; const AVarType: TVarType);
-var tmp: Variant;
+
+  procedure DealWithConversion;
+  var tmp: Variant;
+  begin
+    tmp:=PhysUnitConvert(Variant(source),PhysUnitData.Unity);
+    VarDataCastTo(Dest,TVarData(TVarWithUnitVarData(tmp).Data.instance),AVarType);
+  end;
+
 begin
   if Source.VType = VarType then begin
     case AVarType of
@@ -1640,10 +1797,7 @@ begin
         with TVarWithUnitVarData(Source).Data do begin
           if TVarWithUnitVarData(source).Data.ConvType.fIsBase then
             VarDataCastTo(Dest,TVarData(TVarWithUnitVarData(source).Data.instance),AVarType)
-          else begin
-            tmp:=PhysUnitConvert(Variant(source),PhysUnitData.Unity);
-            VarDataCastTo(Dest,TVarData(TVarWithUnitVarData(tmp).Data.instance),AVarType);
-          end;
+          else DealWithConversion;
         end;
     end;
   end
@@ -2447,7 +2601,7 @@ begin
     inst:=TVarWithUnitVarData(source).Data;
   dest:=TVarWithUnit(TVarWithUnit.GetInstance);
   try
-    dest.Assign(inst);
+    dest.FastAssign(inst);
     dest.Conversion(DestConvType);
     dest.ExplicitConversion:=explicit;
     PhysUnitCreateInto(Result,dest);
@@ -2484,8 +2638,8 @@ begin
       un:=TVarWithUnit(TVarWithUnit.getInstance);
       {$ifdef dirtyHack}
         un.instance:=instance;
-        VarOpProc(TVarData(un.instance),TVarData(instance),opMultiply);
-        VarOpProc(TVarData(un.instance),TVarData(instance),opMultiply);
+        CallVarMul(un.instance,instance);
+        CallVarMul(un.instance,instance);
       {$else}
         un.instance:=instance*instance*instance;
       {$endif}
@@ -2665,7 +2819,7 @@ var vwithunit: TVarWithUnit;
 begin
   if IsPhysUnit(V) then begin
     vwithunit:=TVarWithUnit.Create;
-    vwithunit.Assign(TVarWithUnitVarData(V).Data);
+    vwithunit.FastAssign(TVarWithUnitVarData(V).Data);
     repeat
       if Assigned(vwithunit.ConvType.ScaledUp) and (vwithunit.ConvType.ScaledUp=vwithunit.ConvType.ScaledDown) then
         vwithunit.Conversion(vwithunit.ConvType.ScaledDown);

@@ -240,8 +240,8 @@ type
     // conversion
     property AsString: String read GetAsString write SetAsString;
   published
-    property Real: Double read FReal write SetReal;
-    property Imaginary: Double read FImaginary write SetImaginary;
+    property Real: Double read FReal write fReal;
+    property Imaginary: Double read FImaginary write fImaginary;
     property Radius: Double read GetRadius;
     property Theta: Double read GetTheta;
     property FixedTheta: Double read GetFixedTheta;
@@ -1138,7 +1138,30 @@ end;
 
 procedure TComplexVariantType.BinaryOp(var Left: TVarData;
   const Right: TVarData; const Operator: TVarOp);
-var co: TComplexData;
+
+  procedure DealWithRealLeft;
+  var co: TComplexData;
+  begin
+    co:=TComplexData.Create(TComplexVarData(Right).VComplex);
+    //возможны утечки памяти при возн. ошибки
+    case Operator of
+      opAdd:
+        co.AddReal(Variant(Left));
+      opSubtract:
+        co.InvSubReal(Variant(Left));
+      opMultiply:
+        co.MulReal(Variant(Left));
+      opDivide:
+        co.InvDivReal(Variant(Left));
+      else
+        RaiseInvalidOp;
+    end;
+    //Left был numeric, значит, память не пропадает, мы его просто сейчас
+    //перезапишем
+    Left.VType:=VarType;
+    TComplexVarData(Left).VComplex:=co;
+  end;
+
 begin
   if Right.VType = VarType then
     case Left.VType of
@@ -1164,24 +1187,7 @@ begin
           RaiseInvalidOp;
         end
       else begin
-        co:=TComplexData.Create(TComplexVarData(Right).VComplex);
-//возможны утечки памяти при возн. ошибки
-        case Operator of
-          opAdd:
-            co.AddReal(Variant(Left));
-          opSubtract:
-            co.InvSubReal(Variant(Left));
-          opMultiply:
-            co.MulReal(Variant(Left));
-          opDivide:
-            co.InvDivReal(Variant(Left));
-        else
-          RaiseInvalidOp;
-        end;
-        //Left был numeric, значит, память не пропадает, мы его просто сейчас
-        //перезапишем
-        Left.VType:=VarType;
-        TComplexVarData(Left).VComplex:=co;
+        DealWithRealLeft;
       end
     end
   else
