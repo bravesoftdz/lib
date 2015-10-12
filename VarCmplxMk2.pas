@@ -143,8 +143,6 @@ type
     function GetRadius: Double;
     function GetTheta: Double;
     function GetFixedTheta: Double;
-    procedure SetReal(const AValue: Double);
-    procedure SetImaginary(const AValue: Double);
   protected
     procedure SetValueToComplexInfinity;
     procedure SetValue(const AReal: Double; const AImaginary: Double = 0); overload;
@@ -575,20 +573,6 @@ procedure TComplexData.SetValueToComplexInfinity;
 begin
   FReal := NaN;
   FImaginary := NaN;
-end;
-
-procedure TComplexData.SetReal(const AValue: Double);
-begin
-  FReal := AValue;
-  if ComplexNumberDefuzzAtZero and Math.IsZero(FReal) then
-    FReal := 0;
-end;
-
-procedure TComplexData.SetImaginary(const AValue: Double);
-begin
-  FImaginary := AValue;
-  if ComplexNumberDefuzzAtZero and Math.IsZero(FImaginary) then
-    FImaginary := 0;
 end;
 
 procedure TComplexData.SetValue(const AReal, AImaginary: Double);
