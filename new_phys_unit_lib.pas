@@ -362,6 +362,7 @@ type
   function PhysUnitArg(const source: Variant): Variant;
   function PhysUnitRe(const source: Variant): Variant;
   function PhysUnitIm(const source: Variant): Variant;
+  function PhysUnitConj(const source: Variant): Variant;  
   function PhysUnitExp(const source: Variant): Variant;
   function PhysUnitFindGoodPrefix(const V: Variant): Variant;
   function PhysUnitGetNumberIn(const source: Variant; UnitName: TPhysUnit): Variant; overload;
@@ -1795,7 +1796,7 @@ begin
         VarDataFromStr(Dest, TWrapperVarData(Source).data.GetAsString);
       else
         with TVarWithUnitVarData(Source).Data do begin
-          if TVarWithUnitVarData(source).Data.ConvType.fIsBase then
+          if TVarWithUnitVarData(source).Data.ConvType=PhysUnitData.Unity then
             VarDataCastTo(Dest,TVarData(TVarWithUnitVarData(source).Data.instance),AVarType)
           else DealWithConversion;
         end;
@@ -2753,6 +2754,21 @@ begin
   end
   else
     Result:=PhysUnitCreateFromVariant(source.Im,PhysUnitData.Unity);
+end;
+
+function PhysUnitConj(const source: Variant): Variant;
+var un: TVarWithUnit;
+begin
+  if isPhysUnit(source) then begin
+    with TVarWithUnitVarData(source).Data do begin
+      un:=TVarWithUnit(TVarWithUnit.GetInstance);
+      un.instance:=VarComplexConjugate(instance);
+      un.ConvType:=ConvType;
+      PhysUnitCreateInto(Result,un);
+    end;
+  end
+  else
+    Result:=PhysUnitCreateFromVariant(VarComplexConjugate(source),PhysUnitData.Unity);
 end;
 
 function PhysUnitExp(const source: Variant): Variant;

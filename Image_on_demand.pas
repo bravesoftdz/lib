@@ -56,12 +56,13 @@ TDocumentsSavingProgress = class (TObject)
     function LoadDocFromFile(filename: string): TAbstractDocument;
   end;
 
-TRasterImageDocument = class (TDocumentWithImage)
+TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
     fBtmp: TAsyncSavePNG;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
+    fScale: Real;
   public
     Image: TImage;
     constructor Create(aOwner: TComponent); override;
@@ -75,6 +76,7 @@ TRasterImageDocument = class (TDocumentWithImage)
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
+    property Scale: Real read fScale write fScale;
   end;
 
 TSaveDocThread = class (TThread)
@@ -167,7 +169,7 @@ end;
                       *)
 constructor TSaveDocThread.Create(doc: TRasterImageDocument);
 begin
-  inherited Create(false);
+  inherited Create(true);
   fDoc:=doc;
   DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
   FreeOnTerminate:=true;
@@ -317,6 +319,7 @@ begin
 
   BrushSize:=10;
   PrimaryColor:=clWhite;
+  scale:=1;
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -460,7 +463,7 @@ end;
 procedure TRectBrushCommand.GetBounds;
 var size: Integer;
 begin
-  size:=GetDoc.BrushSize;
+  size:=Round(GetDoc.BrushSize/GetDoc.scale);
   fLeft:=X-size;
   fRight:=X+size;
   fTop:=Y-size;

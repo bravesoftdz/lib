@@ -73,6 +73,9 @@ type
       constructor Create(command: THashedCommand;isUndo: Boolean);
   end;
 
+  IConstantComponentName = interface
+  ['{6BD88A2A-129F-4FEE-8B55-F82906B4D1D7}']
+  end;
 
   TChangePropertyCommand=class(TAbstractTreeCommand)
     protected
@@ -549,22 +552,31 @@ end;
 
 function TChangePropertyCommand.NewGetPropInfo: PPropInfo;
 begin
+  if fComponent=nil then Raise Exception.Create('ChangePropertyCommand: nil component');
   Result:=GetPropInfo(fComponent,fPropName);
   if Result=nil then Raise Exception.CreateFmt('ChangeIntegerCommand: property %s not exist',[fPropName]);
   if Result.SetProc=nil then Raise Exception.CreateFmt('ChangeIntegerCommand: write to read-only property %s',[fPropName]);
 end;
 
 procedure TChangePropertyCommand.ResolveMemory;
+var intf: IConstantComponentName;
 begin
-  (Owner as TCommandTree).JumpToBranch(self); //попадаем на состояние документа
-  //после выполнения нашей команды
-  (Owner as TCommandTree).Undo;
+  if not fComponent.GetInterface(IConstantComponentName,intf) then begin
+    (Owner as TCommandTree).JumpToBranch(self); //попадаем на состояние документа
+    //после выполнения нашей команды
+    (Owner as TCommandTree).Undo;
+  end;
   fComponentNameStr:=GetComponentValue(fComponent,fComponent.FindOwner);
+  if fComponentNameStr='Owner' then fComponentNameStr:=''
+  else fComponentNameStr:=fComponentNameStr+'.';
+//  intf:=nil;
 end;
 
 function TChangePropertyCommand.Execute: Boolean;
 begin
   fComponentNameStr:=GetComponentValue(fComponent,fComponent.FindOwner);
+  if fComponentNameStr='Owner' then fComponentNameStr:=''
+  else fComponentNameStr:=fComponentNameStr+'.';
   Result:=true;
 end;
 
@@ -621,7 +633,7 @@ begin
   end
   else
     s:=IntToStr(fVal);
-  Result:=fComponentNameStr+'.'+fPropName+'='+s;
+  Result:=fComponentNameStr+fPropName+'='+s;
 end;
 
 (*
@@ -661,7 +673,7 @@ end;
 
 function TChangeStringCommand.Caption: string;
 begin
-  Result:=fComponentNameStr+'.'+fPropName+'='+fstring;
+  Result:=fComponentNameStr+fPropName+'='+fstring;
 end;
 
 (*
@@ -702,7 +714,7 @@ end;
 
 function TChangeLocaleStringCommand.Caption: string;
 begin
-  Result:=fComponentNameStr+'.'+fPropName+'.'+fLang+'='+fString;
+  Result:=fComponentNameStr+fPropName+'.'+fLang+'='+fString;
 end;
 
 
@@ -745,7 +757,7 @@ end;
 
 function TChangeFloatCommand.Caption: string;
 begin
-  Result:=fComponentNameStr+'.'+fPropName+'='+FloatToStr(fVal);
+  Result:=fComponentNameStr+fPropName+'='+FloatToStr(fVal);
 end;
 
 
@@ -787,7 +799,7 @@ end;
 
 function TChangeBoolCommand.Caption: string;
 begin
-  Result:=fComponentNameStr+'.'+fPropName+'='+BoolToStr(fVal,true);
+  Result:=fComponentNameStr+fPropName+'='+BoolToStr(fVal,true);
 end;
 
 
@@ -1223,6 +1235,7 @@ begin
   //если command стояла выше по активной ветви, чем current, то b=current
   //пойдем от текущего положения до b, по пути отменяя все операции
   while current<>b do begin
+    assert(Assigned(current),'jump to branch current=nil');
     if not current.Undo then Raise Exception.Create('Undo command failed');
 //    if (current is THashedCommand) then THashingThread.Create(THashedCommand(current),true);
     current.ActiveBranch:=false;
