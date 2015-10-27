@@ -70,23 +70,44 @@ TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
     function GetBitmap: TAsyncSavePNG;
 end;
 
+TScalingThread = class (TThread)
+  private
+    fOrig: TAsyncSavePNG; //ссылка на оригинальную картинку
+    fScale: Real;
+    fbitmap: TBitmap;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(aOrig: TAsyncSavePNG; ascale: Real);
+    destructor Destroy; override;
+    function GetScaled: TBitmap;
+end;
+
+
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
 //    fBtmp: TAsyncSavePNG;
+    fRefCount: Integer;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
     fScale: Real;
+    fScaleMultiplier: Real;
     fLoadThread: TLoadBitmapThread;
+    procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TAsyncSavePNG;
   public
     Image: TImage;
+    function _AddRef: Integer; stdcall;
+    function _Release: Integer; stdcall;
     constructor Create(aOwner: TComponent); override;
     constructor LoadFromFile(aFilename: string); override;
+    procedure AfterConstruction; override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure SaveToFile(filename: string); override;
+    procedure PrepareScales(scaleMultiplier: Real);
   published
     property Btmp: TAsyncSavePNG read GetBtmp stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
@@ -107,6 +128,7 @@ TDocumentsSavingProgress = class (TObject)
     procedure WaitForAllDocsClearEvent;
     function LoadDocFromFile(filename: string): TAbstractDocument;
     procedure PrefetchDocument(doc: TRasterImageDocument); //пусть загрузит на всякий случай
+    function Count: Integer;  //debug
   end;
 
 TSaveDocThread = class (TThread)
@@ -201,7 +223,9 @@ constructor TSaveDocThread.Create(doc: TRasterImageDocument);
 begin
   inherited Create(true);
   fDoc:=doc;
+  //сначала предупредим всех, что мы сохраняемся
   DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
+  DocumentsSavingProgress.fDocumentsSaving.Add(fDoc);
   FreeOnTerminate:=true;
   Priority:=tpLower;
   Resume;
@@ -211,13 +235,6 @@ procedure TSaveDocThread.Execute;
 var INeedAVacation: Boolean;
     i: Integer;
 begin
-  //сначала предупредим всех, что мы сохраняемся
-  try
-    with DocumentsSavingProgress.fDocumentsSaving.LockList do
-      Add(fDoc);
-  finally
-    DocumentsSavingProgress.fDocumentsSaving.UnlockList;
-  end;
   fDoc.CriticalSection.Acquire;
     fDoc.SaveToFile(fDoc.FileName);
   fDoc.CriticalSection.Release;
@@ -253,7 +270,7 @@ end;
 constructor TLoadBitmapThread.CreateBlank;
 begin
   inherited Create(true);
-  FreeAndNil(fBitmap);  
+  FreeAndNil(fBitmap);
   fBitmap:=TAsyncSavePng.CreateBlank(color_RGB,8,0,0);
   fFileName:='';
   Resume;
@@ -288,6 +305,40 @@ begin
   WaitFor;
   Result:=fBitmap;
 end;
+
+(*
+    TScalingThread
+                      *)
+constructor TScalingThread.Create(aOrig: TAsyncSavePNG; aScale: Real);
+begin
+  inherited Create(true);
+  fOrig:=aOrig;
+  fScale:=aScale;
+  fBitmap:=TBitmap.Create;
+  //priority:=tpNormal;
+  FreeOnTerminate:=false;
+  Resume;
+end;
+
+destructor TScalingThread.Destroy;
+begin
+  fBitmap.Free;
+  inherited Destroy;
+end;
+
+procedure TScalingThread.Execute;
+begin
+  fBitmap.Width:=Round(fOrig.Width/fscale);
+  fBitmap.Height:=Round(fOrig.Height/fscale);
+  fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
+end;
+
+function TScalingThread.GetScaled: TBitmap;
+begin
+  Waitfor;
+  Result:=fBitmap;
+end;
+
 (*
     TImageSavingProgress
                               *)
@@ -342,6 +393,7 @@ constructor TDocumentsSavingProgress.Create;
 begin
   fDocumentsSaving:=TThreadList.Create;
   fDocumentsSaving.Duplicates:=dupIgnore;
+//  fDocumentsSaving.Duplicates:=dupError;
   fAllDocsClearEvent:=TEvent.Create(nil,false,true,'AllDocsClearEvent');
 end;
 
@@ -355,8 +407,24 @@ begin
 end;
 
 destructor TDocumentsSavingProgress.Destroy;
+//var //i,j: Integer;
+//    s: string;
+//    P: Pointer;
 begin
+  if Assigned(fPrefetchedDoc) then
+    fPrefetchedDoc._Release;
   try
+//    i:=Count;
+//    Assert(i>0);
+//    with fDocumentsSaving.LockList do
+//      for j:=0 to i-1 do begin
+//        s:=TRasterImageDocument(Items[j]).FileName;
+//        P:=Items[j];
+//        assert(s<>'');
+//        assert(P<>nil);
+//      end;
+//    fDocumentsSaving.UnlockList;
+
     WaitForAllDocsClearEvent;
   finally
     fAllDocsClearEvent.Free;
@@ -392,11 +460,19 @@ end;
 procedure TDocumentsSavingProgress.PrefetchDocument(doc: TRasterImageDocument);
 begin
 //  FreeAndNil(fPrefetchThread);  //если уже загружется другой документ - мы передумали
-
+  if Assigned(fPrefetchedDoc) then fPrefetchedDoc._Release;
 //  fPrefetchedDoc.SaveAndFree; //потихоньку уничтожается, в т.ч из списка уйти должна
   fPrefetchedDoc:=doc;
+  fPrefetchedDoc._AddRef;
   //документ загр. сразу, а вот картинку он тянет фоновым потоком
   fDocumentsSaving.Add(fPrefetchedDoc);
+end;
+
+function TDocumentsSavingProgress.Count: Integer;
+begin
+  with fDocumentsSaving.LockList do
+    Result:=Count;
+  fDocumentsSaving.UnlockList;
 end;
 
 
@@ -406,10 +482,18 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
+  inc(fRefCount);
   fLoadThread:=TLoadBitmapThread.CreateBlank;
+  fLoadThread.OnTerminate:=LoadThreadTerminate;
   BrushSize:=10;
   PrimaryColor:=clWhite;
   scale:=1;
+end;
+
+procedure TRasterImageDocument.AfterConstruction;
+begin
+  inherited AfterConstruction;
+  dec(fRefCount);
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -417,6 +501,20 @@ begin
   fLoadThread.Free;
 //  fBtmp.Free;
   inherited Destroy;
+end;
+
+function TRasterImageDocument._AddRef: Integer;
+begin
+  inc(fRefCount);
+  Result:=fRefCount;
+end;
+
+function TRasterImageDocument._Release: Integer;
+begin
+  dec(fRefCount);
+  Result:=fRefCount;
+  if fRefCount=0 then
+    SaveAndFree;
 end;
 
 function TRasterImageDocument.Get_Image: TImage;
@@ -457,6 +555,16 @@ begin
   s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
   fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 //  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+end;
+
+procedure TRasterImageDocument.PrepareScales(scaleMultiplier: Real);
+begin
+  fScaleMultiplier:=scaleMultiplier;
+end;
+
+procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
+begin
+  if fScaleMultiplier=0 then Exit;
 end;
 
 (*
