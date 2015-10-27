@@ -45,24 +45,40 @@ TImageSavingProgress = class (TObject)
     property Counter: Integer read fCounter;
   end;
 
-TDocumentsSavingProgress = class (TObject)
+(*
+TDocumentPrefetchThread = class (TThread)
   private
-    fDocumentsSaving: TThreadList;
-    fAllDocsClearEvent: TEvent;
+    fFileName: string;
+  protected
+    procedure Execute; override;
+    function GetDoc: TAbstractDocument;
   public
-    constructor Create;
+    constructor Create(Filename: string);
+end;
+*)
+
+TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
+  private
+    fFilename: string;
+    fBitmap: TAsyncSavePNG;
+  protected
+    procedure Execute; override;
+  public
+    constructor CreateBlank;
+    constructor Create(filename: string);
     destructor Destroy; override;
-    procedure WaitForAllDocsClearEvent;
-    function LoadDocFromFile(filename: string): TAbstractDocument;
-  end;
+    function GetBitmap: TAsyncSavePNG;
+end;
 
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
-    fBtmp: TAsyncSavePNG;
+//    fBtmp: TAsyncSavePNG;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
     fScale: Real;
+    fLoadThread: TLoadBitmapThread;
+    function GetBtmp: TAsyncSavePNG;
   public
     Image: TImage;
     constructor Create(aOwner: TComponent); override;
@@ -72,11 +88,25 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure SaveToFile(filename: string); override;
   published
-    property Btmp: TAsyncSavePNG read fBtmp write fBtmp stored false;
+    property Btmp: TAsyncSavePNG read GetBtmp stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
     property Scale: Real read fScale write fScale;
+  end;
+
+TDocumentsSavingProgress = class (TObject)
+  private
+    fDocumentsSaving: TThreadList;
+    fAllDocsClearEvent: TEvent;
+//    fPrefetchThread: TDocumentPrefetchThread;
+    fPrefetchedDoc: TRasterImageDocument;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure WaitForAllDocsClearEvent;
+    function LoadDocFromFile(filename: string): TAbstractDocument;
+    procedure PrefetchDocument(doc: TRasterImageDocument); //пусть загрузит на всякий случай
   end;
 
 TSaveDocThread = class (TThread)
@@ -208,6 +238,57 @@ begin
 end;
 
 (*
+    TLoadBitmapThread
+                              *)
+constructor TLoadBitmapThread.Create(filename: string);
+begin
+  inherited Create(true);
+  FreeAndNil(fBitmap);
+  fFileName:=filename;
+  //priority:=tpNormal;
+  FreeOnTerminate:=false;
+  Resume;
+end;
+
+constructor TLoadBitmapThread.CreateBlank;
+begin
+  inherited Create(true);
+  FreeAndNil(fBitmap);  
+  fBitmap:=TAsyncSavePng.CreateBlank(color_RGB,8,0,0);
+  fFileName:='';
+  Resume;
+  //нет нужды вообще запускать поток - уже всё есть
+end;
+
+destructor TLoadBitmapThread.Destroy;
+begin
+  fBitmap.Free;
+  inherited Destroy;
+end;
+
+procedure TLoadBitmapThread.Execute;
+var ext: string;
+    pic: TPicture;
+begin
+  if fFileName='' then Exit;
+  fBitmap:=TAsyncSavePNG.Create;
+  ext:=Uppercase(ExtractFileExt(fFileName));
+  if ext='.PNG' then
+    fBitmap.LoadFromFile(fFileName)
+  else begin
+    pic:=TPicture.Create;
+    pic.LoadFromFile(fFileName);
+    fBitmap.Resize(pic.Width,pic.Height);
+    fBitmap.Canvas.Draw(0,0,pic.Graphic);
+  end;
+end;
+
+function TLoadBitmapThread.GetBitmap: TAsyncSavePNG;
+begin
+  WaitFor;
+  Result:=fBitmap;
+end;
+(*
     TImageSavingProgress
                               *)
 constructor TImageSavingProgress.Create;
@@ -260,7 +341,7 @@ end;
 constructor TDocumentsSavingProgress.Create;
 begin
   fDocumentsSaving:=TThreadList.Create;
-  fDocumentsSaving.Duplicates:=dupAccept;
+  fDocumentsSaving.Duplicates:=dupIgnore;
   fAllDocsClearEvent:=TEvent.Create(nil,false,true,'AllDocsClearEvent');
 end;
 
@@ -308,6 +389,16 @@ begin
   end;
 end;
 
+procedure TDocumentsSavingProgress.PrefetchDocument(doc: TRasterImageDocument);
+begin
+//  FreeAndNil(fPrefetchThread);  //если уже загружется другой документ - мы передумали
+
+//  fPrefetchedDoc.SaveAndFree; //потихоньку уничтожается, в т.ч из списка уйти должна
+  fPrefetchedDoc:=doc;
+  //документ загр. сразу, а вот картинку он тянет фоновым потоком
+  fDocumentsSaving.Add(fPrefetchedDoc);
+end;
+
 
 (*
     TRasterImageDocument
@@ -315,8 +406,7 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  fBtmp:=TAsyncSavePng.CreateBlank(color_RGB,8,0,0);
-
+  fLoadThread:=TLoadBitmapThread.CreateBlank;
   BrushSize:=10;
   PrimaryColor:=clWhite;
   scale:=1;
@@ -324,7 +414,8 @@ end;
 
 destructor TRasterImageDocument.Destroy;
 begin
-  fBtmp.Free;
+  fLoadThread.Free;
+//  fBtmp.Free;
   inherited Destroy;
 end;
 
@@ -353,13 +444,19 @@ begin
   new_commands_added:=false;
 end;
 
+function TRasterImageDocument.GetBtmp: TAsyncSavePNG;
+begin
+  Result:=fLoadThread.GetBitmap;
+end;
+
 constructor TRasterImageDocument.LoadFromFile(aFilename: string);
 var s: string;
 begin
   inherited LoadFromFile(aFilename);
   s:=ExtractFilePath(aFilename);
-  s:=LeftStr(s,Length(s)-5);
-  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+  s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
+  fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+//  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 end;
 
 (*
