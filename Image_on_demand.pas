@@ -94,6 +94,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fScale: Real;
     fScaleMultiplier: Real;
     fLoadThread: TLoadBitmapThread;
+    fScalingThreads: array of TScalingThread;
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TAsyncSavePNG;
   public
@@ -136,6 +137,7 @@ TSaveDocThread = class (TThread)
     fDoc: TRasterImageDocument;
   protected
     procedure Execute; override;
+    procedure AfterTermination(Sender: TObject);
   public
     constructor Create(doc: TRasterImageDocument);
 end;
@@ -187,7 +189,7 @@ var
 
 
 implementation
-uses SysUtils,strUtils,gamma_function;
+uses SysUtils,strUtils,gamma_function,math;
 (*
       TAsyncSavePNG
                           *)
@@ -228,6 +230,7 @@ begin
   DocumentsSavingProgress.fDocumentsSaving.Add(fDoc);
   FreeOnTerminate:=true;
   Priority:=tpLower;
+  onTerminate:=AfterTermination;
   Resume;
 end;
 
@@ -252,6 +255,12 @@ begin
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
   end;
   if INeedAVacation then fDoc.Free;
+end;
+
+procedure TSaveDocThread.AfterTermination(Sender: TObject);
+begin
+  if Assigned(FatalException) then
+    Raise FatalException;
 end;
 
 (*
@@ -497,9 +506,11 @@ begin
 end;
 
 destructor TRasterImageDocument.Destroy;
+var i: Integer;
 begin
   fLoadThread.Free;
-//  fBtmp.Free;
+  for i:=0 to Length(fScalingThreads)-1 do
+    fScalingThreads[i].free;
   inherited Destroy;
 end;
 
@@ -563,8 +574,20 @@ begin
 end;
 
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
+var c,i: Integer; //количество копий
+    s: Real;
 begin
+  if Assigned(fLoadThread.FatalException) then
+    raise fLoadThread.FatalException;
   if fScaleMultiplier=0 then Exit;
+  c:=Floor(ln(min(fLoadThread.GetBitmap.Width,fLoadThread.GetBitmap.Height) div 2)/ln(fScaleMultiplier));
+  SetLength(fScalingThreads,c);
+  s:=1;
+  for i:=0 to c-1 do begin
+    s:=s/fScaleMultiplier;
+    fScalingThreads[i].Free;
+    fScalingThreads[i]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
+  end;
 end;
 
 (*
