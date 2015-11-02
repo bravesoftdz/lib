@@ -680,9 +680,9 @@ function TDocUndoAction.Update: boolean;
 var doc: TAbstractDocument;
 begin
   doc:=getDoc;
-  Enabled:=Assigned(doc) and doc.UndoTree.UndoEnabled;
-  Result:=true;
-end;
+  Enabled:=Assigned(doc) and doc.UndoTree.UndoEnabled;  //возможно, что UndoTree=nil
+  Result:=true;                                         //но это заметание под ковер
+end;                                                    //надо разобраться, что за хрень
 
 (*
       TDocRedoAction

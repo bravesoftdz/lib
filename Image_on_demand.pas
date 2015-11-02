@@ -16,6 +16,8 @@ TImageOnDemand = class (TStreamingClass)
 
 end;
 *)
+TLogProc = procedure (text: string);
+
 TAsyncSavePNG = class (TPngObject)
   public
     procedure SaveToFileAndFree(filename: string);
@@ -99,16 +101,22 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     function GetBtmp: TAsyncSavePNG;
   public
     Image: TImage;
+    ChangeRect: TRect;  //0,0,0,0 озн. пустую область
+    onSaveThreadTerminate: TNotifyEvent;
+    procedure AddToChangeRect(const A: TRect);
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
     constructor Create(aOwner: TComponent); override;
+    constructor CreateFromImageFile(aFileName: string);
     constructor LoadFromFile(aFilename: string); override;
     procedure AfterConstruction; override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
+    procedure FreeWithoutSaving;
     procedure SaveToFile(filename: string); override;
     procedure PrepareScales(scaleMultiplier: Real);
+    procedure Change; override;
   published
     property Btmp: TAsyncSavePNG read GetBtmp stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
@@ -124,21 +132,21 @@ TDocumentsSavingProgress = class (TObject)
 //    fPrefetchThread: TDocumentPrefetchThread;
     fPrefetchedDoc: TRasterImageDocument;
   public
+    Log: TLogProc;
     constructor Create;
     destructor Destroy; override;
     procedure WaitForAllDocsClearEvent;
     function LoadDocFromFile(filename: string): TAbstractDocument;
     procedure PrefetchDocument(doc: TRasterImageDocument); //пусть загрузит на всякий случай
     function Count: Integer;  //debug
+    function AsText: string; //debug
   end;
 
 TSaveDocThread = class (TThread)
-  private
-    fDoc: TRasterImageDocument;
   protected
     procedure Execute; override;
-    procedure AfterTermination(Sender: TObject);
   public
+    fDoc: TRasterImageDocument;
     constructor Create(doc: TRasterImageDocument);
 end;
 
@@ -225,12 +233,13 @@ constructor TSaveDocThread.Create(doc: TRasterImageDocument);
 begin
   inherited Create(true);
   fDoc:=doc;
+  Assert(Assigned(fDoc));
   //сначала предупредим всех, что мы сохраняемся
   DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
   DocumentsSavingProgress.fDocumentsSaving.Add(fDoc);
   FreeOnTerminate:=true;
   Priority:=tpLower;
-  onTerminate:=AfterTermination;
+  onTerminate:=doc.onSaveThreadTerminate;
   Resume;
 end;
 
@@ -238,9 +247,18 @@ procedure TSaveDocThread.Execute;
 var INeedAVacation: Boolean;
     i: Integer;
 begin
+  Assert(Assigned(fDoc));
   fDoc.CriticalSection.Acquire;
-    fDoc.SaveToFile(fDoc.FileName);
-  fDoc.CriticalSection.Release;
+  try
+    fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
+  finally
+    fDoc.CriticalSection.Release;
+  end;
+  //при возникновении искл. ситуации документ остаётся висеть в списке - пользователь
+  //должен либо перезапустить поток сохранения (retry)
+  //либо отменить сохранение
+
+
   //если мы в списке, значит, пора уходить, а вот если нет, значит народ уже передумал
   try
     with DocumentsSavingProgress.fDocumentsSaving.LockList do begin
@@ -255,12 +273,6 @@ begin
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
   end;
   if INeedAVacation then fDoc.Free;
-end;
-
-procedure TSaveDocThread.AfterTermination(Sender: TObject);
-begin
-  if Assigned(FatalException) then
-    Raise FatalException;
 end;
 
 (*
@@ -408,7 +420,7 @@ end;
 
 procedure TDocumentsSavingProgress.WaitForAllDocsClearEvent;
 begin
-  case fAllDocsClearEvent.WaitFor(20000) of
+  case fAllDocsClearEvent.WaitFor(60000) of
     wrTimeout: raise Exception.Create('WaitForAllDocsClearEvent timeout');
     wrError: raise Exception.Create('WaitForAllDocsClearEvent error');
     wrAbandoned: raise Exception.Create('WaitForAllDocsClearEvent abandoned');
@@ -469,18 +481,37 @@ end;
 procedure TDocumentsSavingProgress.PrefetchDocument(doc: TRasterImageDocument);
 begin
 //  FreeAndNil(fPrefetchThread);  //если уже загружется другой документ - мы передумали
-  if Assigned(fPrefetchedDoc) then fPrefetchedDoc._Release;
+  if Assigned(fPrefetchedDoc) then begin
+    //debug
+    log('releasing prefetched '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
+    fPrefetchedDoc._Release;
+  end;
 //  fPrefetchedDoc.SaveAndFree; //потихоньку уничтожается, в т.ч из списка уйти должна
   fPrefetchedDoc:=doc;
   fPrefetchedDoc._AddRef;
+  log('list count: '+IntToStr(count));  
+  log('prefetched doc: '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
   //документ загр. сразу, а вот картинку он тянет фоновым потоком
   fDocumentsSaving.Add(fPrefetchedDoc);
+  log('list count: '+IntToStr(count));
+  log('list of prefetched and in progress:');
+  log(AsText);
 end;
 
 function TDocumentsSavingProgress.Count: Integer;
 begin
   with fDocumentsSaving.LockList do
     Result:=Count;
+  fDocumentsSaving.UnlockList;
+end;
+
+function TDocumentsSavingProgress.AsText: string;
+var i: Integer;
+begin
+  with fDocumentsSaving.LockList do begin
+    for i:=0 to Count-1 do
+      Result:=Result+IntToHex(Integer(Items[i]),8)+': '+TRasterImageDocument(Items[i]).FileName+#13+#10;
+  end;
   fDocumentsSaving.UnlockList;
 end;
 
@@ -491,7 +522,8 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  inc(fRefCount);
+//  inc(fRefCount);
+  fRefCount:=-10;
   fLoadThread:=TLoadBitmapThread.CreateBlank;
   fLoadThread.OnTerminate:=LoadThreadTerminate;
   BrushSize:=10;
@@ -499,10 +531,28 @@ begin
   scale:=1;
 end;
 
+constructor TRasterImageDocument.CreateFromImageFile(aFileName: string);
+begin
+  Create(nil);
+  fLoadThread.Create(aFileName);
+end;
+
+constructor TRasterImageDocument.LoadFromFile(aFilename: string);
+var s: string;
+begin
+  inherited LoadFromFile(aFilename);
+  s:=ExtractFilePath(aFilename);
+  s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
+  fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+//  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+end;
+
 procedure TRasterImageDocument.AfterConstruction;
 begin
   inherited AfterConstruction;
-  dec(fRefCount);
+//  dec(fRefCount);
+  fRefCount:=0;
+  DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': construction complete, RefCount='+IntToStr(fRefCount));
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -518,14 +568,20 @@ function TRasterImageDocument._AddRef: Integer;
 begin
   inc(fRefCount);
   Result:=fRefCount;
+  if fRefCount>-5 then
+    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': _AddRef, RefCount='+IntToStr(fRefCount));
 end;
 
 function TRasterImageDocument._Release: Integer;
 begin
   dec(fRefCount);
   Result:=fRefCount;
-  if fRefCount=0 then
+  if fRefCount>-5 then
+    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': _Release, RefCount='+IntToStr(fRefCount));
+  if fRefCount=0 then begin
     SaveAndFree;
+    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': SAVE AND DESTROY');
+  end;
 end;
 
 function TRasterImageDocument.Get_Image: TImage;
@@ -537,6 +593,14 @@ procedure TRasterImageDocument.SaveAndFree;
 begin
   if Assigned(self) then
     TSaveDocThread.Create(self);
+end;
+
+procedure TRasterImageDocument.FreeWithoutSaving;
+begin
+  if Assigned(self) then
+    with documentsSavingProgress.fDocumentsSaving.LockList do
+      remove(self);
+  Destroy;
 end;
 
 procedure TRasterImageDocument.SaveToFile(filename: string);
@@ -556,16 +620,6 @@ end;
 function TRasterImageDocument.GetBtmp: TAsyncSavePNG;
 begin
   Result:=fLoadThread.GetBitmap;
-end;
-
-constructor TRasterImageDocument.LoadFromFile(aFilename: string);
-var s: string;
-begin
-  inherited LoadFromFile(aFilename);
-  s:=ExtractFilePath(aFilename);
-  s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
-  fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
-//  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 end;
 
 procedure TRasterImageDocument.PrepareScales(scaleMultiplier: Real);
@@ -588,6 +642,26 @@ begin
     fScalingThreads[i].Free;
     fScalingThreads[i]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
   end;
+end;
+
+procedure TRasterImageDocument.AddToChangeRect(const A: TRect);
+begin
+  if IsRectEmpty(ChangeRect) then ChangeRect:=A
+  else if not IsRectEmpty(A) then begin
+    ChangeRect.Left:=min(ChangeRect.Left,A.Left);
+    ChangeRect.Right:=max(ChangeRect.Right,A.Right);
+    ChangeRect.Top:=min(ChangeRect.Top,A.Top);
+    ChangeRect.Bottom:=max(ChangeRect.Bottom,A.Bottom);
+  end;
+end;
+
+procedure TRasterImageDocument.Change;
+begin
+  inherited Change;
+  //прорисуем изменения, причем при первом включении ChangeRect должен равняться
+  //всему изображению!
+
+
 end;
 
 (*
@@ -620,11 +694,14 @@ end;
 function TPatchImageCommand.Execute: Boolean;
 var i,j: Integer;
   C1,C2: RGBColor;
+  doc: TRasterImageDocument;
 begin
   getBounds;
+  doc:=GetDoc;
+  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
   //обозначили заплатку
   fDiff.Resize(fRight-fLeft,fBottom-fTop);
-  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),GetDoc.Btmp.Canvas,
+  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),Doc.Btmp.Canvas,
     Rect(fLeft,fTop,fRight,fBottom));
   //храним в fDiff копию того фрагмента, который начнем мучать
   Result:=InternalExecute;
@@ -653,9 +730,12 @@ end;
 function TPatchImageCommand.Undo: Boolean;
 var i,j: Integer;
     C1,C2: RGBColor;
+    doc: TRasterImageDocument;
 begin
   getBounds;  //размеры заплатки мы могли бы по изображению понять, но расположение
   //все равно узнавать надо!
+  doc:=GetDoc;
+  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
   fPredictor.Resize(fDiff.Width,fDiff.Height);
   if UndoPrediction then
     for j:=0 to fDiff.Height-1 do
@@ -669,7 +749,7 @@ begin
       end;
     //а на нет и суда нет
   //осталось вправить картинку на место
-  GetDoc.Btmp.Canvas.CopyRect(Rect(fLeft,fTop,fRight,fBottom),fDiff.Canvas,Rect(0,0,fDiff.Width,fDiff.Height));
+  doc.Btmp.Canvas.CopyRect(Rect(fLeft,fTop,fRight,fBottom),fDiff.Canvas,Rect(0,0,fDiff.Width,fDiff.Height));
   Result:=true;
 end;
 
