@@ -309,15 +309,21 @@ var ext: string;
     pic: TPicture;
 begin
   if fFileName='' then Exit;
-  fBitmap:=TAsyncSavePNG.Create;
   ext:=Uppercase(ExtractFileExt(fFileName));
-  if ext='.PNG' then
-    fBitmap.LoadFromFile(fFileName)
+  if ext='.PNG' then begin
+    fBitmap:=TAsyncSavePNG.Create;
+    fBitmap.LoadFromFile(fFileName);
+  end
   else begin
     pic:=TPicture.Create;
-    pic.LoadFromFile(fFileName);
-    fBitmap.Resize(pic.Width,pic.Height);
-    fBitmap.Canvas.Draw(0,0,pic.Graphic);
+    try
+      pic.LoadFromFile(fFileName);
+      fBitmap:=TAsyncSavePNG.CreateBlank(color_RGB,8,pic.Width,pic.Height);
+//    fBitmap.Resize(pic.Width,pic.Height);
+      fBitmap.Canvas.Draw(0,0,pic.Graphic);
+    finally
+      pic.Free;
+    end;
   end;
 end;
 
