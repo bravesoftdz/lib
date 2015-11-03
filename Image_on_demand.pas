@@ -89,7 +89,6 @@ end;
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
 //    fBtmp: TAsyncSavePNG;
-    fRefCount: Integer;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
@@ -104,12 +103,9 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     ChangeRect: TRect;  //0,0,0,0 озн. пустую область
     onSaveThreadTerminate: TNotifyEvent;
     procedure AddToChangeRect(const A: TRect);
-    function _AddRef: Integer; stdcall;
-    function _Release: Integer; stdcall;
     constructor Create(aOwner: TComponent); override;
     constructor CreateFromImageFile(aFileName: string);
     constructor LoadFromFile(aFilename: string); override;
-    procedure AfterConstruction; override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
@@ -434,24 +430,10 @@ begin
 end;
 
 destructor TDocumentsSavingProgress.Destroy;
-//var //i,j: Integer;
-//    s: string;
-//    P: Pointer;
 begin
   if Assigned(fPrefetchedDoc) then
-    fPrefetchedDoc._Release;
+    fPrefetchedDoc.SaveAndFree;
   try
-//    i:=Count;
-//    Assert(i>0);
-//    with fDocumentsSaving.LockList do
-//      for j:=0 to i-1 do begin
-//        s:=TRasterImageDocument(Items[j]).FileName;
-//        P:=Items[j];
-//        assert(s<>'');
-//        assert(P<>nil);
-//      end;
-//    fDocumentsSaving.UnlockList;
-
     WaitForAllDocsClearEvent;
   finally
     fAllDocsClearEvent.Free;
@@ -465,6 +447,10 @@ var i: Integer;
   doc: TAbstractDocument;
 begin
   Result:=nil;
+  if Assigned(fPrefetchedDoc) and (fPrefetchedDoc.FileName=filename) then begin
+    Result:=fPrefetchedDoc;
+    fPrefetchedDoc:=nil;
+  end;
   try
     with fDocumentsSaving.LockList do
       for i:=0 to Count-1 do begin
@@ -490,17 +476,14 @@ begin
   if Assigned(fPrefetchedDoc) then begin
     //debug
     log('releasing prefetched '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
-    fPrefetchedDoc._Release;
+    fPrefetchedDoc.SaveAndFree;
   end;
 //  fPrefetchedDoc.SaveAndFree; //потихоньку уничтожается, в т.ч из списка уйти должна
   fPrefetchedDoc:=doc;
-  fPrefetchedDoc._AddRef;
-  log('list count: '+IntToStr(count));  
   log('prefetched doc: '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
   //документ загр. сразу, а вот картинку он тянет фоновым потоком
-  fDocumentsSaving.Add(fPrefetchedDoc);
   log('list count: '+IntToStr(count));
-  log('list of prefetched and in progress:');
+  log('list of docs in progress (saving and destroying):');
   log(AsText);
 end;
 
@@ -528,8 +511,6 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-//  inc(fRefCount);
-  fRefCount:=-10;
   fLoadThread:=TLoadBitmapThread.CreateBlank;
   fLoadThread.OnTerminate:=LoadThreadTerminate;
   BrushSize:=10;
@@ -550,15 +531,6 @@ begin
   s:=ExtractFilePath(aFilename);
   s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
   fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
-//  btmp.LoadFromFile(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
-end;
-
-procedure TRasterImageDocument.AfterConstruction;
-begin
-  inherited AfterConstruction;
-//  dec(fRefCount);
-  fRefCount:=0;
-  DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': construction complete, RefCount='+IntToStr(fRefCount));
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -568,26 +540,6 @@ begin
   for i:=0 to Length(fScalingThreads)-1 do
     fScalingThreads[i].free;
   inherited Destroy;
-end;
-
-function TRasterImageDocument._AddRef: Integer;
-begin
-  inc(fRefCount);
-  Result:=fRefCount;
-  if fRefCount>-5 then
-    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': _AddRef, RefCount='+IntToStr(fRefCount));
-end;
-
-function TRasterImageDocument._Release: Integer;
-begin
-  dec(fRefCount);
-  Result:=fRefCount;
-  if fRefCount>-5 then
-    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': _Release, RefCount='+IntToStr(fRefCount));
-  if fRefCount=0 then begin
-    SaveAndFree;
-    DocumentsSavingProgress.Log('Addr ' + IntToHex(Integer(self),8)+','+ExtractFileName(FileName)+': SAVE AND DESTROY');
-  end;
 end;
 
 function TRasterImageDocument.Get_Image: TImage;
