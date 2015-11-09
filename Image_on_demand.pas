@@ -96,12 +96,14 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fScaleMultiplier: Real;
     fLoadThread: TLoadBitmapThread;
     fScalingThreads: array of TScalingThread;
+//    fPercentDone: Integer;
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TAsyncSavePNG;
   public
     Image: TImage;
     ChangeRect: TRect;  //0,0,0,0 озн. пустую область
     onSaveThreadTerminate: TNotifyEvent;
+    onSavingProgress: TSavingProgressReport;
     procedure AddToChangeRect(const A: TRect);
     constructor Create(aOwner: TComponent); override;
     constructor CreateFromImageFile(aFileName: string);
@@ -139,6 +141,11 @@ TDocumentsSavingProgress = class (TObject)
   end;
 
 TSaveDocThread = class (TThread)
+  private
+    fPercentDone: Integer;  //а как результат для GetProgress
+                            //вполне подходит Terminated
+    procedure CallProgress;
+    function GetProgressFromThread(Sender: TObject; PercentDone: Integer): boolean;
   protected
     procedure Execute; override;
   public
@@ -239,11 +246,27 @@ begin
   Resume;
 end;
 
+function TSaveDocThread.GetProgressFromThread(Sender: TObject; PercentDone: Integer): Boolean;
+begin
+//перевалочный пункт между потоками - протискиваемся сквозь synchronize
+  fPercentDone:=PercentDone;
+  Synchronize(CallProgress);
+  Result:=not Terminated;
+end;
+
+procedure TSaveDocThread.CallProgress;
+begin
+  if assigned(fDoc.onSavingProgress) then
+    if not fDoc.onSavingProgress(fDoc,fPercentDone) then
+      Terminate;
+end;
+
 procedure TSaveDocThread.Execute;
 var INeedAVacation: Boolean;
     i: Integer;
 begin
   Assert(Assigned(fDoc));
+//  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
   fDoc.CriticalSection.Acquire;
   try
     fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
@@ -262,13 +285,14 @@ begin
       INeedAVacation:=(i>=0);
       if INeedAVacation then begin
         Delete(i);
-        if Count=0 then DocumentsSavingProgress.fAllDocsClearEvent.SetEvent;
+        if Count=0 then
+          DocumentsSavingProgress.fAllDocsClearEvent.SetEvent;
       end;
     end;
   finally
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
   end;
-  if INeedAVacation then fDoc.Free;
+  if INeedAVacation then fDoc.Release;
 end;
 
 (*
@@ -431,13 +455,28 @@ end;
 
 destructor TDocumentsSavingProgress.Destroy;
 begin
-  if Assigned(fPrefetchedDoc) then
+  if Assigned(fPrefetchedDoc) then begin
+//    fPrefetchedDoc.Free;
+    log('saving prefetched doc');
     fPrefetchedDoc.SaveAndFree;
+    log('now list of saving:');
+    log(AsText);
+    sleep(2000);
+    log('2 sec later:');
+    log(DocumentsSavingProgress.AsText);
+  end;
   try
+    log('waiting for all docs clear');
     WaitForAllDocsClearEvent;
+    log('seems it worked');
+    log('list of saving:');
+    log(AsText);
   finally
+    log('destroying clear event');
     fAllDocsClearEvent.Free;
+    log('destroying thread list');
     fDocumentsSaving.Free;
+    log('destroying DocumentsSavingProgress');
     inherited Destroy;
   end;
 end;
@@ -536,6 +575,8 @@ end;
 destructor TRasterImageDocument.Destroy;
 var i: Integer;
 begin
+  fLoadThread.Terminate;
+  fLoadThread.WaitFor;
   fLoadThread.Free;
   for i:=0 to Length(fScalingThreads)-1 do
     fScalingThreads[i].free;
