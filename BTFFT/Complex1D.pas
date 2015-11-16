@@ -17,6 +17,7 @@ type
     public
       procedure Set_Length(new_T: Integer);
       procedure inversion;
+      procedure inversion_by_Elena;
       property Re[i: integer]: Real read Re_value write set_Re;
       property Im[i: integer]: Real read Im_value write set_Im;
       property N: Integer read _N;
@@ -96,8 +97,7 @@ begin
 end;
 
 procedure ComplexTernary1D.inversion;
-var i,k,j,ma,ik,ipos,jpos,lim: Integer;
-    tmp: Real;
+var i,k,j,ma,ik,lim: Integer;
 begin
   i:=0;
   ma:=_N-2;
@@ -106,7 +106,7 @@ begin
     k:=ik;
     i:=i+k;
     lim:=_N;
-    while i>_N do begin
+    while i>lim do begin
       i:=i-3*k;
       lim:=lim-2*k;
       k:=k div 3;
@@ -121,6 +121,36 @@ begin
     else if (i<0) then begin
       SwapFloats(Re_data[base+i],Re_data[base+j]);
       SwapFloats(Im_data[base+i],Im_data[base+j]);
+    end;
+  end;
+end;
+
+procedure ComplexTernary1D.inversion_by_Elena;
+var i,j,a,b,k: Integer;
+begin
+  //_q, _qmin1 уже определены
+  a:=_T div 3;
+  b:=1;
+  i:=2;
+  j:=-N;  //начали от печки
+  k:=-N;
+  while i<=_T do begin
+    while a>0 do begin
+      if (i-1) mod a = 0 then begin
+        j:=j+b;
+        if a<>1 then
+          j:=j-9*b;
+      end;
+      a:=a div 3;
+      b:=b*3;
+    end;
+    inc(i);
+    inc(k);
+    a:=_T div 3;
+    b:=1;
+    if k<j then begin
+      SwapFloats(Re_data[base+k],Re_data[base+j]);
+      SwapFloats(Im_data[base+k],Im_data[base+j]);
     end;
   end;
 

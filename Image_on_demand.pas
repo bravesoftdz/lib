@@ -96,13 +96,12 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fScaleMultiplier: Real;
     fLoadThread: TLoadBitmapThread;
     fScalingThreads: array of TScalingThread;
-//    fPercentDone: Integer;
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TAsyncSavePNG;
   public
+    PercentDone: Integer; //инкапсуляция ни к черту  
     Image: TImage;
     ChangeRect: TRect;  //0,0,0,0 озн. пустую область
-    onSaveThreadTerminate: TNotifyEvent;
     onSavingProgress: TSavingProgressReport;
     procedure AddToChangeRect(const A: TRect);
     constructor Create(aOwner: TComponent); override;
@@ -125,15 +124,16 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
 
 TDocumentsSavingProgress = class (TObject)
   private
-    fDocumentsSaving: TThreadList;
-    fAllDocsClearEvent: TEvent;
-//    fPrefetchThread: TDocumentPrefetchThread;
+    fAllDocsClearEvent: TEvent; //возвращаемся к истокам - работало неплохо
     fPrefetchedDoc: TRasterImageDocument;
+    procedure ThreadTerminate(Sender: TObject);
+    procedure WaitForAllDocsClearEvent;
   public
+    fDocumentsSaving: TThreadList;  
+    onSaveThreadTerminate: TNotifyEvent;
     Log: TLogProc;
     constructor Create;
     destructor Destroy; override;
-    procedure WaitForAllDocsClearEvent;
     function LoadDocFromFile(filename: string): TAbstractDocument;
     procedure PrefetchDocument(doc: TRasterImageDocument); //пусть загрузит на всякий случай
     function Count: Integer;  //debug
@@ -148,6 +148,8 @@ TSaveDocThread = class (TThread)
     function GetProgressFromThread(Sender: TObject; PercentDone: Integer): boolean;
   protected
     procedure Execute; override;
+    procedure DoTerminate; override;  //вызывается из Thread'a и должна выкинуть поток
+    //из списка, после чего мирно удалиться
   public
     fDoc: TRasterImageDocument;
     constructor Create(doc: TRasterImageDocument);
@@ -236,13 +238,13 @@ constructor TSaveDocThread.Create(doc: TRasterImageDocument);
 begin
   inherited Create(true);
   fDoc:=doc;
+  DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
   Assert(Assigned(fDoc));
   //сначала предупредим всех, что мы сохраняемся
-  DocumentsSavingProgress.fAllDocsClearEvent.ResetEvent;
   DocumentsSavingProgress.fDocumentsSaving.Add(fDoc);
+  onTerminate:=documentsSavingProgress.ThreadTerminate;
   FreeOnTerminate:=true;
   Priority:=tpLower;
-  onTerminate:=doc.onSaveThreadTerminate;
   Resume;
 end;
 
@@ -257,7 +259,7 @@ end;
 procedure TSaveDocThread.CallProgress;
 begin
   if assigned(fDoc.onSavingProgress) then
-    if not fDoc.onSavingProgress(fDoc,fPercentDone) then
+    if not fDoc.onSavingProgress(self,fPercentDone) then
       Terminate;
 end;
 
@@ -266,7 +268,7 @@ var INeedAVacation: Boolean;
     i: Integer;
 begin
   Assert(Assigned(fDoc));
-//  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
+  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
   fDoc.CriticalSection.Acquire;
   try
     fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
@@ -277,22 +279,37 @@ begin
   //должен либо перезапустить поток сохранения (retry)
   //либо отменить сохранение
 
-
   //если мы в списке, значит, пора уходить, а вот если нет, значит народ уже передумал
   try
     with DocumentsSavingProgress.fDocumentsSaving.LockList do begin
       i:=IndexOf(fDoc);
       INeedAVacation:=(i>=0);
-      if INeedAVacation then begin
+      if INeedAVacation then
         Delete(i);
-        if Count=0 then
-          DocumentsSavingProgress.fAllDocsClearEvent.SetEvent;
-      end;
     end;
   finally
     DocumentsSavingProgress.fDocumentsSaving.UnlockList;
   end;
   if INeedAVacation then fDoc.Release;
+end;
+
+procedure TSaveDocThread.DoTerminate;
+var INeedAVacation: Boolean;
+begin
+  try
+    with DocumentsSavingProgress.fDocumentsSaving.LockList do
+      INeedAVacation:=(Count=0);
+  finally
+    DocumentsSavingProgress.fDocumentsSaving.UnlockList;
+  end;
+  if INeedAVacation then DocumentsSavingProgress.fAllDocsClearEvent.SetEvent;
+  inherited;
+  //вызов onTerminate
+  //если осн. поток застрял на AllDocsClearEvent.WaitFor, то мы застрянем здесь же
+  //пока последний из могикан наконец не создаст это событие
+  //похоже, что onTerminate при этом не будут обработаны, поскольку уже началось
+  //уничтожение формы.
+  //но это даже хорошо, хотя FastMM4 выругается.
 end;
 
 (*
@@ -320,6 +337,8 @@ end;
 
 destructor TLoadBitmapThread.Destroy;
 begin
+  Terminate;  //сейчас не возымеет действия, но как-нибудь реализую
+  WaitFor;
   fBitmap.Free;
   inherited Destroy;
 end;
@@ -441,7 +460,14 @@ begin
   fDocumentsSaving:=TThreadList.Create;
   fDocumentsSaving.Duplicates:=dupIgnore;
 //  fDocumentsSaving.Duplicates:=dupError;
-  fAllDocsClearEvent:=TEvent.Create(nil,false,true,'AllDocsClearEvent');
+  fAllDocsClearEvent:=TEvent.Create(nil,false,true,''); //не хотим имени, чтобы
+  //одновременно запущенные 2 проги не "сцепились"
+end;
+
+procedure TDocumentsSavingProgress.ThreadTerminate(Sender: TObject);
+begin
+  if Assigned(onSaveThreadTerminate) then
+    onSaveThreadTerminate(Sender);
 end;
 
 procedure TDocumentsSavingProgress.WaitForAllDocsClearEvent;
@@ -454,29 +480,16 @@ begin
 end;
 
 destructor TDocumentsSavingProgress.Destroy;
+//var i: Integer;
 begin
-  if Assigned(fPrefetchedDoc) then begin
-//    fPrefetchedDoc.Free;
-    log('saving prefetched doc');
+  if Assigned(fPrefetchedDoc) then
     fPrefetchedDoc.SaveAndFree;
-    log('now list of saving:');
-    log(AsText);
-    sleep(2000);
-    log('2 sec later:');
-    log(DocumentsSavingProgress.AsText);
-  end;
+//    fPrefetchedDoc.Release;
   try
-    log('waiting for all docs clear');
     WaitForAllDocsClearEvent;
-    log('seems it worked');
-    log('list of saving:');
-    log(AsText);
   finally
-    log('destroying clear event');
     fAllDocsClearEvent.Free;
-    log('destroying thread list');
     fDocumentsSaving.Free;
-    log('destroying DocumentsSavingProgress');
     inherited Destroy;
   end;
 end;
@@ -575,8 +588,6 @@ end;
 destructor TRasterImageDocument.Destroy;
 var i: Integer;
 begin
-  fLoadThread.Terminate;
-  fLoadThread.WaitFor;
   fLoadThread.Free;
   for i:=0 to Length(fScalingThreads)-1 do
     fScalingThreads[i].free;

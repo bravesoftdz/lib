@@ -1,7 +1,7 @@
 unit Real2D;
 
 interface
-uses classes;
+uses classes,graphics;
 type
 
   RealTernary2D=class (TPersistent)

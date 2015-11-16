@@ -10,11 +10,15 @@ type
       fq,fqmin1: Integer; //число тритов
       fT,fN: Integer; //полное число элементов и мин/макс значение (-N;N)
       base: Integer; //смещение нулевого отсчета
+      increments: array of Integer; //для алгоритма Лены - посчитаем заранее
       function value(i: Integer): Real;
       procedure set_value(i: Integer;value: Real);
     public
+      procedure Set_BitCount(aQ: Integer);
       procedure Set_Length(aT: Integer);
       procedure inversion;
+      procedure inversion_by_Elena;
+      procedure inversion_combined;
       procedure old_inversion;
       property Re[i: integer]: Real read value write set_value; default;
       property N: Integer read fN;
@@ -27,7 +31,7 @@ type
 
 implementation
 
-uses math;
+uses math, streaming_class_lib;
 
 (*
     RealTernary1D
@@ -38,10 +42,10 @@ begin
   Set_Length(0);
 end;
 
-procedure RealTernary1D.Set_Length(aT: Integer);
+procedure RealTernary1D.Set_BitCount(aQ: Integer);
+var i,plus,minus: Integer;
 begin
-  assert(aT>-1,'Set_Length: negative argument');
-  if aT<1 then begin
+  if aQ<0 then begin
     fQ:=-1;
     fqmin1:=-2;
     fT:=0;
@@ -49,14 +53,36 @@ begin
     SetLength(data,0);
   end
   else begin
-    fq:=math.Ceil(ln(aT)/ln(3));
+    fq:=aQ;
     fqmin1:=fq-1;
     fT:=Round(power(3,fq));
     fN:=(fT-1) div 2;
     SetLength(data,fT);
     base:=fN;
+    SetLength(increments,fq);
+    if fq>0 then begin
+      increments[0]:=fT div 3;
+      plus:=fT div 9;
+      minus:=fT;
+      for i:=1 to fq-1 do begin
+        increments[i]:=increments[i-1]+plus-minus;
+        plus:=plus div 3;
+        minus:=minus div 3;
+      end;
+    end;
   end;
 end;
+
+procedure RealTernary1D.Set_Length(aT: Integer);
+begin
+  assert(aT>-1,'Set_Length: negative argument');
+  if aT<1 then Set_BitCount(-1)
+  else begin
+    fq:=math.Ceil(ln(aT)/ln(3));
+    Set_BitCount(fq);
+  end;
+end;
+
 
 function RealTernary1D.value(i: Integer): Real;
 begin
@@ -71,33 +97,102 @@ begin
 end;
 
 procedure RealTernary1D.inversion;
-var i,j,aT,aN,bT,bN,mi,ma,ipos,jpos: Integer;
-    tmp: Real;
+var i,k,j,ma,ik,lim: Integer;
 begin
-  bT:=fT div 3;
-  bN:=(bT-1) shr 1;
-  mi:=-fN+1;
-  ma:=fN-3;
-  j:=-bN;
-  for i:=mi to ma do begin
-    aN:=bN;
-    aT:=bT;
-    if i<j then begin
-      ipos:=base+i;
-      jpos:=base+j;
-      tmp:=data[ipos];
-      data[ipos]:=data[jpos];
-      data[jpos]:=tmp;
+  i:=0;
+  ma:=fN-2;
+  ik:=fT div 3;
+  for j:=1 to ma do begin
+    k:=ik;
+    i:=i+k;
+    lim:=fN;
+    while i>lim do begin
+      i:=i-3*k;
+      lim:=lim-2*k;
+      k:=k div 3;
+      i:=i+k;
     end;
-    //прибавляем единицу в инверсной форме
-    while j>aN do begin
-      j:=j-(aT shl 1);
-      aT:=aT div 3;
-      aN:=aN-(aT shl 2);
+    if (j<i)  then begin
+      SwapFloats(data[base+i],data[base+j]);
+      SwapFloats(data[base-i],data[base-j]);
+    end
+    else if (i<0) then begin
+      SwapFloats(data[base+i],data[base+j]);
     end;
-    j:=j+aT;
   end;
 end;
+
+procedure RealTernary1D.inversion_by_Elena;
+var k: Integer; //i, сдвинутое на N+1, по нему проверяем четность
+    j: Integer; //инверсированный индекс
+    a: Integer; //степень тройки
+    b: Integer; //кратность нашего k
+    Tmin1: Integer;
+begin
+  j:=fN;
+  k:=fN+1;
+  Tmin1:=fT-1;
+  for k:=fN+1 to fT-3 do begin //fN-2 вычисляется лишь один раз перед началом цикла
+    b:=0;
+    a:=3;
+    while k mod a=0 do begin
+      inc(b);
+      a:=a*3;
+    end;
+    j:=j+increments[b];
+    //j на данный момент - инверсное значение i
+    //k==i+fN
+    if (k<j) then begin
+      SwapFloats(data[k],data[j]);
+      SwapFloats(data[Tmin1-k],data[Tmin1-j]);
+    end
+    else if (j<fN) then  //j сдвинулось на fN
+      SwapFloats(data[k],data[j]);
+  end;
+end;
+
+procedure RealTernary1D.inversion_combined;
+var i,k,j,ma,ik,lim: Integer;
+begin
+  ma:=fN-2;
+  ik:=fT div 3;
+  i:=ik;  
+  j:=1;
+  while j<=ma do begin
+    //мало того, знаем, что здесь i>0
+    if (j<i)  then begin
+      SwapFloats(data[base+i],data[base+j]);
+      SwapFloats(data[base-i],data[base-j]);
+    end;
+    //а вот тут наступает перенос, но пока не знаем на сколько разрядов
+    //но поскольку младший разряд -1, то i<0
+    k:=ik;
+    i:=i+ik;
+    inc(j);
+    lim:=fN;
+    while i>lim do begin
+      i:=i-3*k;
+      lim:=lim-2*k;
+      k:=k div 3;
+      i:=i+k;
+    end;
+    SwapFloats(data[base+i],data[base+j]);
+    //и наконец, с -1 до 0 без переноса
+    //возможно отрицательное значение!
+    i:=i+ik;
+    inc(j);
+    if (j<i)  then begin
+      SwapFloats(data[base+i],data[base+j]);
+      SwapFloats(data[base-i],data[base-j]);
+    end
+    else if i<0 then
+      SwapFloats(data[base+i],data[base+j]);
+    //с 0 до 1 без переноса
+    i:=i+ik;
+    inc(j);
+  end;
+end;
+
 procedure RealTernary1D.old_inversion;
 var i,j,k,b: Integer;
     trits: array of Integer;
