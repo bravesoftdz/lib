@@ -61,11 +61,11 @@ begin
     base:=fN;
     SetLength(increments,fq);
     if fq>0 then begin
-      increments[0]:=fT div 3;
+      increments[0]:=-fT div 3;
       plus:=fT div 9;
       minus:=fT;
       for i:=1 to fq-1 do begin
-        increments[i]:=increments[i-1]+plus-minus;
+        increments[i]:=increments[i-1]-plus+minus;
         plus:=plus div 3;
         minus:=minus div 3;
       end;
@@ -130,7 +130,6 @@ var k: Integer; //i, сдвинутое на N+1, по нему проверяем четность
     Tmin1: Integer;
 begin
   j:=fN;
-  k:=fN+1;
   Tmin1:=fT-1;
   for k:=fN+1 to fT-3 do begin //fN-2 вычисляется лишь один раз перед началом цикла
     b:=0;
@@ -152,44 +151,63 @@ begin
 end;
 
 procedure RealTernary1D.inversion_combined;
-var i,k,j,ma,ik,lim: Integer;
+var i,j,ik,Tmin1,a,b: Integer;
+    t: Real;
 begin
-  ma:=fN-2;
-  ik:=fT div 3;
-  i:=ik;  
-  j:=1;
-  while j<=ma do begin
-    //мало того, знаем, что здесь i>0
-    if (j<i)  then begin
-      SwapFloats(data[base+i],data[base+j]);
-      SwapFloats(data[base-i],data[base-j]);
-    end;
-    //а вот тут наступает перенос, но пока не знаем на сколько разрядов
-    //но поскольку младший разряд -1, то i<0
-    k:=ik;
-    i:=i+ik;
-    inc(j);
-    lim:=fN;
-    while i>lim do begin
-      i:=i-3*k;
-      lim:=lim-2*k;
-      k:=k div 3;
-      i:=i+k;
-    end;
-    SwapFloats(data[base+i],data[base+j]);
-    //и наконец, с -1 до 0 без переноса
-    //возможно отрицательное значение!
-    i:=i+ik;
-    inc(j);
-    if (j<i)  then begin
-      SwapFloats(data[base+i],data[base+j]);
-      SwapFloats(data[base-i],data[base-j]);
+  Tmin1:=fT-1;
+  ik:=-fT div 3;
+  j:=2*fN-1;  //значение, соотв 11...110
+  i:=2*fN+ik; //011..11
+  while j>fN do begin
+    //j имеет 0 на конце, i соотв. в начале
+    if i<fN then begin
+      t:=data[i];
+      data[i]:=data[j];
+      data[j]:=t;
     end
-    else if i<0 then
-      SwapFloats(data[base+i],data[base+j]);
-    //с 0 до 1 без переноса
-    i:=i+ik;
-    inc(j);
+    else if (i<j) then begin
+      t:=data[i];
+      data[i]:=data[j];
+      data[j]:=t;
+      t:=data[Tmin1-i];
+      data[Tmin1-i]:=data[Tmin1-j];
+      data[Tmin1-j]:=t;
+//      SwapFloats(data[i],data[j]);
+//      SwapFloats(data[Tmin1-i],data[Tmin1-j]);
+    end;
+
+    dec(j);
+    inc(i,ik);
+    //теперь j имеет на конце -1, i - в начале, заведомо <0
+    t:=data[i];
+    data[i]:=data[j];
+    data[j]:=t;
+
+
+    //сейчас произойдет перенос неизв. на сколько разрядов
+    a:=9;
+    b:=1;
+    while j mod a=0 do begin
+      inc(b);
+      a:=a*3;
+    end;
+    inc(i,increments[b]);
+    dec(j);
+    //i совершенно точно положительная
+    if (i<j)  then begin
+      t:=data[i];
+      data[i]:=data[j];
+      data[j]:=t;
+      t:=data[Tmin1-i];
+      data[Tmin1-i]:=data[Tmin1-j];
+      data[Tmin1-j]:=t;
+//      SwapFloats(data[i],data[j]);
+//      SwapFloats(data[Tmin1-i],data[Tmin1-j]);
+    end;
+
+    //и готовимся к новой итерации
+    dec(j);
+    inc(i,ik);
   end;
 end;
 
