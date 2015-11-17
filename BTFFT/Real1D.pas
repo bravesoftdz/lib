@@ -151,26 +151,28 @@ begin
 end;
 
 procedure RealTernary1D.inversion_combined;
-var k,i,j,ik,Tmin1,a,b,ma: Integer;
+var i,j,ik,a,b,ma,mirrj,mirri: Integer;
     t: Real;
 begin
   ma:=2*fN-2;
   ik:=fT div 3;
   i:=fN+ik;
+  mirri:=fT-1-i;
   j:=fN+1;
-  Tmin1:=fT-1;
+  mirrj:=fT-1-j;
   while j<=ma do begin
     //знаем, что здесь i>0
     if (j<i)  then begin
       t:=data[i];
       data[i]:=data[j];
       data[j]:=t;
-      t:=data[Tmin1-i];
-      data[Tmin1-i]:=data[Tmin1-j];
-      data[Tmin1-j]:=t;
+      t:=data[mirri];
+      data[mirri]:=data[mirrj];
+      data[mirrj]:=t;
     end;
     //здесь наступает перенос, нужно узнать, на сколько разрядов
     inc(j);
+    dec(mirrj);
     a:=9;
     b:=1;
     while j mod a=0 do begin
@@ -178,6 +180,7 @@ begin
       a:=a*3;
     end;
     inc(i,increments[b]);
+    dec(mirri,increments[b]);
     //i заведомо отрицательное, т.е. меньше fN
     t:=data[i];
     data[i]:=data[j];
@@ -186,13 +189,15 @@ begin
     //можем прийти к отрицательному ответу!
     inc(i,ik);
     inc(j);
+    dec(mirri,ik);
+    dec(mirrj);
     if (j<i)  then begin
       t:=data[i];
       data[i]:=data[j];
       data[j]:=t;
-      t:=data[Tmin1-i];
-      data[Tmin1-i]:=data[Tmin1-j];
-      data[Tmin1-j]:=t;
+      t:=data[mirri];
+      data[mirri]:=data[mirrj];
+      data[mirrj]:=t;
     end
     else if i<fN then begin
       t:=data[i];
@@ -202,6 +207,8 @@ begin
     //готовимся к следующей итерации - с 0 до 1 без переноса
     inc(i,ik);
     inc(j);
+    dec(mirri,ik);
+    dec(mirrj);
   end;
 end;
 
