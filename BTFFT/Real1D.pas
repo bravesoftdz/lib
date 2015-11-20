@@ -4,6 +4,10 @@ interface
 
 type
 
+  TInversionPairs=record
+    i,j: Integer;
+  end;
+
   RealTernary1D=class
     private
       data: array of Real;
@@ -11,14 +15,17 @@ type
       fT,fN: Integer; //полное число элементов и мин/макс значение (-N;N)
       base: Integer; //смещение нулевого отсчета
       increments: array of Integer; //для алгоритма Лены - посчитаем заранее
+      pairs: array of TInversionPairs;
       function value(i: Integer): Real;
       procedure set_value(i: Integer;value: Real);
+      procedure InitPairs;
     public
       procedure Set_BitCount(aQ: Integer);
       procedure Set_Length(aT: Integer);
       procedure inversion;
       procedure inversion_by_Elena;
       procedure inversion_combined;
+      procedure cheating_inversion;
       procedure old_inversion;
       property Re[i: integer]: Real read value write set_value; default;
       property N: Integer read fN;
@@ -70,6 +77,7 @@ begin
         minus:=minus div 3;
       end;
     end;
+    InitPairs;    
   end;
 end;
 
@@ -81,6 +89,44 @@ begin
     fq:=math.Ceil(ln(aT)/ln(3));
     Set_BitCount(fq);
   end;
+end;
+
+procedure RealTernary1D.InitPairs;
+var i,k,j,ma,ik,lim,len: Integer;
+begin
+//  base:=0;  //отладка
+  len:=0; //кол-во элем
+  SetLength(pairs,fN);  //на деле явно будет меньше
+  //потом под конец удалим излишки
+  i:=0;
+  ma:=fN-2;
+  ik:=fT div 3;
+  for j:=1 to ma do begin
+    k:=ik;
+    i:=i+k;
+    lim:=fN;
+    while i>lim do begin
+      i:=i-3*k;
+      lim:=lim-2*k;
+      k:=k div 3;
+      i:=i+k;
+    end;
+    if (j<i)  then begin
+      pairs[len].i:=base+i;
+      pairs[len].j:=base+j;
+      inc(len);
+      pairs[len].i:=base-i;
+      pairs[len].j:=base-j;
+      inc(len);
+    end
+    else if (i<0) then begin
+      pairs[len].i:=base+i;
+      pairs[len].j:=base+j;
+      inc(len);
+    end;
+  end;
+  SetLength(pairs,len);
+//  base:=fN;  //отладка
 end;
 
 
@@ -202,6 +248,19 @@ begin
     //готовимся к следующей итерации - с 0 до 1 без переноса
     inc(i,ik);
     inc(j);
+  end;
+end;
+
+procedure RealTernary1D.cheating_inversion;
+var i,j,k: Integer;
+    t: Real;
+begin
+  for k:=0 to Length(pairs)-1 do begin
+    i:=pairs[k].i;
+    j:=pairs[k].j;
+    t:=data[i];
+    data[i]:=data[j];
+    data[j]:=t;
   end;
 end;
 

@@ -268,7 +268,7 @@ var INeedAVacation: Boolean;
     i: Integer;
 begin
   Assert(Assigned(fDoc));
-  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
+//  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
   fDoc.CriticalSection.Acquire;
   try
     fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
@@ -458,8 +458,8 @@ end;
 constructor TDocumentsSavingProgress.Create;
 begin
   fDocumentsSaving:=TThreadList.Create;
-  fDocumentsSaving.Duplicates:=dupIgnore;
-//  fDocumentsSaving.Duplicates:=dupError;
+//  fDocumentsSaving.Duplicates:=dupIgnore;
+  fDocumentsSaving.Duplicates:=dupError;
   fAllDocsClearEvent:=TEvent.Create(nil,false,true,''); //не хотим имени, чтобы
   //одновременно запущенные 2 проги не "сцепились"
 end;
@@ -471,9 +471,16 @@ begin
 end;
 
 procedure TDocumentsSavingProgress.WaitForAllDocsClearEvent;
+var i: Integer;
+label tryagain;
 begin
-  case fAllDocsClearEvent.WaitFor(60000) of
-    wrTimeout: raise Exception.Create('WaitForAllDocsClearEvent timeout');
+  i:=0;
+  tryagain:
+  CheckSynchronize(500);
+  inc(i);
+  if i=20 then raise Exception.Create('WaitForAllDocsClearEvent timeout');
+  case fAllDocsClearEvent.WaitFor(500) of
+    wrTimeout: goto tryagain;
     wrError: raise Exception.Create('WaitForAllDocsClearEvent error');
     wrAbandoned: raise Exception.Create('WaitForAllDocsClearEvent abandoned');
   end;
@@ -486,6 +493,9 @@ begin
     fPrefetchedDoc.SaveAndFree;
 //    fPrefetchedDoc.Release;
   try
+    log('wait for all docs saved and cleared');
+    log('number of docs: ' + IntToStr(Count));
+    log(AsText);
     WaitForAllDocsClearEvent;
   finally
     fAllDocsClearEvent.Free;

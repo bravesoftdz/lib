@@ -3,10 +3,14 @@ unit Complex1D;
 interface
 
 type
+  TComplexRec = record
+    Re,Im: Real;
+  end;
 
   ComplexTernary1D=class
     private
-      Re_data,Im_data: array of Real;
+//      Re_data,Im_data: array of Real;
+      fdata: array of TComplexRec;
       fq,fqmin1: Integer; //число тритов
       fT,fN: Integer; //полное число элементов и мин/макс значение (-N, N)
       base: Integer; //смещение нулевого отсчета
@@ -61,16 +65,14 @@ begin
     fqmin1:=-2;
     fT:=0;
     fN:=-1;
-    SetLength(Re_data,0);
-    SetLength(Im_data,0);
+    SetLength(fdata,0);
   end
   else begin
     fq:=aQ;
     fqmin1:=fq-1;
     fT:=Round(power(3,fq));
     fN:=(fT-1) div 2;
-    SetLength(Re_data,fT);
-    SetLength(Im_data,fT);
+    SetLength(fdata,fT);
     base:=fN;
     SetLength(increments,fq);
     if fq>0 then begin
@@ -99,25 +101,25 @@ end;
 function ComplexTernary1D.Re_value(i: Integer): Real;
 begin
   assert((i<=fN) and (i>=-fN),'Re_value index out of range');
-  Re_value:=Re_data[base+i];
+  Result:=fdata[base+i].Re;
 end;
 
 function ComplexTernary1D.Im_value(i: Integer): Real;
 begin
   assert((i<=fN) and (i>=-fN),'Im_value index out of range');
-  Im_value:=Im_data[base+i];
+  Result:=fdata[base+i].Im;
 end;
 
 procedure ComplexTernary1D.set_Re(i: Integer; value: Real);
 begin
   assert((i<=fN) and (i>=-fN),'set_Re index out of range');
-  Re_data[base+i]:=value;
+  fdata[base+i].Re:=value;
 end;
 
 procedure ComplexTernary1D.set_Im(i: Integer; value: Real);
 begin
   assert((i<=fN) and (i>=-fN),'set_Im index out of range');
-  Im_data[base+i]:=value;
+  fdata[base+i].Im:=value;
 end;
 
 procedure ComplexTernary1D.inversion;
@@ -137,14 +139,14 @@ begin
       i:=i+k;
     end;
     if (j<i)  then begin
-      SwapFloats(Re_data[base+i],Re_data[base+j]);
-      SwapFloats(Im_data[base+i],Im_data[base+j]);
-      SwapFloats(Re_data[base-i],Re_data[base-j]);
-      SwapFloats(Im_data[base-i],Im_data[base-j]);
+      SwapFloats(fdata[base+i].re,fdata[base+j].re);
+      SwapFloats(fdata[base+i].im,fdata[base+j].im);
+      SwapFloats(fdata[base-i].re,fdata[base-j].re);
+      SwapFloats(fdata[base-i].im,fdata[base-j].im);
     end
     else if (i<0) then begin
-      SwapFloats(Re_data[base+i],Re_data[base+j]);
-      SwapFloats(Im_data[base+i],Im_data[base+j]);
+      SwapFloats(fdata[base+i].re,fdata[base+j].re);
+      SwapFloats(fdata[base+i].im,fdata[base+j].im);
     end;
   end;
 end;
@@ -173,14 +175,15 @@ begin
     a:=fT div 3;
     b:=1;
     if k<j then begin
-      SwapFloats(Re_data[base+k],Re_data[base+j]);
-      SwapFloats(Im_data[base+k],Im_data[base+j]);
+      SwapFloats(fdata[base+k].Re,fdata[base+j].Re);
+      SwapFloats(fdata[base+k].Im,fdata[base+j].Im);
     end;
   end;
 end;
 
 procedure ComplexTernary1D.inversion_combined;
 var i,j,ik,a,b,ma,Tmin1: Integer;
+//    t: TComplexRec;
     t: Real;
 begin
   ma:=2*fN-2;
@@ -191,18 +194,18 @@ begin
   while j<=ma do begin
     //знаем, что здесь i>0
     if (j<i)  then begin
-      t:=Re_data[i];
-      Re_data[i]:=Re_data[j];
-      Re_data[j]:=t;
-      t:=Im_data[i];
-      Im_data[i]:=Im_data[j];
-      Im_data[j]:=t;
-      t:=Re_data[Tmin1-i];
-      Re_data[Tmin1-i]:=Re_data[Tmin1-j];
-      Re_data[Tmin1-j]:=t;
-      t:=Im_data[Tmin1-i];
-      Im_data[Tmin1-i]:=Im_data[Tmin1-j];
-      Im_data[Tmin1-j]:=t;
+      t:=fdata[i].Re;
+      fdata[i].Re:=fdata[j].Re;
+      fdata[j].Re:=t;
+      t:=fdata[i].Im;
+      fdata[i].Im:=fdata[j].Im;
+      fdata[j].Im:=t;
+      t:=fdata[Tmin1-i].Re;
+      fdata[Tmin1-i].Re:=fdata[Tmin1-j].Re;
+      fdata[Tmin1-j].Re:=t;
+      t:=fdata[Tmin1-i].Im;
+      fdata[Tmin1-i].Im:=fdata[Tmin1-j].Im;
+      fdata[Tmin1-j].Im:=t;
     end;
     //здесь наступает перенос, нужно узнать, на сколько разрядов
     inc(j);
@@ -214,37 +217,37 @@ begin
     end;
     inc(i,increments[b]);
     //i заведомо отрицательное, т.е. меньше fN
-    t:=Re_data[i];
-    Re_data[i]:=Re_data[j];
-    Re_data[j]:=t;
-    t:=Im_data[i];
-    Im_data[i]:=Im_data[j];
-    Im_data[j]:=t;
+    t:=fdata[i].Re;
+    fdata[i].Re:=fdata[j].Re;
+    fdata[j].Re:=t;
+    t:=fdata[i].Im;
+    fdata[i].Im:=fdata[j].Im;
+    fdata[j].Im:=t;
     //наконец, с -1 до 0 без переноса
     //можем прийти к отрицательному ответу!
     inc(i,ik);
     inc(j);
     if (j<i)  then begin
-      t:=Re_data[i];
-      Re_data[i]:=Re_data[j];
-      Re_data[j]:=t;
-      t:=Im_data[i];
-      Im_data[i]:=Im_data[j];
-      Im_data[j]:=t;
-      t:=Re_data[Tmin1-i];
-      Re_data[Tmin1-i]:=Re_data[Tmin1-j];
-      Re_data[Tmin1-j]:=t;
-      t:=Im_data[Tmin1-i];
-      Im_data[Tmin1-i]:=Im_data[Tmin1-j];
-      Im_data[Tmin1-j]:=t;
+      t:=fdata[i].Re;
+      fdata[i].Re:=fdata[j].Re;
+      fdata[j].Re:=t;
+      t:=fdata[i].Im;
+      fdata[i].Im:=fdata[j].Im;
+      fdata[j].Im:=t;
+      t:=fdata[Tmin1-i].Re;
+      fdata[Tmin1-i].Re:=fdata[Tmin1-j].Re;
+      fdata[Tmin1-j].Re:=t;
+      t:=fdata[Tmin1-i].Im;
+      fdata[Tmin1-i].Im:=fdata[Tmin1-j].Im;
+      fdata[Tmin1-j].Im:=t;
     end
     else if i<fN then begin
-      t:=Re_data[i];
-      Re_data[i]:=Re_data[j];
-      Re_data[j]:=t;
-      t:=Im_data[i];
-      Im_data[i]:=Im_data[j];
-      Im_data[j]:=t;
+      t:=fdata[i].Re;
+      fdata[i].Re:=fdata[j].Re;
+      fdata[j].Re:=t;
+      t:=fdata[i].Im;
+      fdata[i].Im:=fdata[j].Im;
+      fdata[j].Im:=t;
     end;
     //готовимся к следующей итерации - с 0 до 1 без переноса
     inc(i,ik);
@@ -277,14 +280,14 @@ begin
     for k:=-N1 to N1 do begin
        j:=base+big_incr*k;
        //отдельно обраб. нулевое значение - там не нужно фаз. множителей
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].Re;
+        y0:=fdata[j].Im;
         j:=j+incr;
-        xp1:=Re_data[j];
-        yp1:=Im_data[j];
+        xp1:=fdata[j].re;
+        yp1:=fdata[j].Im;
         j:=j-2*incr;
-        xm1:=Re_data[j];
-        ym1:=Im_data[j];
+        xm1:=fdata[j].re;
+        ym1:=fdata[j].im;
 
         xsum:=xp1+xm1;
         ysum:=yp1+ym1;
@@ -295,18 +298,18 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].Re:=Ax-xdif;
+        fdata[j].Im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].Re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
         //итого, 12 сложений и 4 умножения
        end;
@@ -327,21 +330,21 @@ begin
         //итерация для +i
         j:=base+i+big_incr*k;
        //x0,y0 - без изменений
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].re;
+        y0:=fdata[j].im;
         j:=j+incr;
         //а здесь надо умножить на фаз. множ.
         //элем. +1 - на W
-        tmpWr:=Re_data[j];
-        yp1:=Im_data[j];
+        tmpWr:=fdata[j].re;
+        yp1:=fdata[j].im;
 
         xp1:=tmpWr*Wr-yp1*Wi;
         yp1:=yp1*Wr+tmpWr*Wi;
 
         j:=j-2*incr;
         //элем. -1 умножаем на W* (сопряж)
-        tmpWr:=Re_data[j];
-        ym1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        ym1:=fdata[j].Im;
 
         xm1:=tmpWr*Wr+ym1*Wi;
         ym1:=ym1*Wr-tmpWr*Wi;
@@ -355,38 +358,38 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].Re:=Ax-xdif;
+        fdata[j].Im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].Re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
         //Теперь, то же самое для элемента -i
 
         j:=base-i+big_incr*k;
        //x0,y0 - без изменений
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].Re;
+        y0:=fdata[j].Im;
         j:=j+incr;
         //а здесь надо умножить на фаз. множ.
         //элем. +1 - на W* (т.к -i)
-        tmpWr:=Re_data[j];
-        yp1:=Im_data[j];
+        tmpWr:=fdata[j].re;
+        yp1:=fdata[j].Im;
 
         xp1:=tmpWr*Wr+yp1*Wi;
         yp1:=yp1*Wr-tmpWr*Wi;
 
         j:=j-2*incr;
         //элем. -1 умножаем на W
-        tmpWr:=Re_data[j];
-        ym1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        ym1:=fdata[j].Im;
 
         xm1:=tmpWr*Wr-ym1*Wi;
         ym1:=ym1*Wr+tmpWr*Wi;
@@ -400,18 +403,18 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].Re:=Ax-xdif;
+        fdata[j].im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].Re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].Re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
 
        end;
@@ -447,14 +450,14 @@ begin
     for k:=-N1 to N1 do begin
        j:=base+big_incr*k;
        //отдельно обраб. нулевое значение - там не нужно фаз. множителей
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].Re;
+        y0:=fdata[j].Im;
         j:=j+incr;
-        xp1:=Re_data[j];
-        yp1:=Im_data[j];
+        xp1:=fdata[j].Re;
+        yp1:=fdata[j].Im;
         j:=j-2*incr;
-        xm1:=Re_data[j];
-        ym1:=Im_data[j];
+        xm1:=fdata[j].Re;
+        ym1:=fdata[j].Im;
 
         xsum:=xp1+xm1;
         ysum:=yp1+ym1;
@@ -465,18 +468,18 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].Re:=Ax-xdif;
+        fdata[j].Im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].Re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].Re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
         //итого, 12 сложений и 4 умножения
        end;
@@ -497,21 +500,21 @@ begin
         //итерация для +i
         j:=base+i+big_incr*k;
        //x0,y0 - без изменений
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].Re;
+        y0:=fdata[j].Im;
         j:=j+incr;
         //а здесь надо умножить на фаз. множ.
         //элем. +1 - на W
-        tmpWr:=Re_data[j];
-        yp1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        yp1:=fdata[j].Im;
 
         xp1:=tmpWr*Wr-yp1*Wi;
         yp1:=yp1*Wr+tmpWr*Wi;
 
         j:=j-2*incr;
         //элем. -1 умножаем на W* (сопряж)
-        tmpWr:=Re_data[j];
-        ym1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        ym1:=fdata[j].Im;
 
         xm1:=tmpWr*Wr+ym1*Wi;
         ym1:=ym1*Wr-tmpWr*Wi;
@@ -525,38 +528,38 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].re:=Ax-xdif;
+        fdata[j].Im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].Re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
         //Теперь, то же самое для элемента -i
 
         j:=base-i+big_incr*k;
        //x0,y0 - без изменений
-        x0:=Re_data[j];
-        y0:=Im_data[j];
+        x0:=fdata[j].re;
+        y0:=fdata[j].im;
         j:=j+incr;
         //а здесь надо умножить на фаз. множ.
         //элем. +1 - на W* (т.к -i)
-        tmpWr:=Re_data[j];
-        yp1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        yp1:=fdata[j].Im;
 
         xp1:=tmpWr*Wr+yp1*Wi;
         yp1:=yp1*Wr-tmpWr*Wi;
 
         j:=j-2*incr;
         //элем. -1 умножаем на W
-        tmpWr:=Re_data[j];
-        ym1:=Im_data[j];
+        tmpWr:=fdata[j].Re;
+        ym1:=fdata[j].Im;
 
         xm1:=tmpWr*Wr-ym1*Wi;
         ym1:=ym1*Wr+tmpWr*Wi;
@@ -570,18 +573,18 @@ begin
         Ay:=y0-0.5*ysum;
         // 6 сложений и 4 умножения
         //сейчас j указывает на -1-й элемент
-        Re_data[j]:=Ax-xdif;
-        Im_data[j]:=Ay-ydif;
+        fdata[j].Re:=Ax-xdif;
+        fdata[j].Im:=Ay-ydif;
 
         j:=j+2*incr;
         //+1-й элемент
-        Re_data[j]:=Ax+xdif;
-        Im_data[j]:=Ay+ydif;
+        fdata[j].Re:=Ax+xdif;
+        fdata[j].Im:=Ay+ydif;
 
         j:=j-incr;
         //0-й элемент
-        Re_data[j]:=x0+xsum;
-        Im_data[j]:=y0+ysum;
+        fdata[j].Re:=x0+xsum;
+        fdata[j].Im:=y0+ysum;
 
 
        end;
