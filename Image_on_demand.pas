@@ -63,6 +63,7 @@ TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
   private
     fFilename: string;
     fBitmap: TAsyncSavePNG;
+//    fimageformat: string;
   protected
     procedure Execute; override;
   public
@@ -76,13 +77,13 @@ TScalingThread = class (TThread)
   private
     fOrig: TAsyncSavePNG; //ссылка на оригинальную картинку
     fScale: Real;
-    fbitmap: TBitmap;
+    fbitmap: TPngObject;
   protected
     procedure Execute; override;
   public
     constructor Create(aOrig: TAsyncSavePNG; ascale: Real);
     destructor Destroy; override;
-    function GetScaled: TBitmap;
+    function GetScaled: TPngObject;
 end;
 
 
@@ -109,6 +110,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     constructor LoadFromFile(aFilename: string); override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
+    function Get_Scaled_Btmp: TPngObject;
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure FreeWithoutSaving;
     procedure SaveToFile(filename: string); override;
@@ -202,7 +204,7 @@ var
 
 
 implementation
-uses SysUtils,strUtils,gamma_function,math;
+uses SysUtils,strUtils,gamma_function,math,typinfo;
 (*
       TAsyncSavePNG
                           *)
@@ -268,7 +270,7 @@ var INeedAVacation: Boolean;
     i: Integer;
 begin
   Assert(Assigned(fDoc));
-//  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
+  fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
   fDoc.CriticalSection.Acquire;
   try
     fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
@@ -346,6 +348,7 @@ end;
 procedure TLoadBitmapThread.Execute;
 var ext: string;
     pic: TPicture;
+    IntToIdent: TIntToIdent;
 begin
   if fFileName='' then Exit;
   ext:=Uppercase(ExtractFileExt(fFileName));
@@ -357,9 +360,16 @@ begin
     pic:=TPicture.Create;
     try
       pic.LoadFromFile(fFileName);
-      fBitmap:=TAsyncSavePNG.CreateBlank(color_RGB,8,pic.Width,pic.Height);
+      if pic.Graphic is TBitmap then begin
+        fBitmap:=TAsyncSavePng.Create;
+        fBitmap.Assign(TBitmap(pic.Graphic));
+//        fImageFormat:=GetEnumName(TypeInfo(TPixelFormat),Integer(TBitmap(pic.Graphic).PixelFormat));
+      end
+      else begin
+        fBitmap:=TAsyncSavePNG.CreateBlank(color_RGB,8,pic.Width,pic.Height);
 //    fBitmap.Resize(pic.Width,pic.Height);
-      fBitmap.Canvas.Draw(0,0,pic.Graphic);
+        fBitmap.Canvas.Draw(0,0,pic.Graphic);
+      end;
     finally
       pic.Free;
     end;
@@ -380,7 +390,6 @@ begin
   inherited Create(true);
   fOrig:=aOrig;
   fScale:=aScale;
-  fBitmap:=TBitmap.Create;
   //priority:=tpNormal;
   FreeOnTerminate:=false;
   Resume;
@@ -388,18 +397,22 @@ end;
 
 destructor TScalingThread.Destroy;
 begin
+  Terminate;  //сейчас не возымеет действия, но как-нибудь реализую
+  WaitFor;
   fBitmap.Free;
   inherited Destroy;
 end;
 
 procedure TScalingThread.Execute;
 begin
-  fBitmap.Width:=Round(fOrig.Width/fscale);
-  fBitmap.Height:=Round(fOrig.Height/fscale);
+  fBitmap:=TPngObject.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
+        Round(fOrig.Width*fscale),Round(fOrig.Height*fscale));
+//  fBitmap.Width:=Round(fOrig.Width/fscale);
+//  fBitmap.Height:=Round(fOrig.Height/fscale);
   fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
 end;
 
-function TScalingThread.GetScaled: TBitmap;
+function TScalingThread.GetScaled: TPngObject;
 begin
   Waitfor;
   Result:=fBitmap;
@@ -478,7 +491,7 @@ begin
   tryagain:
   CheckSynchronize(500);
   inc(i);
-  if i=20 then raise Exception.Create('WaitForAllDocsClearEvent timeout');
+  if i=120 then raise Exception.Create('WaitForAllDocsClearEvent timeout');
   case fAllDocsClearEvent.WaitFor(500) of
     wrTimeout: goto tryagain;
     wrError: raise Exception.Create('WaitForAllDocsClearEvent error');
@@ -542,11 +555,13 @@ begin
   end;
 //  fPrefetchedDoc.SaveAndFree; //потихоньку уничтожается, в т.ч из списка уйти должна
   fPrefetchedDoc:=doc;
-  log('prefetched doc: '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
+  if Assigned(doc) then begin
+    log('prefetched doc: '+ExtractFileName(fPrefetchedDoc.FileName)+'; addr='+IntToHex(Integer(fPrefetchedDoc),8));
   //документ загр. сразу, а вот картинку он тянет фоновым потоком
-  log('list count: '+IntToStr(count));
-  log('list of docs in progress (saving and destroying):');
-  log(AsText);
+    log('list count: '+IntToStr(count));
+    log('list of docs in progress (saving and destroying):');
+    log(AsText);
+  end;
 end;
 
 function TDocumentsSavingProgress.Count: Integer;
@@ -609,6 +624,23 @@ begin
   Result:=Image;
 end;
 
+function TRasterImageDocument.Get_Scaled_Btmp: TPngObject;
+var i: Integer;
+begin
+  if abs(fscale-1)<1e-4 then
+    Result:=fLoadThread.GetBitmap
+  else begin
+    for i:=0 to Length(fScalingThreads)-1 do
+      if abs(fscale-fScalingThreads[i].fScale)<1e-4 then begin
+        Result:=fScalingThreads[i].GetScaled;
+        Exit;
+      end;
+    //дошли до этого места - значит неизв. масштаб,
+    //могли бы смасштабировать на лету, но нам лень
+    Raise Exception.CreateFmt('incorrect scale %f',[fScale]);
+  end;
+end;
+
 procedure TRasterImageDocument.SaveAndFree;
 begin
   if Assigned(self) then
@@ -651,16 +683,17 @@ procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
 var c,i: Integer; //количество копий
     s: Real;
 begin
+//  documentsSavingProgress.Log('ImageFormat: '+fLoadThread.fimageformat);
   if Assigned(fLoadThread.FatalException) then
     raise fLoadThread.FatalException;
   if fScaleMultiplier=0 then Exit;
-  c:=Floor(ln(min(fLoadThread.GetBitmap.Width,fLoadThread.GetBitmap.Height) div 2)/ln(fScaleMultiplier));
+  c:=Floor(ln(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height) div 2)/ln(fScaleMultiplier));
   SetLength(fScalingThreads,c);
   s:=1;
   for i:=0 to c-1 do begin
     s:=s/fScaleMultiplier;
     fScalingThreads[i].Free;
-    fScalingThreads[i]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
+    fScalingThreads[i]:=TScalingThread.Create(fLoadThread.fBitmap,s);
   end;
 end;
 
