@@ -67,8 +67,7 @@ TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
   protected
     procedure Execute; override;
   public
-    constructor CreateBlank;
-    constructor Create(filename: string);
+    constructor Create(filename: string='');
     destructor Destroy; override;
     function GetBitmap: TAsyncSavePNG;
 end;
@@ -317,7 +316,7 @@ end;
 (*
     TLoadBitmapThread
                               *)
-constructor TLoadBitmapThread.Create(filename: string);
+constructor TLoadBitmapThread.Create(filename: string='');
 begin
   inherited Create(true);
   FreeAndNil(fBitmap);
@@ -325,16 +324,6 @@ begin
   //priority:=tpNormal;
   FreeOnTerminate:=false;
   Resume;
-end;
-
-constructor TLoadBitmapThread.CreateBlank;
-begin
-  inherited Create(true);
-  FreeAndNil(fBitmap);
-  fBitmap:=TAsyncSavePng.CreateBlank(color_RGB,8,0,0);
-  fFileName:='';
-  Resume;
-  //нет нужды вообще запускать поток - уже всё есть
 end;
 
 destructor TLoadBitmapThread.Destroy;
@@ -348,9 +337,11 @@ end;
 procedure TLoadBitmapThread.Execute;
 var ext: string;
     pic: TPicture;
-    IntToIdent: TIntToIdent;
 begin
-  if fFileName='' then Exit;
+  if fFileName='' then begin
+    fBitmap:=TAsyncSavePNG.CreateBlank(COLOR_RGB,8,0,0);
+    Exit;
+  end;
   ext:=Uppercase(ExtractFileExt(fFileName));
   if ext='.PNG' then begin
     fBitmap:=TAsyncSavePNG.Create;
@@ -405,11 +396,17 @@ end;
 
 procedure TScalingThread.Execute;
 begin
-  fBitmap:=TPngObject.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
-        Round(fOrig.Width*fscale),Round(fOrig.Height*fscale));
+  //чувствуется, придется самостоятельно реализовывать масштабирование
+  fOrig.Canvas.Lock;
 //  fBitmap.Width:=Round(fOrig.Width/fscale);
 //  fBitmap.Height:=Round(fOrig.Height/fscale);
-  fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
+  try
+    fBitmap:=TPngObject.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
+        Round(fOrig.Width*fscale),Round(fOrig.Height*fscale));
+    fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
+  finally
+    fOrig.Canvas.Unlock;
+  end;
 end;
 
 function TScalingThread.GetScaled: TPngObject;
@@ -588,7 +585,7 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  fLoadThread:=TLoadBitmapThread.CreateBlank;
+  fLoadThread:=TLoadBitmapThread.Create;
   fLoadThread.OnTerminate:=LoadThreadTerminate;
   BrushSize:=10;
   PrimaryColor:=clWhite;
@@ -607,6 +604,7 @@ begin
   inherited LoadFromFile(aFilename);
   s:=ExtractFilePath(aFilename);
   s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
+  fLoadThread.WaitFor;
   fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 end;
 
@@ -682,19 +680,27 @@ end;
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
 var c,i: Integer; //количество копий
     s: Real;
+    t: string;
 begin
+//debug
+  t:=Sender.ClassName+' $'+IntToHex(Integer(Sender),8);
+  if t='wtf' then Exit;
+//end of debug
 //  documentsSavingProgress.Log('ImageFormat: '+fLoadThread.fimageformat);
   if Assigned(fLoadThread.FatalException) then
     raise fLoadThread.FatalException;
   if fScaleMultiplier=0 then Exit;
   c:=Floor(ln(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height) div 2)/ln(fScaleMultiplier));
   SetLength(fScalingThreads,c);
+
   s:=1;
   for i:=0 to c-1 do begin
     s:=s/fScaleMultiplier;
     fScalingThreads[i].Free;
     fScalingThreads[i]:=TScalingThread.Create(fLoadThread.fBitmap,s);
   end;
+  
+  if t='wtf' then fScale:=0;
 end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);

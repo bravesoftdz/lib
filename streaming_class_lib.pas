@@ -25,7 +25,7 @@ TstreamingClass=class(TComponent)
     //опробуем классовые функции
     class function LoadComponentFromString(text: string): TComponent;
     class function LoadComponentFromFile(FileName: string): TComponent;
-    class function CloneComponent(source: TStreamingClass; owner: TComponent=nil): TComponent; 
+    class function CloneComponent(source: TStreamingClass; aowner: TComponent=nil): TComponent; 
     procedure Clear; virtual;
     //будет вызываться перед Assign, чтобы инициализировать объект нач. значениями
     procedure SaveToFile(filename: string); virtual;
@@ -59,6 +59,11 @@ procedure SwapVariants(var v1,v2: Variant);
 
 implementation
 
+uses SyncObjs;
+
+var fStreamingCriticalSection: TCriticalSection;  //операции в TFiler не являются
+//thread-safe, меняет на ходу DecimalSeparator. Придется по 1 операции за раз
+
 (*
       General procedures
                             *)
@@ -76,9 +81,29 @@ begin
 end;
 
 procedure SwapVariants(var v1,v2: Variant);
-var t: Variant;
+var t: TVarData;
 begin
-  t:=v1; v1:=v2; v2:=t;
+  t:=TVarData(v1); TVarData(v1):=TVarData(v2); TVarData(v2):=t;
+end;
+
+procedure ThreadSafeWriteComponent(stream: TStream; component: TComponent);
+begin
+  fStreamingCriticalSection.Acquire;
+  try
+    stream.WriteComponent(component);
+  finally
+    fStreamingCriticalSection.Release;
+  end;
+end;
+
+function ThreadSafeReadComponent(stream: TStream; component: TComponent): TComponent;
+begin
+  fStreamingCriticalSection.Acquire;
+  try
+    Result:=stream.ReadComponent(component);
+  finally
+    fStreamingCriticalSection.Release;
+  end;
 end;
 
 
@@ -241,10 +266,11 @@ var
 begin
   FileStream := TFileStream.Create(filename,fmCreate);
   try
-    if saveFormat=fBinary then FileStream.WriteComponent(Self)
+    if saveFormat=fBinary then
+      ThreadSafeWriteComponent(FileStream,Self)
     else begin
       BinStream:=TMemoryStream.Create;
-      BinStream.WriteComponent(Self);
+      ThreadSafeWriteComponent(BinStream,self);
       BinStream.Seek(0, soFromBeginning);
       if saveFormat=fAscii then ObjectBinaryToText(BinStream,Filestream)
       else begin
@@ -267,14 +293,20 @@ var BinStream: TMemoryStream;
     s: string;
 begin
   BinStream:=TMemoryStream.Create;
-  StrStream:=TStringStream.Create(s);
-  BinStream.WriteComponent(Self);
-  BinStream.Seek(0,soFromBeginning);
-  ObjectBinaryToText(BinStream,StrStream);
-  StrStream.Seek(0,soFromBeginning);
-  SaveToString:=StrStream.DataString;
-  StrStream.Free;
-  BinStream.Free;
+  try
+    StrStream:=TStringStream.Create(s);
+    try
+      ThreadSafeWriteComponent(BinStream,self);
+      BinStream.Seek(0,soFromBeginning);
+      ObjectBinaryToText(BinStream,StrStream);
+      StrStream.Seek(0,soFromBeginning);
+      SaveToString:=StrStream.DataString;
+    finally
+      StrStream.Free;
+    end;
+  finally
+    BinStream.Free;
+  end;
 end;
 
 constructor TstreamingClass.LoadFromFile(filename: string);
@@ -293,7 +325,7 @@ begin
       try
         ObjectTextToBinary(FileStream, BinStream);
         BinStream.Seek(0, soFromBeginning);
-        BinStream.ReadComponent(self);
+        ThreadSafeReadComponent(BinStream,self);
       finally
         BinStream.Free;
       end;
@@ -301,7 +333,7 @@ begin
 //      saveFormat:=fAscii;
     end
     else begin
-      FileStream.ReadComponent(self);
+      ThreadSafeReadComponent(FileStream,self);
 //      saveFormat:=fBinary;
     end;
   finally
@@ -316,12 +348,18 @@ var
 begin
   Create(nil);
   BinStream:=TMemoryStream.Create;
-  StrStream:=TStringStream.Create(text);
-  ObjectTextToBinary(StrStream,BinStream);
-  BinStream.Seek(0, soFromBeginning);
-  BinStream.ReadComponent(Self);
-  BinStream.Free;
-  StrStream.Free;
+  try
+    StrStream:=TStringStream.Create(text);
+    try
+      ObjectTextToBinary(StrStream,BinStream);
+      BinStream.Seek(0, soFromBeginning);
+      ThreadSafeReadComponent(BinStream,self);
+    finally
+      StrStream.Free;
+    end;
+  finally
+    BinStream.Free;
+  end;
 end;
 
 class function TStreamingClass.LoadComponentFromString(text: string): TComponent;
@@ -335,7 +373,7 @@ begin
     try
       ObjectTextToBinary(StrStream,BinStream);
       BinStream.Seek(0, soFromBeginning);
-      Result:=BinStream.ReadComponent(nil);
+      Result:=ThreadSafeReadComponent(BinStream,nil);
     finally
       BinStream.Free;
     end;
@@ -344,14 +382,15 @@ begin
   end;
 end;
 
-class function TStreamingClass.CloneComponent(source: TStreamingClass; owner: TComponent=nil): TComponent;
+class function TStreamingClass.CloneComponent(source: TStreamingClass; aowner: TComponent=nil): TComponent;
 var BinStream: TMemoryStream;
 begin
   BinStream:=TMemoryStream.Create;
   try
-    BinStream.WriteComponent(source);
+    ThreadSafeWriteComponent(BinStream,source);
     BinStream.Seek(0,soFromBeginning);
-    Result:=BinStream.ReadComponent(owner);
+    Result:=ThreadSafeReadComponent(BinStream,aowner);
+    Result:=BinStream.ReadComponent(aowner);
   finally
     BinStream.Free;
   end;
@@ -372,13 +411,13 @@ begin
       try
         ObjectTextToBinary(FileStream, BinStream);
         BinStream.Seek(0, soFromBeginning);
-        Result:=BinStream.ReadComponent(nil);
+        Result:=ThreadSafeReadComponent(BinStream,nil);
       finally
         BinStream.Free;
       end;
     end
     else
-      Result:=FileStream.ReadComponent(nil);
+      Result:=ThreadSafeReadComponent(FileStream,nil);
   finally
     FileStream.Free;
   end;
@@ -390,12 +429,18 @@ var
   BinStream: TMemoryStream;
 begin
   BinStream:=TMemoryStream.Create;
-  StrStream:=TStringStream.Create(text);
-  ObjectTextToBinary(StrStream,BinStream);
-  BinStream.Seek(0, soFromBeginning);
-  Result:=BinStream.ReadComponent(nil);
-  BinStream.Free;
-  StrStream.Free;
+  try
+    StrStream:=TStringStream.Create(text);
+    try
+      ObjectTextToBinary(StrStream,BinStream);
+      BinStream.Seek(0, soFromBeginning);
+      Result:=ThreadSafeReadComponent(BinStream,nil);
+    finally
+      StrStream.Free;
+    end;
+  finally
+    BinStream.Free;
+  end;
 end;
 
 
@@ -404,7 +449,7 @@ var FileStream: TFileStream;
 begin
   FileStream:=TFileStream.Create(filename,fmCreate);
   try
-    FileStream.WriteComponent(Self);
+    ThreadSafeWriteComponent(FileStream,self);
   finally
     FileStream.Free;
   end;
@@ -416,7 +461,7 @@ begin
   FileStream:=TFileStream.Create(filename,fmOpenRead);
   try
     FileStream.Seek(0, soFromBeginning);
-    FileStream.ReadComponent(self);
+    ThreadSafeReadComponent(FileStream,self);
   finally
     FileStream.Free;
   end;
@@ -427,11 +472,14 @@ var b: TMemoryStream;
 begin
   if source is TStreamingClass then begin
     b:=TMemoryStream.Create;
-    b.WriteComponent(TComponent(source));
-    b.Seek(0,soBeginning);
-    Clear;
-    b.ReadComponent(self);
-    b.Free;
+    try
+      ThreadSafeWriteComponent(b,TComponent(source));
+      b.Seek(0,soBeginning);
+      Clear;
+      ThreadSafeReadComponent(b,self);
+    finally
+      b.Free;
+    end;
   end
   else inherited Assign(source);
 end;
@@ -440,24 +488,30 @@ function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
 var bin1,bin2: TMemoryStream;
 begin
   bin1:=TMemoryStream.Create;
-  bin2:=TMemoryStream.Create;
-  bin1.WriteComponent(self);
-  bin2.WriteComponent(what);
-  bin1.Seek(0,soFromBeginning);
-  bin2.Seek(0,soFromBeginning);
-  if bin1.Size<>bin2.Size then begin
-    Result:=false;
-    //для отладки искл.
-(*
-    self.saveFormat:=fCyr;
-    self.SaveToFile('wtf1.txt');
-    what.saveFormat:=fCyr;
-    what.SaveToFile('wtf2.txt');
-    *)
-  end
-  else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
-  bin1.Free;
-  bin2.Free;
+  try
+    ThreadSafeWriteComponent(bin1,self);
+    bin1.Seek(0,soFromBeginning);
+    bin2:=TMemoryStream.Create;
+    try
+      ThreadSafeWriteComponent(bin2,what);
+      bin2.Seek(0,soFromBeginning);
+      if bin1.Size<>bin2.Size then begin
+        Result:=false;
+        //для отладки искл.
+        (*
+          self.saveFormat:=fCyr;
+          self.SaveToFile('wtf1.txt');
+          what.saveFormat:=fCyr;
+          what.SaveToFile('wtf2.txt');
+        *)
+      end
+      else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
+    finally
+      bin2.Free;
+    end;
+  finally
+    bin1.Free;
+  end;
 end;
 
 function TStreamingClass.EqualsByAnyOtherName(what: TStreamingClass): boolean;
@@ -603,5 +657,8 @@ function TStreamingClass.GetComponentValue(Component,LookUpRoot: TComponent): st
 
 
 
-
+initialization
+  fStreamingCriticalSection:=TCriticalSection.Create;
+finalization
+  FreeAndNil(fStreamingCriticalSection);
 end.
