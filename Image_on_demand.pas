@@ -3,7 +3,7 @@ unit Image_on_demand;
 interface
 
 uses classes,streaming_class_lib, syncObjs, pngImage, command_class_lib,graphics,
-  IGraphicObject_commands, ExtCtrls, Types;
+  IGraphicObject_commands, ExtCtrls, Types, pngimageAdvanced;
 
 type
 (*
@@ -18,10 +18,12 @@ end;
 *)
 TLogProc = procedure (text: string);
 
-TAsyncSavePNG = class (TPngObject)
+TAsyncSavePNG = class (TExtendedPngObject)
   public
     procedure SaveToFileAndFree(filename: string);
 end;
+
+TGetImageProc = function: TAsyncSavePng;
 
 TSavePNGThread = class (TThread)
   private
@@ -74,15 +76,15 @@ end;
 
 TScalingThread = class (TThread)
   private
-    fOrig: TAsyncSavePNG; //ссылка на оригинальную картинку
+    fGetImageProc: TGetImageProc; //ссылка на оригинальную картинку
     fScale: Real;
-    fbitmap: TPngObject;
+    fbitmap: TAsyncSavePng;
   protected
     procedure Execute; override;
   public
-    constructor Create(aOrig: TAsyncSavePNG; ascale: Real);
+    constructor Create(aGetImageProc: TGetImageProc; ascale: Real);
     destructor Destroy; override;
-    function GetScaled: TPngObject;
+    function GetScaled: TAsyncSavePNG;
 end;
 
 
@@ -99,7 +101,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TAsyncSavePNG;
   public
-    PercentDone: Integer; //инкапсул€ци€ ни к черту  
+    PercentDone: Integer; //инкапсул€ци€ ни к черту
     Image: TImage;
     ChangeRect: TRect;  //0,0,0,0 озн. пустую область
     onSavingProgress: TSavingProgressReport;
@@ -109,7 +111,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     constructor LoadFromFile(aFilename: string); override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
-    function Get_Scaled_Btmp: TPngObject;
+    function Get_Scaled_Btmp: TAsyncSavePNG;
     procedure SaveAndFree;  //им€ файла уже задано в документе
     procedure FreeWithoutSaving;
     procedure SaveToFile(filename: string); override;
@@ -130,7 +132,7 @@ TDocumentsSavingProgress = class (TObject)
     procedure ThreadTerminate(Sender: TObject);
     procedure WaitForAllDocsClearEvent;
   public
-    fDocumentsSaving: TThreadList;  
+    fDocumentsSaving: TThreadList;
     onSaveThreadTerminate: TNotifyEvent;
     Log: TLogProc;
     constructor Create;
@@ -203,7 +205,7 @@ var
 
 
 implementation
-uses SysUtils,strUtils,gamma_function,math,typinfo;
+uses SysUtils,strUtils,gamma_function,math,typinfo,forms;
 (*
       TAsyncSavePNG
                           *)
@@ -376,10 +378,10 @@ end;
 (*
     TScalingThread
                       *)
-constructor TScalingThread.Create(aOrig: TAsyncSavePNG; aScale: Real);
+constructor TScalingThread.Create(aGetImageProc: TGetImageProc; aScale: Real);
 begin
   inherited Create(true);
-  fOrig:=aOrig;
+  fGetImageProc:=aGetImageProc;
   fScale:=aScale;
   //priority:=tpNormal;
   FreeOnTerminate:=false;
@@ -401,15 +403,20 @@ begin
 //  fBitmap.Width:=Round(fOrig.Width/fscale);
 //  fBitmap.Height:=Round(fOrig.Height/fscale);
   try
-    fBitmap:=TPngObject.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
+    fBitmap:=TAsyncSavePNG.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
         Round(fOrig.Width*fscale),Round(fOrig.Height*fscale));
+    if fOrig.Header.ColorType=COLOR_PALETTE then begin
+//      fBitmap.Chunks.Add(TChunkPLTE);
+//      fBitmap.
+      fBitmap.Palette:=fOrig.Palette;
+    end;
     fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
   finally
     fOrig.Canvas.Unlock;
   end;
 end;
 
-function TScalingThread.GetScaled: TPngObject;
+function TScalingThread.GetScaled: TAsyncSavePNG;
 begin
   Waitfor;
   Result:=fBitmap;
@@ -622,7 +629,7 @@ begin
   Result:=Image;
 end;
 
-function TRasterImageDocument.Get_Scaled_Btmp: TPngObject;
+function TRasterImageDocument.Get_Scaled_Btmp: TAsyncSavePNG;
 var i: Integer;
 begin
   if abs(fscale-1)<1e-4 then
@@ -662,7 +669,7 @@ begin
   s:=LeftStr(s,Length(s)-5);
   filename:=s+ChangeFileExt(ExtractFileName(filename),'.png');
   If Changed or not FileExists(filename) then
-    btmp.SaveToFile(filename);
+    btmp.SmartSaveToFile(filename);
   initial_pos:=UndoTree.current;
   new_commands_added:=false;
 end;
@@ -687,9 +694,16 @@ begin
   if t='wtf' then Exit;
 //end of debug
 //  documentsSavingProgress.Log('ImageFormat: '+fLoadThread.fimageformat);
-  if Assigned(fLoadThread.FatalException) then
-    raise fLoadThread.FatalException;
-  if fScaleMultiplier=0 then Exit;
+  if Assigned(fLoadThread.FatalException) then begin
+    t:=Format('Ќе удалось загрузить изображение %s: %s',
+      [fLoadThread.fFilename,Exception(fLoadThread.FatalException).Message]);
+    Application.MessageBox(@t[1],'AMBIC');
+    Exit;
+  end;
+//    Exit;
+//     raise Exception.CreateFMT('Ќе удалось загрузить изображение %s: %s',
+//      [fLoadThread.fFilename,Exception(fLoadThread.FatalException).Message]);
+  if (fScaleMultiplier=0) or (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
   c:=Floor(ln(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height) div 2)/ln(fScaleMultiplier));
   SetLength(fScalingThreads,c);
 
@@ -699,7 +713,7 @@ begin
     fScalingThreads[i].Free;
     fScalingThreads[i]:=TScalingThread.Create(fLoadThread.fBitmap,s);
   end;
-  
+
   if t='wtf' then fScale:=0;
 end;
 

@@ -36,17 +36,15 @@ var gamma_table: Array [0..3333] of Integer;
 //для преобр. числа от 0 до 1 (1 - макс интенсивность) в целое от 0 до 255 - яркость пиксела
 function gamma(x: Real): Integer;
 begin
-  if x>0 then begin
-    if x<=1 then begin
-(*
-      if x>0.0031308 then Result:=Round(269.025*Exp(0.4166666667*Ln(x))-14.025)
-      else Result:=Round(x*3294.6);
-      *)
+//  if x>0 then begin
+//    if x<=1 then begin
+  assert(x>=0);
+  assert(x<=1);
       Result:=gamma_table[Round(x/0.0003)];
-    end
-    else Result:=255;
-  end
-  else Result:=0;
+//    end
+//    else Result:=255;
+//  end
+//  else Result:=0;
 end;
 
 function honest_gamma(x: Real): Integer;

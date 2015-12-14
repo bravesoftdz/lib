@@ -28,6 +28,7 @@ type
       property Re[i: integer]: Real read Re_value write set_Re;
       property Im[i: integer]: Real read Im_value write set_Im;
       property N: Integer read fN;
+      property T: Integer read fT;
 //      procedure generalFFT(inverse: boolean);
       procedure FFT;
       procedure inverseFFT;
