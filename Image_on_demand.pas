@@ -77,15 +77,15 @@ end;
 
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
+    fScaleNumber: Integer;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
-    fScale: Real;
-    fScaleMultiplier: Real;
     fLoadThread: TLoadBitmapThread;
     fScalingThreads: array of TScalingThread;
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TExtendedPngObject;
+    function GetRealScale: real;
   public
     PercentDone: Integer; //инкапсуляция ни к черту
     Image: TImage;
@@ -100,15 +100,15 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     function Get_Scaled_Btmp: TExtendedPNGObject;
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure FreeWithoutSaving;
-    procedure SaveToFile(filename: string); override;
-    procedure PrepareScales(scaleMultiplier: Real);
+    procedure SaveToFile(const filename: string); override;
     procedure Change; override;
   published
     property Btmp: TExtendedPNGObject read GetBtmp stored false;
+    property Scale: Real read GetRealScale stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
-    property Scale: Real read fScale write fScale;
+    property ScaleNumber: integer read fScaleNumber write fScaleNumber;
   end;
 
 TDocumentsSavingProgress = class (TObject)
@@ -215,7 +215,8 @@ end;
 
 procedure TSavePNGThread.Execute;
 begin
-  fImg.SmartSaveToFile(fFilename);
+  SafeSaveToFile(fImg.SmartSaveToFile,fFileName);
+//  fImg.SmartSaveToFile(fFilename);
   fImg.Free;
   ImageSavingProgress.SaveAndFreeTermination(self);
 end;
@@ -260,7 +261,8 @@ begin
   fDoc.Btmp.onSavingProgress:=GetProgressFromThread;
   fDoc.CriticalSection.Acquire;
   try
-    fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
+    SafeSaveToFile(fDoc.SaveToFile,fDoc.FileName);
+//    fDoc.SaveToFile(fDoc.FileName); //весьма вероятна ошибка (файл используется и др)
   finally
     fDoc.CriticalSection.Release;
   end;
@@ -452,8 +454,8 @@ end;
 constructor TDocumentsSavingProgress.Create;
 begin
   fDocumentsSaving:=TThreadList.Create;
-//  fDocumentsSaving.Duplicates:=dupIgnore;
-  fDocumentsSaving.Duplicates:=dupError;
+  fDocumentsSaving.Duplicates:=dupIgnore;
+//  fDocumentsSaving.Duplicates:=dupError;
   fAllDocsClearEvent:=TEvent.Create(nil,false,true,''); //не хотим имени, чтобы
   //одновременно запущенные 2 проги не "сцепились"
 end;
@@ -573,7 +575,6 @@ begin
   fLoadThread.OnTerminate:=LoadThreadTerminate;
   BrushSize:=10;
   PrimaryColor:=clWhite;
-  scale:=1;
 end;
 
 constructor TRasterImageDocument.CreateFromImageFile(aFileName: string);
@@ -606,21 +607,18 @@ begin
   Result:=Image;
 end;
 
-function TRasterImageDocument.Get_Scaled_Btmp: TExtendedPngObject;
-var i: Integer;
+function TRasterImageDocument.GetRealScale: Real;
 begin
-  if abs(fscale-1)<1e-4 then
-    Result:=fLoadThread.GetBitmap
-  else begin
-    for i:=0 to Length(fScalingThreads)-1 do
-      if abs(fscale-fScalingThreads[i].fScale)<1e-4 then begin
-        Result:=fScalingThreads[i].GetScaled;
-        Exit;
-      end;
-    //дошли до этого места - значит неизв. масштаб,
-    //могли бы смасштабировать на лету, но нам лень
-    Raise Exception.CreateFmt('incorrect scale %f',[fScale]);
-  end;
+  assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
+  if scaleNumber=0 then Result:=1
+  else Result:=fScalingThreads[scaleNumber-1].fScale;
+end;
+
+function TRasterImageDocument.Get_Scaled_Btmp: TExtendedPngObject;
+begin
+  assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
+  if scaleNumber=0 then Result:=fLoadThread.GetBitmap
+  else Result:=fScalingThreads[scaleNumber-1].GetScaled;
 end;
 
 procedure TRasterImageDocument.SaveAndFree;
@@ -637,16 +635,17 @@ begin
   Destroy;
 end;
 
-procedure TRasterImageDocument.SaveToFile(filename: string);
-var s: string;
+procedure TRasterImageDocument.SaveToFile(const filename: string);
+var s,fn1: string;
 begin
   if Changed or not FileExists(filename) then
     inherited SaveToFile(filename);
   s:=ExtractFilePath(filename);
   s:=LeftStr(s,Length(s)-5);
-  filename:=s+ChangeFileExt(ExtractFileName(filename),'.png');
-  If Changed or not FileExists(filename) then
-    btmp.SmartSaveToFile(filename);
+  fn1:=s+ChangeFileExt(ExtractFileName(filename),'.png');
+  If Changed or not FileExists(fn1) then
+    SafeSaveToFile(btmp.SmartSaveToFile,fn1);
+//    btmp.SmartSaveToFile(fn1);
   initial_pos:=UndoTree.current;
   new_commands_added:=false;
 end;
@@ -654,11 +653,6 @@ end;
 function TRasterImageDocument.GetBtmp: TExtendedPngObject;
 begin
   Result:=fLoadThread.GetBitmap;
-end;
-
-procedure TRasterImageDocument.PrepareScales(scaleMultiplier: Real);
-begin
-  fScaleMultiplier:=scaleMultiplier;
 end;
 
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
@@ -673,7 +667,7 @@ begin
     Exit;
   end;
   //ладно, смасштабируем здесь. Пока ровно через 2
-  if (fScaleMultiplier=0) or (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
+  if (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
   c:=Floor(log2(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height)));
   SetLength(fScalingThreads,c);
 

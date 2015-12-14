@@ -7,6 +7,8 @@ type
 
 StreamingClassSaveFormat=(fBinary,fAscii,fCyr);
 
+TSaveToFileProc = procedure(const filename: string) of object;
+
 TstreamingClass=class(TComponent)
   private
     procedure RecursiveEnsure(our_root,aowner: TStreamingClass);
@@ -18,19 +20,19 @@ TstreamingClass=class(TComponent)
   public
     saveFormat: StreamingClassSaveFormat;
     function GetComponentValue(Component,LookUpRoot: TComponent): string;
-    constructor LoadFromFile(filename: string); virtual;  //неужели до мен€ дошло?
-    constructor LoadFromString(text: string);
+    constructor LoadFromFile(const filename: string); virtual;  //неужели до мен€ дошло?
+    constructor LoadFromString(const text: string);
     constructor Clone(source: TStreamingClass;owner: TComponent=nil);
     //конструктор это конечно хорошо, однако нужно знать, какой класс имеет созд. объект
     //опробуем классовые функции
-    class function LoadComponentFromString(text: string): TComponent;
-    class function LoadComponentFromFile(FileName: string): TComponent;
-    class function CloneComponent(source: TStreamingClass; aowner: TComponent=nil): TComponent; 
+    class function LoadComponentFromString(const text: string): TComponent;
+    class function LoadComponentFromFile(const FileName: string): TComponent;
+    class function CloneComponent(source: TStreamingClass; aowner: TComponent=nil): TComponent;
     procedure Clear; virtual;
     //будет вызыватьс€ перед Assign, чтобы инициализировать объект нач. значени€ми
-    procedure SaveToFile(filename: string); virtual;
-    procedure SaveBinaryToFile(filename: string);
-    procedure LoadBinaryFromFile(filename: string);
+    procedure SaveToFile(const filename: string); virtual;
+    procedure SaveBinaryToFile(const filename: string);
+    procedure LoadBinaryFromFile(const filename: string);
     function SaveToString: string;
     function CreateFromString(text: string): TComponent;
 
@@ -57,6 +59,8 @@ procedure SwapIntegers(var i1,i2: Integer);
 procedure SwapFloats(var f1,f2: Real);
 procedure SwapVariants(var v1,v2: Variant);
 
+procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
+
 implementation
 
 uses SyncObjs;
@@ -67,6 +71,28 @@ var fStreamingCriticalSection: TCriticalSection;  //операции в TFiler не €вл€ютс
 (*
       General procedures
                             *)
+
+procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
+var backupName: string;
+begin
+  if FileExists(filename) then begin
+    BackupName := ChangeFileExt(FileName, '.BAK');
+    if not RenameFile(FileName,BackupName) then
+      Raise Exception.Create('couldn''t create BAK file, save procedure canceled');
+    //если попали сюда, то бекап уже есть
+    try
+      saveProc(filename);
+      DeleteFile(BackUpName);
+    except
+      if FileExists(FileName) then
+        DeleteFile(FileName);
+      RenameFile(BackupName,FileName); //если не переименуетс€, придетс€ уж юзеру смотреть
+      raise;
+    end;
+  end
+  else
+    saveProc(fileName);
+end;
 
 procedure SwapIntegers(var i1,i2: Integer);
 var t: Integer;
@@ -258,7 +284,7 @@ begin
   RecursiveEnsure(self,aowner);
 end;
 
-procedure TstreamingClass.SaveToFile(filename: string);
+procedure TstreamingClass.SaveToFile(const filename: string);
 var
   BinStream: TMemoryStream;
   BinStreamCyr: TMemoryStream;
@@ -309,7 +335,7 @@ begin
   end;
 end;
 
-constructor TstreamingClass.LoadFromFile(filename: string);
+constructor TstreamingClass.LoadFromFile(const filename: string);
 var
   FileStream: TFileStream;
   BinStream: TMemoryStream;
@@ -341,7 +367,7 @@ begin
   end;
 end;
 
-constructor TstreamingClass.LoadFromString(text: string);
+constructor TstreamingClass.LoadFromString(const text: string);
 var
   StrStream: TStringStream;
   BinStream: TMemoryStream;
@@ -362,7 +388,7 @@ begin
   end;
 end;
 
-class function TStreamingClass.LoadComponentFromString(text: string): TComponent;
+class function TStreamingClass.LoadComponentFromString(const text: string): TComponent;
 var
   StrStream: TStringStream;
   BinStream: TMemoryStream;
@@ -396,7 +422,7 @@ begin
   end;
 end;
 
-class function TStreamingClass.LoadComponentFromFile(FileName: string): TComponent;
+class function TStreamingClass.LoadComponentFromFile(const FileName: string): TComponent;
 var
   FileStream: TFileStream;
   BinStream: TMemoryStream;
@@ -444,7 +470,7 @@ begin
 end;
 
 
-procedure TstreamingClass.SaveBinaryToFile(filename: string);
+procedure TstreamingClass.SaveBinaryToFile(const filename: string);
 var FileStream: TFileStream;
 begin
   FileStream:=TFileStream.Create(filename,fmCreate);
@@ -455,7 +481,7 @@ begin
   end;
 end;
 
-procedure TstreamingClass.LoadBinaryFromFile(filename: string);
+procedure TstreamingClass.LoadBinaryFromFile(const filename: string);
 var FileStream: TFileStream;
 begin
   FileStream:=TFileStream.Create(filename,fmOpenRead);
