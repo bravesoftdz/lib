@@ -94,7 +94,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure AddToChangeRect(const A: TRect);
     constructor Create(aOwner: TComponent); override;
     constructor CreateFromImageFile(aFileName: string);
-    constructor LoadFromFile(aFilename: string); override;
+    constructor LoadFromFile(const aFilename: string); override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
     function Get_Scaled_Btmp: TExtendedPNGObject;
@@ -378,7 +378,7 @@ end;
 
 destructor TScalingThread.Destroy;
 begin
-  Terminate;  //сейчас не возымеет действия, но как-нибудь реализую
+  Terminate;
   WaitFor;
   fBitmap.Free;
   inherited Destroy;
@@ -388,8 +388,15 @@ procedure TScalingThread.Execute;
 var img: TExtendedPNGObject;
 begin
   //чувствуется, придется самостоятельно реализовывать масштабирование
-  img:=fGetImageProc();
-  fBitmap:=img.Get2TimesDownScaled;
+  img:=fGetImageProc(); //возможно ожидание, когда нам дадут, наконец, картинку
+  if Assigned(img) and not Terminated then begin
+    img.Synchronizer.BeginRead;
+    try
+      fBitmap:=img.Get2TimesDownScaled;
+    finally
+      img.Synchronizer.EndRead;
+    end;
+  end;
 end;
 
 function TScalingThread.GetScaled: TExtendedPngObject;
@@ -583,7 +590,7 @@ begin
   fLoadThread.Create(aFileName);
 end;
 
-constructor TRasterImageDocument.LoadFromFile(aFilename: string);
+constructor TRasterImageDocument.LoadFromFile(const aFilename: string);
 var s: string;
 begin
   inherited LoadFromFile(aFilename);
@@ -668,9 +675,10 @@ begin
   end;
   //ладно, смасштабируем здесь. Пока ровно через 2
   if (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
+
+
   c:=Floor(log2(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height)));
   SetLength(fScalingThreads,c);
-
   s:=0.5;
   fScalingThreads[0].Free;
   fScalingThreads[0]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
@@ -679,6 +687,7 @@ begin
     fScalingThreads[i].Free;
     fScalingThreads[i]:=TScalingThread.Create(fScalingThreads[i-1].GetScaled,s);
   end;
+  
 end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);

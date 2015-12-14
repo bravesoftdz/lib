@@ -214,7 +214,7 @@ type
       DoneStatusPanel: TStatusPanel;
       FileName: string;
       constructor Create(Aowner: TComponent); override;
-      constructor LoadFromFile(aFileName: string); override;
+      constructor LoadFromFile(const aFileName: string); override;
       constructor LoadFromTemporaryFile(aFileName: string);
       procedure AfterConstruction; override;
       destructor Destroy; override;
@@ -814,7 +814,7 @@ begin
   fCriticalSection:=TCriticalSection.Create;
 end;
 
-constructor TAbstractDocument.LoadFromFile(aFileName: string);
+constructor TAbstractDocument.LoadFromFile(const aFileName: string);
 begin
   inherited LoadFromFile(aFileName);
   FileName:=aFileName;
@@ -927,39 +927,42 @@ end;
 function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
 begin
   fCriticalSection.Acquire;
-  BeginHashEvent.SetEvent;
-  undotree.InsertComponent(command);
-  //может быть, не нужно исполнять конкретно эту команду, она уже есть
-  //именно когда обе команды еще не исполнены, их можно сравнивать
-  if undotree.CheckForExistingCommand(command) then begin
-    //состояние уже поменялось, мы выполнили существующую команду
-    change;
-    //но history не надо перестраивать, лишь указать тек. команду
-    if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
-      TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
-    command.Free;
-    Result:=false;
-  end
-  else
-    if command.Execute then begin
-      undotree.RemoveComponent(command);
-      UndoTree.Add(command);
-      Change;
+  try
+    BeginHashEvent.SetEvent;
+    undotree.InsertComponent(command);
+    //может быть, не нужно исполнять конкретно эту команду, она уже есть
+    //именно когда обе команды еще не исполнены, их можно сравнивать
+    if undotree.CheckForExistingCommand(command) then begin
+      //состояние уже поменялось, мы выполнили существующую команду
+      change;
+      //но history не надо перестраивать, лишь указать тек. команду
       if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
-        TAbstractDocumentActionList(fActionList).ChangeHistory;
-      new_commands_added:=true;
-      if (command is THashedCommand) then begin
-        BeginHashEvent.ResetEvent;
-        THashingThread.Create(THashedCommand(command),false);
-      end;
-      Result:=true;
-    end
-    else begin
+        TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
       command.Free;
       Result:=false;
-    end;
-  fCriticalSection.Leave;
-  WaitForHashEvent;
+    end
+    else
+      if command.Execute then begin
+        undotree.RemoveComponent(command);
+        UndoTree.Add(command);
+        Change;
+        if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
+          TAbstractDocumentActionList(fActionList).ChangeHistory;
+        new_commands_added:=true;
+        if (command is THashedCommand) then begin
+          BeginHashEvent.ResetEvent;
+          THashingThread.Create(THashedCommand(command),false);
+        end;
+        Result:=true;
+      end
+      else begin
+        command.Free;
+        Result:=false;
+      end;
+    WaitForHashEvent;
+  finally
+    fCriticalSection.Leave;
+  end;
 end;
 
 procedure TAbstractDocument.Save;
