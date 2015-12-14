@@ -18,21 +18,21 @@ end;
 *)
 TLogProc = procedure (text: string);
 
+TGetImageProc = function: TExtendedPngObject of object;
+
 TAsyncSavePNG = class (TExtendedPngObject)
   public
     procedure SaveToFileAndFree(filename: string);
 end;
 
-TGetImageProc = function: TAsyncSavePng;
-
 TSavePNGThread = class (TThread)
   private
-    fImg: TAsyncSavePNG;
+    fImg: TExtendedPngObject;
     fFileName: string;
   protected
     procedure Execute; override;
   public
-    constructor Create(Img: TAsyncSavePNG; filename: string);
+    constructor Create(Img: TExtendedPNGObject; filename: string);
 end;
 
 TImageSavingProgress = class (TObject)
@@ -49,48 +49,34 @@ TImageSavingProgress = class (TObject)
     property Counter: Integer read fCounter;
   end;
 
-(*
-TDocumentPrefetchThread = class (TThread)
-  private
-    fFileName: string;
-  protected
-    procedure Execute; override;
-    function GetDoc: TAbstractDocument;
-  public
-    constructor Create(Filename: string);
-end;
-*)
-
 TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
   private
     fFilename: string;
-    fBitmap: TAsyncSavePNG;
-//    fimageformat: string;
+    fBitmap: TExtendedPngObject;
   protected
     procedure Execute; override;
   public
     constructor Create(filename: string='');
     destructor Destroy; override;
-    function GetBitmap: TAsyncSavePNG;
+    function GetBitmap: TExtendedPngObject;
 end;
 
 TScalingThread = class (TThread)
   private
     fGetImageProc: TGetImageProc; //ссылка на оригинальную картинку
     fScale: Real;
-    fbitmap: TAsyncSavePng;
+    fbitmap: TExtendedPngObject;
   protected
     procedure Execute; override;
   public
     constructor Create(aGetImageProc: TGetImageProc; ascale: Real);
     destructor Destroy; override;
-    function GetScaled: TAsyncSavePNG;
+    function GetScaled: TExtendedPngObject;
 end;
 
 
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
-//    fBtmp: TAsyncSavePNG;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
@@ -99,7 +85,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fLoadThread: TLoadBitmapThread;
     fScalingThreads: array of TScalingThread;
     procedure LoadThreadTerminate(Sender: TObject);
-    function GetBtmp: TAsyncSavePNG;
+    function GetBtmp: TExtendedPngObject;
   public
     PercentDone: Integer; //инкапсул€ци€ ни к черту
     Image: TImage;
@@ -111,14 +97,14 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     constructor LoadFromFile(aFilename: string); override;
     destructor Destroy; override;
     function Get_Image: TImage; override;
-    function Get_Scaled_Btmp: TAsyncSavePNG;
+    function Get_Scaled_Btmp: TExtendedPNGObject;
     procedure SaveAndFree;  //им€ файла уже задано в документе
     procedure FreeWithoutSaving;
     procedure SaveToFile(filename: string); override;
     procedure PrepareScales(scaleMultiplier: Real);
     procedure Change; override;
   published
-    property Btmp: TAsyncSavePNG read GetBtmp stored false;
+    property Btmp: TExtendedPNGObject read GetBtmp stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
@@ -166,8 +152,8 @@ TRasterImageDocumentCommand = class (TAbstractTreeCommand)
 TPatchImageCommand = class (TRasterImageDocumentCommand)
 //базова€ команда при работе с растровыми изображени€ми
   protected
-    fDiff: TPngObject;
-    fPredictor: TPngObject;
+    fDiff: TExtendedPngObject;
+    fPredictor: TExtendedPngObject;
     fLeft,fTop,fRight,fBottom: Integer; //расположение заплатки
     procedure GetBounds; virtual; abstract;//инициализировать fRect
     function UndoPrediction: Boolean; virtual;  //false означает
@@ -180,7 +166,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     function Execute: Boolean; override;
     function Undo: Boolean; override;
   published
-    property diff: TPngObject read fDiff write fDiff;
+    property diff: TExtendedPngObject read fDiff write fDiff;
   end;
 
 TRectBrushCommand = class (TPatchImageCommand)
@@ -217,7 +203,7 @@ end;
 (*
       TSavePNGThread
                         *)
-constructor TSavePNGThread.Create(Img: TAsyncSavePNG; filename: string);
+constructor TSavePNGThread.Create(Img: TExtendedPNGObject; filename: string);
 begin
   inherited Create(true);
   fImg:=Img;
@@ -229,7 +215,7 @@ end;
 
 procedure TSavePNGThread.Execute;
 begin
-  fImg.SaveToFile(fFilename);
+  fImg.SmartSaveToFile(fFilename);
   fImg.Free;
   ImageSavingProgress.SaveAndFreeTermination(self);
 end;
@@ -369,7 +355,7 @@ begin
   end;
 end;
 
-function TLoadBitmapThread.GetBitmap: TAsyncSavePNG;
+function TLoadBitmapThread.GetBitmap: TExtendedPNGObject;
 begin
   WaitFor;
   Result:=fBitmap;
@@ -397,29 +383,20 @@ begin
 end;
 
 procedure TScalingThread.Execute;
+var img: TExtendedPNGObject;
 begin
   //чувствуетс€, придетс€ самосто€тельно реализовывать масштабирование
-  fOrig.Canvas.Lock;
-//  fBitmap.Width:=Round(fOrig.Width/fscale);
-//  fBitmap.Height:=Round(fOrig.Height/fscale);
-  try
-    fBitmap:=TAsyncSavePNG.CreateBlank(fOrig.Header.ColorType,fOrig.Header.BitDepth,
-        Round(fOrig.Width*fscale),Round(fOrig.Height*fscale));
-    if fOrig.Header.ColorType=COLOR_PALETTE then begin
-//      fBitmap.Chunks.Add(TChunkPLTE);
-//      fBitmap.
-      fBitmap.Palette:=fOrig.Palette;
-    end;
-    fBitmap.Canvas.CopyRect(Rect(0,0,fBitmap.Width,fBitmap.Height),fOrig.Canvas,Rect(0,0,fOrig.Width,fOrig.Height));
-  finally
-    fOrig.Canvas.Unlock;
-  end;
+  img:=fGetImageProc();
+  fBitmap:=img.Get2TimesDownScaled;
 end;
 
-function TScalingThread.GetScaled: TAsyncSavePNG;
+function TScalingThread.GetScaled: TExtendedPngObject;
 begin
   Waitfor;
-  Result:=fBitmap;
+  if FatalException=nil then
+    Result:=fBitmap
+  else
+    Raise exception.Create(Exception(FatalException).Message);
 end;
 
 (*
@@ -629,7 +606,7 @@ begin
   Result:=Image;
 end;
 
-function TRasterImageDocument.Get_Scaled_Btmp: TAsyncSavePNG;
+function TRasterImageDocument.Get_Scaled_Btmp: TExtendedPngObject;
 var i: Integer;
 begin
   if abs(fscale-1)<1e-4 then
@@ -674,7 +651,7 @@ begin
   new_commands_added:=false;
 end;
 
-function TRasterImageDocument.GetBtmp: TAsyncSavePNG;
+function TRasterImageDocument.GetBtmp: TExtendedPngObject;
 begin
   Result:=fLoadThread.GetBitmap;
 end;
@@ -685,36 +662,29 @@ begin
 end;
 
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
-var c,i: Integer; //количество копий
+var t: string;
+    i,c: Integer;
     s: Real;
-    t: string;
 begin
-//debug
-  t:=Sender.ClassName+' $'+IntToHex(Integer(Sender),8);
-  if t='wtf' then Exit;
-//end of debug
-//  documentsSavingProgress.Log('ImageFormat: '+fLoadThread.fimageformat);
   if Assigned(fLoadThread.FatalException) then begin
     t:=Format('Ќе удалось загрузить изображение %s: %s',
       [fLoadThread.fFilename,Exception(fLoadThread.FatalException).Message]);
     Application.MessageBox(@t[1],'AMBIC');
     Exit;
   end;
-//    Exit;
-//     raise Exception.CreateFMT('Ќе удалось загрузить изображение %s: %s',
-//      [fLoadThread.fFilename,Exception(fLoadThread.FatalException).Message]);
+  //ладно, смасштабируем здесь. ѕока ровно через 2
   if (fScaleMultiplier=0) or (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
-  c:=Floor(ln(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height) div 2)/ln(fScaleMultiplier));
+  c:=Floor(log2(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height)));
   SetLength(fScalingThreads,c);
 
-  s:=1;
-  for i:=0 to c-1 do begin
-    s:=s/fScaleMultiplier;
+  s:=0.5;
+  fScalingThreads[0].Free;
+  fScalingThreads[0]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
+  for i:=1 to c-1 do begin
+    s:=s/2;
     fScalingThreads[i].Free;
-    fScalingThreads[i]:=TScalingThread.Create(fLoadThread.fBitmap,s);
+    fScalingThreads[i]:=TScalingThread.Create(fScalingThreads[i-1].GetScaled,s);
   end;
-
-  if t='wtf' then fScale:=0;
 end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);
@@ -751,10 +721,10 @@ end;
 constructor TPatchImageCommand.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  fDiff:=TPngObject.CreateBlank(color_RGB,8,0,0); //будет сохран€тьс€ в файл
+  fDiff:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0); //будет сохран€тьс€ в файл
   fDiff.Filters:=[pfNone, pfSub, pfUp, pfAverage, pfPaeth];
   fDiff.CompressionLevel:=9;
-  fPredictor:=TPngObject.CreateBlank(color_RGB,8,0,0);  //хранитс€ временно
+  fPredictor:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0);  //хранитс€ временно
 end;
 
 destructor TPatchImageCommand.Destroy;
