@@ -6,66 +6,47 @@ uses classes,streaming_class_lib, syncObjs, pngImage, command_class_lib,graphics
   IGraphicObject_commands, ExtCtrls, Types, pngimageAdvanced;
 
 type
-(*
-TImageOnDemandStatus = (iodWaitForLoading,iodImageInMemory,iodImageSaved);
 
-TImageOnDemand = class (TStreamingClass)
-  private
-    fImage: TPngObject;
-    fCriticalSection: TCriticalSection;
-
-end;
-*)
 TLogProc = procedure (text: string);
 
 TGetImageProc = function: TExtendedPngObject of object;
 
-TAsyncSavePNG = class (TExtendedPngObject)
-  public
-    procedure SaveToFileAndFree(filename: string);
+IGetPngThread = interface
+['{3726C791-0100-44DA-8D5A-E900A4EB6A62}']
+  function GetImage: TExtendedPngObject;
 end;
 
-TSavePNGThread = class (TThread)
+TAbstractGetImageThread = class (TThread, IGetPngThread)
   private
-    fImg: TExtendedPngObject;
-    fFileName: string;
+    fEvent: TEvent;
   protected
-    procedure Execute; override;
+    function _AddRef: Integer; stdcall;
+    function _Release: Integer; stdcall;
   public
-    constructor Create(Img: TExtendedPNGObject; filename: string);
+    constructor Create; virtual;
+    destructor Destroy; override;
+    function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
+    function GetImage: TExtendedPngObject;
 end;
-
-TImageSavingProgress = class (TObject)
-  private
-    fCounter: Integer;
-    fCriticalSection: TCriticalSection;
-    fAllClearEvent: TEvent;
-  public
-    constructor Create;
-    destructor Destroy; override; //освободить объекты и дождаться завершения всех потоков
-    procedure WaitForAllClearEvent;
-    procedure SaveAndFreeStartup;
-    procedure SaveAndFreeTermination(Sender: TObject);  //notify event
-    property Counter: Integer read fCounter;
-  end;
 
 TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
   private
     fFilename: string;
     fBitmap: TExtendedPngObject;
+    fLock: TCriticalSection;
   protected
     procedure Execute; override;
   public
-    constructor Create(filename: string='');
+    constructor Create(aOnTerminate: TNotifyEvent;filename: string='');
     destructor Destroy; override;
     function GetBitmap: TExtendedPngObject;
 end;
-
 TScalingThread = class (TThread)
   private
     fGetImageProc: TGetImageProc; //ссылка на оригинальную картинку
     fScale: Real;
     fbitmap: TExtendedPngObject;
+    fLock: TCriticalSection;
   protected
     procedure Execute; override;
   public
@@ -73,8 +54,6 @@ TScalingThread = class (TThread)
     destructor Destroy; override;
     function GetScaled: TExtendedPngObject;
 end;
-
-
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
     fScaleNumber: Integer;
@@ -110,7 +89,6 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     property BrushSize: Integer read fBrushSize write fBrushSize;
     property ScaleNumber: integer read fScaleNumber write fScaleNumber;
   end;
-
 TDocumentsSavingProgress = class (TObject)
   private
     fAllDocsClearEvent: TEvent; //возвращаемся к истокам - работало неплохо
@@ -128,7 +106,6 @@ TDocumentsSavingProgress = class (TObject)
     function Count: Integer;  //debug
     function AsText: string; //debug
   end;
-
 TSaveDocThread = class (TThread)
   private
     fPercentDone: Integer;  //а как результат для GetProgress
@@ -143,12 +120,10 @@ TSaveDocThread = class (TThread)
     fDoc: TRasterImageDocument;
     constructor Create(doc: TRasterImageDocument);
 end;
-
 TRasterImageDocumentCommand = class (TAbstractTreeCommand)
   public
     function GetDoc: TRasterImageDocument;
   end;
-
 TPatchImageCommand = class (TRasterImageDocumentCommand)
 //базовая команда при работе с растровыми изображениями
   protected
@@ -168,7 +143,6 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
   published
     property diff: TExtendedPngObject read fDiff write fDiff;
   end;
-
 TRectBrushCommand = class (TPatchImageCommand)
 //закрашивает прямоугольник текущей ширины (заданной в BrushSize) осн. цветом
 //реальное движение кисти порождает десятки, сотни таких команд.
@@ -186,40 +160,10 @@ TRectBrushCommand = class (TPatchImageCommand)
   end;
 
 var
-  ImageSavingProgress: TImageSavingProgress;  //для одиночных TAsyncSavePNG
   DocumentsSavingProgress: TDocumentsSavingProgress;  //для TRasterImageDocument
-
 
 implementation
 uses SysUtils,strUtils,gamma_function,math,typinfo,forms;
-(*
-      TAsyncSavePNG
-                          *)
-procedure TAsyncSavePNG.SaveToFileAndFree(filename: string);
-begin
-  TSavePNGThread.Create(self,filename); //запустится, выполнится и сам удалит
-end;
-
-(*
-      TSavePNGThread
-                        *)
-constructor TSavePNGThread.Create(Img: TExtendedPNGObject; filename: string);
-begin
-  inherited Create(true);
-  fImg:=Img;
-  fFilename:=filename;
-  FreeOnTerminate:=true;
-  ImageSavingProgress.SaveAndFreeStartup;
-  Resume;
-end;
-
-procedure TSavePNGThread.Execute;
-begin
-  SafeSaveToFile(fImg.SmartSaveToFile,fFileName);
-//  fImg.SmartSaveToFile(fFilename);
-  fImg.Free;
-  ImageSavingProgress.SaveAndFreeTermination(self);
-end;
 
 (*
     TSaveDocThread
@@ -306,13 +250,15 @@ end;
 (*
     TLoadBitmapThread
                               *)
-constructor TLoadBitmapThread.Create(filename: string='');
+constructor TLoadBitmapThread.Create(aOnTerminate: TNotifyEvent; filename: string='');
 begin
   inherited Create(true);
-  FreeAndNil(fBitmap);
+  fLock:=TCriticalSection.Create;
+  OnTerminate:=aOnTerminate;
   fFileName:=filename;
   //priority:=tpNormal;
   FreeOnTerminate:=false;
+  fBitmap:=TExtendedPngObject.Create;
   Resume;
 end;
 
@@ -320,6 +266,7 @@ destructor TLoadBitmapThread.Destroy;
 begin
   Terminate;  //сейчас не возымеет действия, но как-нибудь реализую
   WaitFor;
+  fLock.Free;
   fBitmap.Free;
   inherited Destroy;
 end;
@@ -328,29 +275,15 @@ procedure TLoadBitmapThread.Execute;
 var ext: string;
     pic: TPicture;
 begin
-  if fFileName='' then begin
-    fBitmap:=TAsyncSavePNG.CreateBlank(COLOR_RGB,8,0,0);
-    Exit;
-  end;
+  if fFileName='' then Exit;
   ext:=Uppercase(ExtractFileExt(fFileName));
-  if ext='.PNG' then begin
-    fBitmap:=TAsyncSavePNG.Create;
-    fBitmap.LoadFromFile(fFileName);
-  end
+  if ext='.PNG' then fBitmap.LoadFromFile(fFileName)
   else begin
     pic:=TPicture.Create;
     try
       pic.LoadFromFile(fFileName);
-      if pic.Graphic is TBitmap then begin
-        fBitmap:=TAsyncSavePng.Create;
-        fBitmap.Assign(TBitmap(pic.Graphic));
-//        fImageFormat:=GetEnumName(TypeInfo(TPixelFormat),Integer(TBitmap(pic.Graphic).PixelFormat));
-      end
-      else begin
-        fBitmap:=TAsyncSavePNG.CreateBlank(color_RGB,8,pic.Width,pic.Height);
-//    fBitmap.Resize(pic.Width,pic.Height);
-        fBitmap.Canvas.Draw(0,0,pic.Graphic);
-      end;
+      if pic.Graphic is TBitmap then fBitmap.Assign(TBitmap(pic.Graphic))
+      else fBitmap.Canvas.Draw(0,0,pic.Graphic);
     finally
       pic.Free;
     end;
@@ -359,8 +292,17 @@ end;
 
 function TLoadBitmapThread.GetBitmap: TExtendedPNGObject;
 begin
-  WaitFor;
-  Result:=fBitmap;
+  fLock.Acquire;
+  try
+    WaitFor;
+    if FatalException=nil then
+      if Terminated then Result:=nil else Result:=fBitmap
+    else
+      Result:=nil;    
+//      Raise Exception.Create(Exception(FatalException).Message);
+  finally
+    fLock.Leave;
+  end;
 end;
 
 (*
@@ -369,6 +311,7 @@ end;
 constructor TScalingThread.Create(aGetImageProc: TGetImageProc; aScale: Real);
 begin
   inherited Create(true);
+  fLock:=TCriticalSection.Create;
   fGetImageProc:=aGetImageProc;
   fScale:=aScale;
   //priority:=tpNormal;
@@ -380,6 +323,7 @@ destructor TScalingThread.Destroy;
 begin
   Terminate;
   WaitFor;
+  fLock.Free; //пока не освободится - не уничтожится
   fBitmap.Free;
   inherited Destroy;
 end;
@@ -390,7 +334,9 @@ begin
   //чувствуется, придется самостоятельно реализовывать масштабирование
   img:=fGetImageProc(); //возможно ожидание, когда нам дадут, наконец, картинку
   if Assigned(img) and not Terminated then begin
-    img.Synchronizer.BeginRead;
+    img.Synchronizer.BeginRead; //не даёт уничтожить img под носом
+                                //но что, если он был уничтожен между двумя этими
+                                //строками!?
     try
       fBitmap:=img.Get2TimesDownScaled;
     finally
@@ -401,58 +347,20 @@ end;
 
 function TScalingThread.GetScaled: TExtendedPngObject;
 begin
-  Waitfor;
-  if FatalException=nil then
-    Result:=fBitmap
-  else
-    Raise exception.Create(Exception(FatalException).Message);
-end;
-
-(*
-    TImageSavingProgress
-                              *)
-constructor TImageSavingProgress.Create;
-begin
-  inherited Create;
-  fCriticalSection:=TCriticalSection.Create;
-  fAllClearEvent:=TEvent.Create(nil,false,true,'ImageOnDemandAllClearEvent');
-end;
-
-procedure TImageSavingProgress.WaitForAllClearEvent;
-begin
-  case fAllClearEvent.WaitFor(20000) of
-    wrTimeout: raise Exception.Create('WaitForAllClearEvent timeout');
-    wrError: raise Exception.Create('WaitForAllClearEvent error');
-    wrAbandoned: raise Exception.Create('WaitForAllClearEvent abandoned');
-  end;
-end;
-
-destructor TImageSavingProgress.Destroy;
-begin
+  fLock.Acquire;
   try
-    WaitForAllClearEvent;
+    Waitfor;
+    if FatalException=nil then
+      if not Terminated then
+        Result:=fBitmap
+      else
+        Result:=nil
+    else
+      Result:=nil;
+//      Raise exception.Create(Exception(FatalException).Message);
   finally
-    fAllClearEvent.Free;
-    fCriticalSection.Free;
-    inherited Destroy;
+    fLock.Leave;
   end;
-end;
-
-procedure TImageSavingProgress.SaveAndFreeStartup;
-begin
-  fCriticalSection.Acquire;
-  inc(fCounter);
-  fAllClearEvent.ResetEvent;
-  fCriticalSection.Leave;
-end;
-
-procedure TImageSavingProgress.SaveAndFreeTermination(Sender: TObject);
-begin
-  fCriticalSection.Acquire;
-  dec(fCounter);
-  if fCounter=0 then
-    fAllClearEvent.SetEvent;
-  fCriticalSection.Leave;
 end;
 
 (*
@@ -578,8 +486,7 @@ end;
 constructor TRasterImageDocument.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  fLoadThread:=TLoadBitmapThread.Create;
-  fLoadThread.OnTerminate:=LoadThreadTerminate;
+  fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate);
   BrushSize:=10;
   PrimaryColor:=clWhite;
 end;
@@ -587,7 +494,8 @@ end;
 constructor TRasterImageDocument.CreateFromImageFile(aFileName: string);
 begin
   Create(nil);
-  fLoadThread.Create(aFileName);
+  fLoadThread.Free;
+  fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate,aFileName);
 end;
 
 constructor TRasterImageDocument.LoadFromFile(const aFilename: string);
@@ -596,8 +504,8 @@ begin
   inherited LoadFromFile(aFilename);
   s:=ExtractFilePath(aFilename);
   s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
-  fLoadThread.WaitFor;
-  fLoadThread.Create(s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
+  fLoadThread.Free;
+  fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate,s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 end;
 
 destructor TRasterImageDocument.Destroy;
@@ -676,7 +584,6 @@ begin
   //ладно, смасштабируем здесь. Пока ровно через 2
   if (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
 
-
   c:=Floor(log2(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height)));
   SetLength(fScalingThreads,c);
   s:=0.5;
@@ -706,8 +613,6 @@ begin
   inherited Change;
   //прорисуем изменения, причем при первом включении ChangeRect должен равняться
   //всему изображению!
-
-
 end;
 
 (*
@@ -844,13 +749,9 @@ begin
   Result:=false;
 end;
 
-
 initialization
   RegisterClasses([TRasterImageDocument,TRectBrushCommand]);
-  ImageSavingProgress:=TImageSavingProgress.Create;
   DocumentsSavingProgress:=TDocumentsSavingProgress.Create;
 finalization
-  ImageSavingProgress.Free;
   DocumentsSavingProgress.Free;
-
 end.
