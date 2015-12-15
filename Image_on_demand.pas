@@ -2,7 +2,7 @@ unit Image_on_demand;
 
 interface
 
-uses classes,streaming_class_lib, syncObjs, pngImage, command_class_lib,graphics,
+uses windows,classes,streaming_class_lib, syncObjs, pngImage, command_class_lib,graphics,
   IGraphicObject_commands, ExtCtrls, Types, pngimageAdvanced;
 
 type
@@ -14,54 +14,61 @@ TGetImageProc = function: TExtendedPngObject of object;
 IGetPngThread = interface
 ['{3726C791-0100-44DA-8D5A-E900A4EB6A62}']
   function GetImage: TExtendedPngObject;
+  procedure Halt;
+end;
+
+IGetPngScale = interface (IGetPngThread)
+['{6DC20893-9FC9-4FFB-8864-69D7D4064831}']
+  function GetScale: Real;
 end;
 
 TAbstractGetImageThread = class (TThread, IGetPngThread)
   private
+    fRefCount: Integer;
     fEvent: TEvent;
+    fBitmap: TExtendedPngObject;
+    fExceptionHandled: boolean;
   protected
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
   public
+    procedure Halt;
+    //гр€зно - если захотим одним скопом завершить толпу
+    //TThread, вызоветс€ "старый" terminate
     constructor Create; virtual;
     destructor Destroy; override;
     function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function GetImage: TExtendedPngObject;
 end;
 
-TLoadBitmapThread = class (TThread) //будет отвечать за картинку головой!
+TLoadBitmapThread = class (TAbstractGetImageThread, IGetPngThread) //будет отвечать за картинку головой!
   private
     fFilename: string;
-    fBitmap: TExtendedPngObject;
-    fLock: TCriticalSection;
   protected
     procedure Execute; override;
   public
-    constructor Create(aOnTerminate: TNotifyEvent;filename: string='');
-    destructor Destroy; override;
-    function GetBitmap: TExtendedPngObject;
+    constructor Create(aOnTerminate: TNotifyEvent;filename: string=''); reintroduce; overload;
 end;
-TScalingThread = class (TThread)
+
+TScalingThread = class (TAbstractGetImageThread, IGetPngThread, IGetPngScale)
   private
-    fGetImageProc: TGetImageProc; //ссылка на оригинальную картинку
+    fGetImageIntf: IGetPngThread; //ссылка на оригинальную картинку
     fScale: Real;
-    fbitmap: TExtendedPngObject;
-    fLock: TCriticalSection;
   protected
     procedure Execute; override;
   public
-    constructor Create(aGetImageProc: TGetImageProc; ascale: Real);
-    destructor Destroy; override;
-    function GetScaled: TExtendedPngObject;
+    constructor Create(aGetImageIntf: IGetPngThread; ascale: Real); reintroduce; overload;
+    function GetScale: Real;
 end;
+
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
     fScaleNumber: Integer;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
-    fLoadThread: TLoadBitmapThread;
-    fScalingThreads: array of TScalingThread;
+    fLoadThread: IGetPngThread;
+    fScalingThreads: array of IGetPngScale;
     procedure LoadThreadTerminate(Sender: TObject);
     function GetBtmp: TExtendedPngObject;
     function GetRealScale: real;
@@ -163,7 +170,148 @@ var
   DocumentsSavingProgress: TDocumentsSavingProgress;  //дл€ TRasterImageDocument
 
 implementation
+
 uses SysUtils,strUtils,gamma_function,math,typinfo,forms;
+
+(*
+    TAbstractGetImageThread
+                              *)
+(*
+  этот объект €вл€етс€ "владельцем" изображени€, которое должен получить либо
+  из файла, либо обработав какой-то другой объект, поддерживающий интерфейс
+  IGetPngThread.
+
+  ≈сли мы обратимс€ к этому объекту, пока изображение еще не загружено, выполнение
+  приостановитс€ до тех пор, пока
+  - загрузитс€ изображение, мы получим его и продолжим работу
+  - будет выполнен метод Terminate, объект возратит nil и уничтожитс€ при первой
+  возможности
+  *)
+function TAbstractGetImageThread._AddRef: Integer;
+begin
+  Result := InterlockedIncrement(FRefCount);
+end;
+
+function TAbstractGetImageThread._Release: Integer;
+begin
+  Result := InterlockedDecrement(FRefCount);
+  if Result = 0 then
+    Destroy;
+end;
+
+function TAbstractGetImageThread.QueryInterface(const IID: TGUID; out obj): HResult;
+begin
+  if GetInterface(IID, Obj) then
+    Result := 0
+  else
+    Result := E_NOINTERFACE;
+end;
+
+constructor TAbstractGetImageThread.Create;
+begin
+  inherited Create(true);
+  fEvent:=TEvent.Create(nil,true,false,'');
+end;
+
+destructor TAbstractGetImageThread.Destroy;
+begin
+  //должен запуститьс€ лишь тогда, когда никто не указывает на нас, поэтому
+  //все просто.
+  WaitFor;
+  fBitmap.Free;
+  fEvent.Free;
+  inherited;
+end;
+
+procedure TAbstractGetImageThread.Halt;
+begin
+  Terminate;
+  fEvent.SetEvent;
+end;
+
+function TAbstractGetImageThread.GetImage: TExtendedPngObject;
+begin
+  case fEvent.WaitFor(20000) of
+    wrTimeout: raise Exception.Create('GetImage.fEvent timeout');
+    wrError: raise Exception.Create('GetImage.fEvent error');
+    wrAbandoned: raise Exception.Create('GetImage.fEvent abandoned');
+  end;
+  if (FatalException=nil) or fExceptionHandled then
+    if Terminated then Result:=nil
+    else Result:=fBitmap
+  else begin
+    fExceptionHandled:=true;
+    Raise Exception.Create(Exception(FatalException).Message);
+  end;
+end;
+
+(*
+    TLoadBitmapThread
+                        *)
+(*
+    «агружает картинку из файла
+                                  *)
+constructor TLoadBitmapThread.Create(aOnTerminate: TNotifyEvent; filename: string='');
+begin
+  inherited Create; //TAbstractGetImageThread.Create
+  OnTerminate:=aOnTerminate;
+  fFileName:=filename;
+  //priority:=tpNormal;
+  FreeOnTerminate:=false;
+  fBitmap:=TExtendedPngObject.Create;
+  Resume;
+end;
+
+procedure TLoadBitmapThread.Execute;
+var ext: string;
+    pic: TPicture;
+begin
+  try
+  if fFileName<>'' then begin
+    ext:=Uppercase(ExtractFileExt(fFileName));
+    if ext='.PNG' then fBitmap.LoadFromFile(fFileName)
+    else begin
+      pic:=TPicture.Create;
+      try
+        pic.LoadFromFile(fFileName);
+        if pic.Graphic is TBitmap then fBitmap.Assign(TBitmap(pic.Graphic))
+        else fBitmap.Canvas.Draw(0,0,pic.Graphic);
+      finally
+        pic.Free;
+      end;
+    end;
+  end;
+  finally
+    fEvent.SetEvent;
+  end;
+end;
+(*
+    TScalingThread
+                      *)
+constructor TScalingThread.Create(aGetImageIntf: IGetPngThread; aScale: Real);
+begin
+  inherited Create;
+  fGetImageIntf:=aGetImageIntf;
+  fScale:=aScale;
+  //priority:=tpNormal;
+  FreeOnTerminate:=false;
+  Resume;
+end;
+
+procedure TScalingThread.Execute;
+var img: TExtendedPNGObject;
+begin
+  //чувствуетс€, придетс€ самосто€тельно реализовывать масштабирование
+  img:=fGetImageIntf.GetImage; //возможно ожидание, когда нам дадут, наконец, картинку
+  if Assigned(img) and not Terminated then
+    fBitmap:=img.Get2TimesDownScaled;
+  fEvent.SetEvent;
+end;
+
+function TScalingThread.GetScale: Real;
+begin
+  Result:=fScale;
+end;
 
 (*
     TSaveDocThread
@@ -245,122 +393,6 @@ begin
   //похоже, что onTerminate при этом не будут обработаны, поскольку уже началось
   //уничтожение формы.
   //но это даже хорошо, хот€ FastMM4 выругаетс€.
-end;
-
-(*
-    TLoadBitmapThread
-                              *)
-constructor TLoadBitmapThread.Create(aOnTerminate: TNotifyEvent; filename: string='');
-begin
-  inherited Create(true);
-  fLock:=TCriticalSection.Create;
-  OnTerminate:=aOnTerminate;
-  fFileName:=filename;
-  //priority:=tpNormal;
-  FreeOnTerminate:=false;
-  fBitmap:=TExtendedPngObject.Create;
-  Resume;
-end;
-
-destructor TLoadBitmapThread.Destroy;
-begin
-  Terminate;  //сейчас не возымеет действи€, но как-нибудь реализую
-  WaitFor;
-  fLock.Free;
-  fBitmap.Free;
-  inherited Destroy;
-end;
-
-procedure TLoadBitmapThread.Execute;
-var ext: string;
-    pic: TPicture;
-begin
-  if fFileName='' then Exit;
-  ext:=Uppercase(ExtractFileExt(fFileName));
-  if ext='.PNG' then fBitmap.LoadFromFile(fFileName)
-  else begin
-    pic:=TPicture.Create;
-    try
-      pic.LoadFromFile(fFileName);
-      if pic.Graphic is TBitmap then fBitmap.Assign(TBitmap(pic.Graphic))
-      else fBitmap.Canvas.Draw(0,0,pic.Graphic);
-    finally
-      pic.Free;
-    end;
-  end;
-end;
-
-function TLoadBitmapThread.GetBitmap: TExtendedPNGObject;
-begin
-  fLock.Acquire;
-  try
-    WaitFor;
-    if FatalException=nil then
-      if Terminated then Result:=nil else Result:=fBitmap
-    else
-      Result:=nil;    
-//      Raise Exception.Create(Exception(FatalException).Message);
-  finally
-    fLock.Leave;
-  end;
-end;
-
-(*
-    TScalingThread
-                      *)
-constructor TScalingThread.Create(aGetImageProc: TGetImageProc; aScale: Real);
-begin
-  inherited Create(true);
-  fLock:=TCriticalSection.Create;
-  fGetImageProc:=aGetImageProc;
-  fScale:=aScale;
-  //priority:=tpNormal;
-  FreeOnTerminate:=false;
-  Resume;
-end;
-
-destructor TScalingThread.Destroy;
-begin
-  Terminate;
-  WaitFor;
-  fLock.Free; //пока не освободитс€ - не уничтожитс€
-  fBitmap.Free;
-  inherited Destroy;
-end;
-
-procedure TScalingThread.Execute;
-var img: TExtendedPNGObject;
-begin
-  //чувствуетс€, придетс€ самосто€тельно реализовывать масштабирование
-  img:=fGetImageProc(); //возможно ожидание, когда нам дадут, наконец, картинку
-  if Assigned(img) and not Terminated then begin
-    img.Synchronizer.BeginRead; //не даЄт уничтожить img под носом
-                                //но что, если он был уничтожен между двум€ этими
-                                //строками!?
-    try
-      fBitmap:=img.Get2TimesDownScaled;
-    finally
-      img.Synchronizer.EndRead;
-    end;
-  end;
-end;
-
-function TScalingThread.GetScaled: TExtendedPngObject;
-begin
-  fLock.Acquire;
-  try
-    Waitfor;
-    if FatalException=nil then
-      if not Terminated then
-        Result:=fBitmap
-      else
-        Result:=nil
-    else
-      Result:=nil;
-//      Raise exception.Create(Exception(FatalException).Message);
-  finally
-    fLock.Leave;
-  end;
 end;
 
 (*
@@ -494,7 +526,7 @@ end;
 constructor TRasterImageDocument.CreateFromImageFile(aFileName: string);
 begin
   Create(nil);
-  fLoadThread.Free;
+  fLoadThread.Halt;
   fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate,aFileName);
 end;
 
@@ -504,16 +536,16 @@ begin
   inherited LoadFromFile(aFilename);
   s:=ExtractFilePath(aFilename);
   s:=LeftStr(s,Length(s)-5);  //выкинули \DLRN
-  fLoadThread.Free;
+  fLoadThread.Halt;
   fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate,s+ChangeFileExt(ExtractFileName(aFilename),'.png'));
 end;
 
 destructor TRasterImageDocument.Destroy;
 var i: Integer;
 begin
-  fLoadThread.Free;
+  fLoadThread.Halt;
   for i:=0 to Length(fScalingThreads)-1 do
-    fScalingThreads[i].free;
+    fScalingThreads[i].Halt;
   inherited Destroy;
 end;
 
@@ -526,14 +558,14 @@ function TRasterImageDocument.GetRealScale: Real;
 begin
   assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
   if scaleNumber=0 then Result:=1
-  else Result:=fScalingThreads[scaleNumber-1].fScale;
+  else Result:=fScalingThreads[scaleNumber-1].GetScale;
 end;
 
 function TRasterImageDocument.Get_Scaled_Btmp: TExtendedPngObject;
 begin
   assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
-  if scaleNumber=0 then Result:=fLoadThread.GetBitmap
-  else Result:=fScalingThreads[scaleNumber-1].GetScaled;
+  if scaleNumber=0 then Result:=fLoadThread.GetImage
+  else Result:=fScalingThreads[scaleNumber-1].GetImage;
 end;
 
 procedure TRasterImageDocument.SaveAndFree;
@@ -567,34 +599,34 @@ end;
 
 function TRasterImageDocument.GetBtmp: TExtendedPngObject;
 begin
-  Result:=fLoadThread.GetBitmap;
+  Result:=fLoadThread.GetImage;
 end;
 
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
 var t: string;
     i,c: Integer;
     s: Real;
+    thread: TLoadBitmapThread;
 begin
-  if Assigned(fLoadThread.FatalException) then begin
+  thread:=Sender as TLoadBitmapThread;
+  if Assigned(thread.FatalException) then begin
     t:=Format('Ќе удалось загрузить изображение %s: %s',
-      [fLoadThread.fFilename,Exception(fLoadThread.FatalException).Message]);
+      [thread.fFilename,Exception(thread.FatalException).Message]);
     Application.MessageBox(@t[1],'AMBIC');
     Exit;
   end;
   //ладно, смасштабируем здесь. ѕока ровно через 2
-  if (fLoadThread.fBitmap.Width=0) or (fLoadThread.fBitmap.Height=0) then Exit;
+  if (thread.fBitmap.Width=0) or (Thread.fBitmap.Height=0) then Exit;
 
-  c:=Floor(log2(min(fLoadThread.fBitmap.Width,fLoadThread.fBitmap.Height)));
+  c:=Floor(log2(min(Thread.fBitmap.Width,Thread.fBitmap.Height)));
   SetLength(fScalingThreads,c);
   s:=0.5;
-  fScalingThreads[0].Free;
-  fScalingThreads[0]:=TScalingThread.Create(fLoadThread.GetBitmap,s);
+  fScalingThreads[0]:=TScalingThread.Create(fLoadThread,s);
   for i:=1 to c-1 do begin
     s:=s/2;
-    fScalingThreads[i].Free;
-    fScalingThreads[i]:=TScalingThread.Create(fScalingThreads[i-1].GetScaled,s);
+    fScalingThreads[i]:=TScalingThread.Create(fScalingThreads[i-1],s);
   end;
-  
+
 end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);
