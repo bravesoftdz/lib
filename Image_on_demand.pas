@@ -74,7 +74,9 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fBrushSize: Integer;
     fLoadThread: IGetPngThread;
     fScalingThreads: array of IGetPngScale;
+    fScaleLevelsReadyEvent: TEvent;
     procedure LoadThreadTerminate(Sender: TObject);
+    procedure WaitScaleLevelsReady;
     function GetBtmp: TExtendedPngObject;
     function GetRealScale: real;
   public
@@ -431,18 +433,18 @@ end;
 
 procedure TDocumentsSavingProgress.WaitForAllDocsClearEvent;
 var i: Integer;
-label tryagain;
 begin
   i:=0;
-  tryagain:
-  CheckSynchronize(500);
-  inc(i);
-  if i=120 then raise Exception.Create('WaitForAllDocsClearEvent timeout');
-  case fAllDocsClearEvent.WaitFor(500) of
-    wrTimeout: goto tryagain;
-    wrError: raise Exception.Create('WaitForAllDocsClearEvent error');
-    wrAbandoned: raise Exception.Create('WaitForAllDocsClearEvent abandoned');
+  while i<120 do begin
+    case fAllDocsClearEvent.WaitFor(500) of
+      wrSignaled: Exit;
+      wrError: raise Exception.Create('WaitForAllDocsClearEvent error');
+      wrAbandoned: raise Exception.Create('WaitForAllDocsClearEvent abandoned');
+    end;
+    CheckSynchronize(500);
+    inc(i);
   end;
+  raise Exception.Create('WaitForAllDocsClearEvent timeout');
 end;
 
 destructor TDocumentsSavingProgress.Destroy;
@@ -537,6 +539,7 @@ begin
   fLoadThread:=TLoadBitmapThread.Create(LoadThreadTerminate);
   BrushSize:=10;
   PrimaryColor:=clWhite;
+  fScaleLevelsReadyEvent:=TEvent.Create(nil,true,false,'');
 end;
 
 constructor TRasterImageDocument.CreateFromImageFile(aFileName: string);
@@ -562,6 +565,7 @@ begin
   fLoadThread.Halt;
   for i:=0 to Length(fScalingThreads)-1 do
     fScalingThreads[i].Halt;
+  fScaleLevelsReadyEvent.Free;
   inherited Destroy;
 end;
 
@@ -570,8 +574,25 @@ begin
   Result:=Image;
 end;
 
+procedure TRasterImageDocument.WaitScaleLevelsReady;
+var i: Integer;
+begin
+  i:=0;
+  while i<120 do begin
+    case fScaleLevelsReadyEvent.WaitFor(500) of
+      wrSignaled: Exit;
+      wrError: raise Exception.Create('WaitScaleLevelsReady error');
+      wrAbandoned: raise Exception.Create('WaitScaleLevelsReady abandoned');
+    end;
+    CheckSynchronize(500);
+    inc(i);
+  end;
+  raise Exception.Create('WaitScaleLevelsReady timeout');
+end;
+
 function TRasterImageDocument.GetRealScale: Real;
 begin
+  WaitScaleLevelsReady;
   assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
   if scaleNumber=0 then Result:=1
   else Result:=fScalingThreads[scaleNumber-1].GetScale;
@@ -579,6 +600,7 @@ end;
 
 function TRasterImageDocument.Get_Scaled_Btmp: TExtendedPngObject;
 begin
+  WaitScaleLevelsReady;
   assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));
   if scaleNumber=0 then Result:=fLoadThread.GetImage
   else Result:=fScalingThreads[scaleNumber-1].GetImage;
@@ -644,7 +666,7 @@ begin
     fScalingThreads[2*i]:=TScalingThread.Create(fScalingThreads[2*(i-1)],s);
     fScalingThreads[2*i+1]:=TScalingThread.Create(fScalingThreads[2*i-1],s*3/4);
   end;
-
+  fScaleLevelsReadyEvent.SetEvent;
 end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);
