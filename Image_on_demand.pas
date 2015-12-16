@@ -61,6 +61,11 @@ TScalingThread = class (TAbstractGetImageThread, IGetPngThread, IGetPngScale)
     function GetScale: Real;
 end;
 
+T2to3ScalingThread = class (TScalingThread,IGetPngThread,IGetPngScale)
+  protected
+    procedure Execute; override;
+end;
+
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
     fScaleNumber: Integer;
@@ -88,6 +93,8 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure FreeWithoutSaving;
     procedure SaveToFile(const filename: string); override;
     procedure Change; override;
+    procedure ZoomIn;
+    procedure ZoomOut;
   published
     property Btmp: TExtendedPNGObject read GetBtmp stored false;
     property Scale: Real read GetRealScale stored false;
@@ -305,6 +312,15 @@ begin
   img:=fGetImageIntf.GetImage; //возможно ожидание, когда нам дадут, наконец, картинку
   if Assigned(img) and not Terminated then
     fBitmap:=img.Get2TimesDownScaled;
+  fEvent.SetEvent;
+end;
+
+procedure T2to3ScalingThread.Execute;
+var img: TExtendedPNGObject;
+begin
+  img:=fGetImageIntf.GetImage;
+  if Assigned(img) and not Terminated then
+    fBitmap:=img.Get2To3DownScaled;
   fEvent.SetEvent;
 end;
 
@@ -618,13 +634,15 @@ begin
   //ладно, смасштабируем здесь. ѕока ровно через 2
   if (thread.fBitmap.Width=0) or (Thread.fBitmap.Height=0) then Exit;
 
-  c:=Floor(log2(min(Thread.fBitmap.Width,Thread.fBitmap.Height)));
-  SetLength(fScalingThreads,c);
-  s:=0.5;
-  fScalingThreads[0]:=TScalingThread.Create(fLoadThread,s);
+  c:=Floor(log2(min(Thread.fBitmap.Width,Thread.fBitmap.Height)))-1;
+  SetLength(fScalingThreads,2*c);
+  s:=2/3;
+  fScalingThreads[0]:=T2to3ScalingThread.Create(fLoadThread,s);
+  fScalingThreads[1]:=TScalingThread.Create(fLoadThread,s*3/4);
   for i:=1 to c-1 do begin
     s:=s/2;
-    fScalingThreads[i]:=TScalingThread.Create(fScalingThreads[i-1],s);
+    fScalingThreads[2*i]:=TScalingThread.Create(fScalingThreads[2*(i-1)],s);
+    fScalingThreads[2*i+1]:=TScalingThread.Create(fScalingThreads[2*i-1],s*3/4);
   end;
 
 end;
@@ -645,6 +663,22 @@ begin
   inherited Change;
   //прорисуем изменени€, причем при первом включении ChangeRect должен равн€тьс€
   //всему изображению!
+end;
+
+procedure TRasterImageDocument.ZoomIn;
+begin
+  if fScaleNumber>0 then begin
+    dec(fScaleNumber);
+    Change;
+  end;
+end;
+
+procedure TRasterImageDocument.ZoomOut;
+begin
+  if fScaleNumber<Length(fScalingThreads) then begin
+    inc(fScaleNumber);
+    Change;
+  end;
 end;
 
 (*
