@@ -66,12 +66,15 @@ T2to3ScalingThread = class (TScalingThread,IGetPngThread,IGetPngScale)
     procedure Execute; override;
 end;
 
+TBrushShape = (bsSquare,bsRound);
+
 TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
   private
     fScaleNumber: Integer;
     fPrimaryColor: TColor;
     fSecondaryColor: TColor;
     fBrushSize: Integer;
+    fBrushShape: TBrushShape;
     fLoadThread: IGetPngThread;
     fScalingThreads: array of IGetPngScale;
     fScaleLevelsReadyEvent: TEvent;
@@ -103,6 +106,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
+    property BrushShape: TBrushShape read fBrushShape write fBrushShape;
     property ScaleNumber: integer read fScaleNumber write fScaleNumber;
   end;
 TDocumentsSavingProgress = class (TObject)
@@ -136,51 +140,14 @@ TSaveDocThread = class (TThread)
     fDoc: TRasterImageDocument;
     constructor Create(doc: TRasterImageDocument);
 end;
-TRasterImageDocumentCommand = class (TAbstractTreeCommand)
-  public
-    function GetDoc: TRasterImageDocument;
-  end;
-TPatchImageCommand = class (TRasterImageDocumentCommand)
-//базовая команда при работе с растровыми изображениями
-  protected
-    fDiff: TExtendedPngObject;
-    fPredictor: TExtendedPngObject;
-    fLeft,fTop,fRight,fBottom: Integer; //расположение заплатки
-    procedure GetBounds; virtual; abstract;//инициализировать fRect
-    function UndoPrediction: Boolean; virtual;  //false означает
-    //что мы ничего не можем предсказать, поэтому оставляем картинку как есть
-    function InternalExecute: Boolean; virtual; abstract; //false означает,
-    //что применение команды ничего не изменило и ее стоит изъять из дерева
-  public
-    constructor Create(aOwner: TComponent); overload; override;
-    destructor Destroy; override;
-    function Execute: Boolean; override;
-    function Undo: Boolean; override;
-  published
-    property diff: TExtendedPngObject read fDiff write fDiff;
-  end;
-TRectBrushCommand = class (TPatchImageCommand)
-//закрашивает прямоугольник текущей ширины (заданной в BrushSize) осн. цветом
-//реальное движение кисти порождает десятки, сотни таких команд.
-//если после прохода ничего вообще не поменялось, команда не сохраняется
-  private
-    fX,fY: Integer; //коорд. центра
-  protected
-    procedure GetBounds; override;
-    function InternalExecute: Boolean; override;
-  public
-    constructor Create(aX,aY: Integer); reintroduce; overload;
-  published
-    property X: Integer read fX write fX;
-    property Y: Integer read fY write fY;
-  end;
+
 
 var
   DocumentsSavingProgress: TDocumentsSavingProgress;  //для TRasterImageDocument
 
 implementation
 
-uses SysUtils,strUtils,gamma_function,math,typinfo,forms;
+uses SysUtils,strUtils,math,typinfo,forms;
 
 (*
     TAbstractGetImageThread
@@ -703,142 +670,9 @@ begin
   end;
 end;
 
-(*
-      TRasterImageDocumentCommand
-                                      *)
-function TRasterImageDocumentCommand.GetDoc: TRasterImageDocument;
-begin
-  Result:=FindOwner as TRasterImageDocument;
-end;
-
-(*
-      TPatchImageCommand
-                            *)
-constructor TPatchImageCommand.Create(aOwner: TComponent);
-begin
-  inherited Create(aOwner);
-  fDiff:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0); //будет сохраняться в файл
-  fDiff.Filters:=[pfNone, pfSub, pfUp, pfAverage, pfPaeth];
-  fDiff.CompressionLevel:=9;
-  fPredictor:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0);  //хранится временно
-end;
-
-destructor TPatchImageCommand.Destroy;
-begin
-  fDiff.Free;
-  fPredictor.Free;
-  inherited Destroy;
-end;
-
-function TPatchImageCommand.Execute: Boolean;
-var i,j: Integer;
-  C1,C2: RGBColor;
-  doc: TRasterImageDocument;
-begin
-  getBounds;
-  doc:=GetDoc;
-  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
-  //обозначили заплатку
-  fDiff.Resize(fRight-fLeft,fBottom-fTop);
-  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),Doc.Btmp.Canvas,
-    Rect(fLeft,fTop,fRight,fBottom));
-  //храним в fDiff копию того фрагмента, который начнем мучать
-  Result:=InternalExecute;
-  if Result then begin
-    fPredictor.Resize(fDiff.Width,fDiff.Height);
-    if UndoPrediction then
-      //нарисует на Predictor исх. картинку исходя из того, что он
-      //может знать по конечному результату
-      //сейчас "скользкая" часть - вычесть одну картинку из другой
-      //может оказаться довольно долгой
-      for j:=0 to fDiff.Height-1 do
-        for i:=0 to fDiff.Width-1 do begin
-          C1.Color:=fDiff.Pixels[i,j];
-          C2.Color:=fPredictor.Pixels[i,j];
-          C1.R:=128+C1.R-C2.R;
-          C1.G:=128+C1.G-C2.G;
-          C1.B:=128+C1.B-C2.B;
-          fDiff.Pixels[i,j]:=C1.Color;
-        end;
-    //а на нет и суда нет
-  end;
-  //в противном случае команда вот-вот будет удалена, нет нужды освобождать
-  //память впереди паровоза
-end;
-
-function TPatchImageCommand.Undo: Boolean;
-var i,j: Integer;
-    C1,C2: RGBColor;
-    doc: TRasterImageDocument;
-begin
-  getBounds;  //размеры заплатки мы могли бы по изображению понять, но расположение
-  //все равно узнавать надо!
-  doc:=GetDoc;
-  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
-  fPredictor.Resize(fDiff.Width,fDiff.Height);
-  if UndoPrediction then
-    for j:=0 to fDiff.Height-1 do
-      for i:=0 to fDiff.Width-1 do begin
-        C1.Color:=fDiff.Pixels[i,j];
-        C2.Color:=fPredictor.Pixels[i,j];
-        C1.R:=C1.R+C2.R-128;
-        C1.G:=C1.G+C2.G-128;
-        C1.B:=C1.B+C2.B-128;
-        fDiff.Pixels[i,j]:=C1.Color;
-      end;
-    //а на нет и суда нет
-  //осталось вправить картинку на место
-  doc.Btmp.Canvas.CopyRect(Rect(fLeft,fTop,fRight,fBottom),fDiff.Canvas,Rect(0,0,fDiff.Width,fDiff.Height));
-  Result:=true;
-end;
-
-function TPatchImageCommand.UndoPrediction: Boolean;
-begin
-  Result:=false;
-end;
-
-(*
-    TRectBrushCommand
-                              *)
-constructor TRectBrushCommand.Create(aX,aY: Integer);
-begin
-  Create(nil);
-  X:=aX;
-  Y:=aY;
-end;
-
-procedure TRectBrushCommand.GetBounds;
-var size: Integer;
-begin
-  size:=Round(GetDoc.BrushSize/GetDoc.scale);
-  fLeft:=X-size;
-  fRight:=X+size;
-  fTop:=Y-size;
-  fBottom:=Y+size;
-end;
-
-function TRectBrushCommand.InternalExecute: Boolean;
-var PrimeCol: TColor;
-    i,j: Integer;
-begin
-  PrimeCol:=GetDoc.PrimaryColor;
-  //пока поступим упрощенно
-  with GetDoc.Btmp.Canvas do begin
-    Brush.Color:=PrimeCol;
-    for i:=fLeft to fRight-1 do
-      for j:=fTop to fBottom-1 do
-        if Pixels[i,j]<>PrimeCol then begin
-          FillRect(Rect(fLeft,fTop,fRight,fBottom));
-          Result:=true;
-          Exit;
-        end;
-  end;
-  //дошли досюда, значит, так ничего и не закрасили
-  Result:=false;
-end;
 
 initialization
-  RegisterClasses([TRasterImageDocument,TRectBrushCommand]);
+  RegisterClasses([TRasterImageDocument]);
   DocumentsSavingProgress:=TDocumentsSavingProgress.Create;
 finalization
   DocumentsSavingProgress.Free;
