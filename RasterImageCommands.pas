@@ -2,7 +2,7 @@ unit RasterImageCommands;
 
 interface
 
-uses classes,command_class_lib,Image_on_demand,pngImageAdvanced,graphics;
+uses classes,command_class_lib,Image_on_demand,pngImageAdvanced,graphics,types;
 
 type
 
@@ -45,35 +45,52 @@ TRectBrushCommand = class (TPatchImageCommand)
     property Y: Integer read fY write fY;
   end;
 
-TBrushCommand = class (TPatchImageCommand)
+TWordPoint=record
+  case Integer of
+    0: (X,Y: Word);
+    1: (AsPointer: Pointer);
+end;
+
+TBrushCommand = class (TRasterImageDocumentCommand)
   private
     fFutureOwner: TRasterImageDocument;
+
+    fDiff: TExtendedPngObject;
+
     fBrushColor: TColor;
     fBrushSize: Word;
     fBrushShape: TBrushShape;
-    fXPoints,fYPoints: array of Word;
+    fPoints: TList;
     fColorExistsInPalette: Boolean; //есть ли готовый индекс для цвета, которым
     //закрашиваем
     fNeedToChangeBitDepth: Boolean; //и палитра набита под завязку, придется бит/пиксель повышать
     fNewBitDepth: Byte;
     fNewColorMode: Byte;
     fColorIndex: Cardinal;  //от 1 бита до 24 бит, по обстоятельствам
+    fRect: TRect;
+    fPointsReduced: Boolean;  //отметка, что не нужно шерстить набор точек по-новой
+    procedure ReadPointsAsText(reader: TReader);
+    procedure WritePointsAsText(writer: TWriter);
     procedure WritePoints(stream: TStream);
     procedure ReadPoints(stream: TStream);
+    procedure ReducePoints;
   protected
     procedure DefineProperties(filer: TFiler); override;
   public
     constructor CreateStandalone(myFutureOwner: TRasterImageDocument);
     //поскольку он должен работать с документом (только для чтения) еще до
     //исполнения DispatchCommand, передаём ему заблаговременно
+    destructor Destroy; override; //TList надо освободить
     procedure Draw(aX,aY: Word);  //один мазок кисти
     //если хоть как-то меняется, заносим в fXPoints/fYPoints
-    
-
+    function Execute: Boolean; override;
+  published
+    property Top: Integer read fRect.Top write fRect.Top;
+    property Left: Integer read fRect.Left write fRect.Left;
   end;
 implementation
 
-uses pngImage,gamma_function,sysUtils;
+uses pngImage,gamma_function,sysUtils,simple_parser_lib;
 
 (*
       TRasterImageDocumentCommand
@@ -239,6 +256,10 @@ begin
 //но если все равно повышать количество бит на пиксель, то не жадничать, а сразу
 //делать побольше, с запасом.
   inherited Create(nil);
+
+  fDiff:=TExtendedPngObject.Create;
+
+  fPoints:=TList.Create;
   fFutureOwner:=myFutureOwner;
   fBrushColor:=fFutureOwner.PrimaryColor;
   fBrushSize:=fFutureOwner.BrushSize;
@@ -273,7 +294,9 @@ begin
       //нужно определить, если ли наш цвет в палитре
       p:=btmp.GetColorIndex(fBrushColor);
       fColorExistsInPalette:=(p>=0);
-      if not fColorExistsInPalette then begin
+      if fColorExistsInPalette then
+        fColorIndex:=p
+      else begin
         //вот ведь незадача
         fNeedToChangeBitDepth:=not Btmp.IsColorNumberLessThen(1 shl Btmp.Header.BitDepth, fActualCount);
         if fNeedToChangeBitDepth then begin
@@ -294,19 +317,47 @@ begin
   end;
 end;
 
-procedure TBrushCommand.Draw(aX,aY: Word);
+destructor TBrushCommand.Destroy;
 begin
-  //проверяем, окажет ли это хоть какое-то влияние?
+  fPoints.Free;
+  fDiff.Free;
+  inherited Destroy;
+end;
 
+procedure TBrushCommand.Draw(aX,aY: Word);
+var i: TPngObjectIterator;
+    changes: Boolean;
+    point: TWordPoint;
+    ourRect: TRect;
+begin
+  ourRect:=Rect(aX-fBrushSize div 2,aY-fBrushSize div 2,aX+fBrushSize div 2, aY+fBrushSize div 2);
+  //проверяем, окажет ли это хоть какое-то влияние?
+  if fColorExistsInPalette then begin
+    i:=fFutureOwner.Btmp.CreateIteratorForCropped(ourRect);
+    changes:=false;
+    while not i.isEOF do
+      if i.ReadNextPixel<>fColorIndex then begin
+        changes:=true;
+        break;
+      end;
+    i.Free;
+    if not changes then Exit;
+  end;
+  point.X:=aX;
+  point.Y:=aY;
+  fPoints.Add(point.AsPointer);
+  CoverRect(fRect,ourRect);
 end;
 
 procedure TBrushCommand.DefineProperties(filer: TFiler);
 begin
-  filer.DefineBinaryProperty('points',ReadPoints,WritePoints,true);
+//  filer.DefineBinaryProperty('points',ReadPoints,WritePoints,true);
+  filer.DefineProperty('points',ReadPointsAsText,WritePointsAsText,true);
 end;
 
 procedure TBrushCommand.WritePoints(stream: TStream);
 begin
+  ReducePoints;
 
 end;
 
@@ -314,6 +365,106 @@ procedure TBrushCommand.ReadPoints(stream: TStream);
 begin
 
 end;
+
+procedure TBrushCommand.WritePointsAsText(writer: TWriter);
+var i: Integer;
+    cur: TWordPoint;
+begin
+  ReducePoints;
+  writer.WriteListBegin;
+  for i:=0 to fPoints.Count-1 do begin
+    cur:=TWordPoint(fPoints[i]);
+    writer.WriteString('('+IntToStr(cur.X)+';'+IntToStr(cur.Y)+')');
+  end;
+  writer.WriteListEnd;
+end;
+
+procedure TBrushCommand.ReadPointsAsText(reader: TReader);
+var p: TSimpleParser;
+    cur: TWordPoint;
+begin
+  reader.ReadListBegin;
+  p:=TSimpleParser.Create;
+  fPoints.Clear;
+  while not reader.EndOfList do begin
+    p.AssignString(reader.ReadString);
+    p.NextChar; //'('
+    cur.X:=p.getInt;
+    p.NextChar; //';'
+    cur.Y:=p.getInt;
+    fPoints.Add(cur.AsPointer);
+  end;
+  reader.ReadListEnd;
+end;
+
+
+procedure TBrushCommand.ReducePoints;
+begin
+  if fPointsReduced then Exit;
+  //надеемся малость подсократить количество точек
+  //а пока ничего не делаем
+  fPointsReduced:=true;
+end;
+
+function TBrushCommand.Execute: Boolean;
+var btmp: TExtendedPngObject;
+    src,dest: TPngObjectIterator;
+    i: Integer;
+    point: TWordPoint;
+    sizesq: Integer;
+begin
+  Result:=fPoints.Count>0;
+  if not Result then exit;
+  //пока все выполняем в одной TBrushCommand,
+  //потом, когда новую команду будем делать, сообразим,
+  //как общие куски вынести в предка
+  ReducePoints;
+  fFutureOwner.AddToChangeRect(fRect); //для корректного отобр. изменений
+//  fDiff.Resize(fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);  //сюда сохраним изобр.
+  //перед началом экзекуции
+  btmp:=fFutureOwner.Btmp;
+  fDiff.Free;
+  fDiff:=TExtendedPngObject.CreateBlank(Btmp.Header.ColorType,Btmp.Header.BitDepth,
+    fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
+  src:=btmp.CreateIteratorForCropped(fRect);
+  dest:=fDiff.CreateIterator;
+  while not src.isEOF do
+    dest.WriteNextPixel(src.ReadNextPixel); //сейчас режим цвета и бит/пиксель совпадают
+  dest.Free;
+  src.Free;
+  //бекап есть, теперь, если надо, переделываем изображение
+  if not fColorExistsInPalette then begin
+    if fNeedToChangeBitDepth then begin
+      //коренное переформатирование
+      Btmp:=btmp.GetInOtherFormat(fNewColorMode,fNewBitDepth);
+      fFutureOwner.Btmp.Free;
+      fFutureOwner.Btmp:=Btmp;
+    end
+    else begin
+      raise Exception.Create('convert to palette: dangerous procedure, may corrupt data');
+      Btmp.ConvertToPalette;
+    end;
+    if (fNewColorMode=COLOR_PALETTE) and (Btmp.GetColorIndex(fBrushColor)=-1) then
+      fColorIndex:=Btmp.AddToPalette(fBrushColor);
+  end;
+  //работаем кистью
+  for i:=0 to fPoints.Count-1 do begin
+    point:=TWordPoint(fPoints[i]);
+    dest:=btmp.CreateIteratorForCropped(Rect(point.X-fBrushSize div 2,point.Y-fBrushSize div 2,
+      point.X + fBrushSize div 2, point.Y+fBrushSize div 2));
+    if fBrushShape=bsSquare then
+      while dest.isEOF do
+        dest.WriteNextPixel(fColorIndex)
+    else begin
+      sizesq:=Sqr(fBrushSize div 2);
+      while dest.isEOF do
+       if sqr(dest.CurLine-point.Y)+sqr(dest.CurColumn-point.X)<sizesq then
+        dest.WriteNextPixel(fColorIndex)
+    end;
+    dest.Free;
+  end;
+end;
+
 
 initialization
   RegisterClasses([TRectBrushCommand]);

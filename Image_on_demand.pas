@@ -14,6 +14,7 @@ TGetImageProc = function: TExtendedPngObject of object;
 IGetPngThread = interface
 ['{3726C791-0100-44DA-8D5A-E900A4EB6A62}']
   function GetImage: TExtendedPngObject;
+  procedure SetImage(value: TExtendedPngObject);  //в основном потоке, без особенностей
   procedure Halt;
 end;
 
@@ -33,12 +34,11 @@ TAbstractGetImageThread = class (TThread, IGetPngThread)
     function _Release: Integer; stdcall;
   public
     procedure Halt;
-    //грязно - если захотим одним скопом завершить толпу
-    //TThread, вызовется "старый" terminate
     constructor Create; virtual;
     destructor Destroy; override;
     function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function GetImage: TExtendedPngObject;
+    procedure SetImage(value: TExtendedPngObject);
 end;
 
 TLoadBitmapThread = class (TAbstractGetImageThread, IGetPngThread) //будет отвечать за картинку головой!
@@ -81,7 +81,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure LoadThreadTerminate(Sender: TObject);
     procedure WaitScaleLevelsReady;
     function GetBtmp: TExtendedPngObject;
-    function GetRealScale: real;
+    procedure SetBtmp(value: TExtendedPngObject);
   public
     PercentDone: Integer; //инкапсуляция ни к черту
     Image: TImage;
@@ -94,6 +94,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     destructor Destroy; override;
     function Get_Image: TImage; override;
     function Get_Scaled_Btmp: TExtendedPNGObject;
+    function GetRealScale: real;    
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure FreeWithoutSaving;
     procedure SaveToFile(const filename: string); override;
@@ -101,7 +102,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure ZoomIn;
     procedure ZoomOut;
   published
-    property Btmp: TExtendedPNGObject read GetBtmp stored false;
+    property Btmp: TExtendedPNGObject read GetBtmp write SetBtmp stored false;
     property Scale: Real read GetRealScale stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
@@ -141,6 +142,8 @@ TSaveDocThread = class (TThread)
     constructor Create(doc: TRasterImageDocument);
 end;
 
+procedure CoverRect(var Orig: TRect;const newRect: TRect);
+//почти как UnionRect, но более специализированная
 
 var
   DocumentsSavingProgress: TDocumentsSavingProgress;  //для TRasterImageDocument
@@ -148,6 +151,17 @@ var
 implementation
 
 uses SysUtils,strUtils,math,typinfo,forms;
+
+procedure CoverRect(var Orig: TRect; const newRect: TRect);
+begin
+  if IsRectEmpty(Orig) then Orig:=newRect
+  else if not IsRectEmpty(newRect) then begin
+    Orig.Left:=min(Orig.Left,newRect.Left);
+    Orig.Right:=max(Orig.Right,newRect.Right);
+    Orig.Top:=min(Orig.Top,newRect.Top);
+    Orig.Bottom:=max(Orig.Bottom,newRect.Bottom);
+  end;
+end;
 
 (*
     TAbstractGetImageThread
@@ -219,6 +233,12 @@ begin
     fExceptionHandled:=true;
     Raise Exception.Create(Exception(FatalException).Message);
   end;
+end;
+
+procedure TAbstractGetImageThread.SetImage(value: TExtendedPngObject);
+begin
+  GetImage;
+  fBitmap:=value;
 end;
 
 (*
@@ -607,6 +627,11 @@ begin
   Result:=fLoadThread.GetImage;
 end;
 
+procedure TRasterImageDocument.SetBtmp(value: TExtendedPngObject);
+begin
+  fLoadThread.SetImage(value);
+end;
+
 procedure TRasterImageDocument.LoadThreadTerminate(Sender: TObject);
 var t: string;
     i,c: Integer;
@@ -638,13 +663,7 @@ end;
 
 procedure TRasterImageDocument.AddToChangeRect(const A: TRect);
 begin
-  if IsRectEmpty(ChangeRect) then ChangeRect:=A
-  else if not IsRectEmpty(A) then begin
-    ChangeRect.Left:=min(ChangeRect.Left,A.Left);
-    ChangeRect.Right:=max(ChangeRect.Right,A.Right);
-    ChangeRect.Top:=min(ChangeRect.Top,A.Top);
-    ChangeRect.Bottom:=max(ChangeRect.Bottom,A.Bottom);
-  end;
+  CoverRect(ChangeRect,A);
 end;
 
 procedure TRasterImageDocument.Change;
