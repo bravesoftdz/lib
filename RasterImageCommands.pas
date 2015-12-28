@@ -12,11 +12,32 @@ TRasterImageDocumentCommand = class (TAbstractTreeCommand)
   end;
 TPatchImageCommand = class (TRasterImageDocumentCommand)
 //базовая команда при работе с растровыми изображениями
+//GetBounds выставляет предварительные размеры прямоугольника, где произойдет действие
+//и при вызове Execute картинка из него будет сохранена в fDiff, и вызван internalExecute
+//в потомках описываем internalExecute - как изменить изображение
+//он может в числе прочего поменять формат всего изображения.
+//при этом для каждой измененной точки внутри прямоуг. вызываем PointChanged, тем самым
+//находим минимально необх. прямоугольник, который нужен для undo.
+//далее, Top/Left принимают окончательное значение.
+//наконец, вызывается UndoPrediction, который пытается, располагая только результирующей
+//картинкой и свойствами команды, которые сохраняются в файл (не считая fDiff), восстановить
+//(предсказать) исходное изображение. Если это реализовано, то из fDiff будет вычтен fPredictor.
+//UndoPrediction имеет право узнать ColorMode и BitDepth из fDiff.
+
+//при исполнении Undo первым делом запускается UndoPrediction, который дает ровно то же
+//предсказанное изображение, что и раньше. Его мы прибавляем к загруженному fDiff.
+//если формат изображения в документе поменялся и fDiff не занимает всю его область,
+//то мы приводим его к старому формату, за исключением, возможно, измененной области
+//наконец, мы "вклеиваем" на место fDiff.
   protected
     fDiff: TExtendedPngObject;
     fPredictor: TExtendedPngObject;
-    fLeft,fTop,fRight,fBottom: Integer; //расположение заплатки
-    procedure GetBounds; virtual; abstract;//инициализировать fRect
+    fRect,fUpdateRect: TRect; //расположение заплатки и вычисление мин. необх.
+    fImageFormatChanged: Boolean;
+    fOldBitDepth,fOldColorType: Byte;
+    procedure GetBounds; virtual; abstract;//инициализировать fLeft,fTop,fRight,fBottom
+    procedure PointChanged(const x,y: Integer); //вызывается из потомка,
+    // если в (x,y) произошли изменения, нужна для нахождения минимального прямоуг.
     function UndoPrediction: Boolean; virtual;  //false означает
     //что мы ничего не можем предсказать, поэтому оставляем картинку как есть
     function InternalExecute: Boolean; virtual; abstract; //false означает,
@@ -28,21 +49,10 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     function Undo: Boolean; override;
   published
     property diff: TExtendedPngObject read fDiff write fDiff;
-  end;
-TRectBrushCommand = class (TPatchImageCommand)
-//закрашивает прямоугольник текущей ширины (заданной в BrushSize) осн. цветом
-//реальное движение кисти порождает десятки, сотни таких команд.
-//если после прохода ничего вообще не поменялось, команда не сохраняется
-  private
-    fX,fY: Integer; //коорд. центра
-  protected
-    procedure GetBounds; override;
-    function InternalExecute: Boolean; override;
-  public
-    constructor Create(aX,aY: Integer); reintroduce; overload;
-  published
-    property X: Integer read fX write fX;
-    property Y: Integer read fY write fY;
+    property Left: Integer read fRect.Left write fRect.Left;
+    property Top: Integer read fRect.Top write fRect.Top;
+    property BitDepth: Byte read fOldBitDepth write fOldBitDepth stored fImageFormatChanged;
+    property ColorType: Byte read fOldColorType write fOldColorType stored fImageFormatChanged;
   end;
 
 TWordPoint=record
@@ -51,12 +61,10 @@ TWordPoint=record
     1: (AsPointer: Pointer);
 end;
 
-TBrushCommand = class (TRasterImageDocumentCommand)
+TBrushCommand = class (TPatchImageCommand)
   private
     fFutureOwner: TRasterImageDocument;
-
-    fDiff: TExtendedPngObject;
-
+    //можно было бы обойтись и без него
     fBrushColor: TColor;
     fBrushSize: Word;
     fBrushShape: TBrushShape;
@@ -67,7 +75,7 @@ TBrushCommand = class (TRasterImageDocumentCommand)
     fNewBitDepth: Byte;
     fNewColorMode: Byte;
     fColorIndex: Cardinal;  //от 1 бита до 24 бит, по обстоятельствам
-    fRect: TRect;
+//    fRect: TRect;
     fPointsReduced: Boolean;  //отметка, что не нужно шерстить набор точек по-новой
     procedure ReadPointsAsText(reader: TReader);
     procedure WritePointsAsText(writer: TWriter);
@@ -76,21 +84,24 @@ TBrushCommand = class (TRasterImageDocumentCommand)
     procedure ReducePoints;
   protected
     procedure DefineProperties(filer: TFiler); override;
+    procedure GetBounds; override;  //заполняет fRect
   public
+    constructor Create(aOwner: TComponent); override;
     constructor CreateStandalone(myFutureOwner: TRasterImageDocument);
     //поскольку он должен работать с документом (только для чтения) еще до
     //исполнения DispatchCommand, передаём ему заблаговременно
     destructor Destroy; override; //TList надо освободить
-    procedure Draw(aX,aY: Word);  //один мазок кисти
+    function Draw(aX,aY: Word): boolean;  //один мазок кисти
     //если хоть как-то меняется, заносим в fXPoints/fYPoints
-    function Execute: Boolean; override;
+    function InternalExecute: Boolean; override;
   published
-    property Top: Integer read fRect.Top write fRect.Top;
-    property Left: Integer read fRect.Left write fRect.Left;
+    property BrushColor: TColor read fBrushColor write fBrushColor;
+    property BrushSize: Word read fBrushSize write fBrushSize;
+    property BrushShape: TBrushShape read fBrushShape write fBrushShape;
   end;
 implementation
 
-uses pngImage,gamma_function,sysUtils,simple_parser_lib;
+uses pngImage,gamma_function,sysUtils,simple_parser_lib,math;
 
 (*
       TRasterImageDocumentCommand
@@ -106,123 +117,153 @@ end;
 constructor TPatchImageCommand.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-  fDiff:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0); //будет сохраняться в файл
-  fDiff.Filters:=[pfNone, pfSub, pfUp, pfAverage, pfPaeth];
-  fDiff.CompressionLevel:=9;
-  fPredictor:=TExtendedPngObject.CreateBlank(color_RGB,8,0,0);  //хранится временно
+  fDiff:=TExtendedPngObject.Create; //будет сохраняться в файл
 end;
 
 destructor TPatchImageCommand.Destroy;
 begin
   fDiff.Free;
-  fPredictor.Free;
   inherited Destroy;
 end;
 
-function TPatchImageCommand.Execute: Boolean;
-var i,j: Integer;
-  C1,C2: RGBColor;
-  doc: TRasterImageDocument;
+procedure TPatchImageCommand.PointChanged(const X,Y: Integer);
 begin
-  getBounds;
+  fUpdateRect.Left:=min(fUpdateRect.Left,X);
+  fUpdateRect.Right:=max(fUpdateRect.Right,X);
+  fUpdateRect.Top:=min(fUpdateRect.Top,Y);
+  fUpdateRect.Bottom:=max(fUpdateRect.Bottom,Y);
+end;
+
+function TPatchImageCommand.Execute: Boolean;
+var doc: TRasterImageDocument;
+  btmp,tmp: TExtendedPNGObject;
+  src,dest: TPngObjectIterator;
+begin
+  getBounds;  //инициализирует fRect
   doc:=GetDoc;
-  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
+  btmp:=doc.Btmp;
+  fOldBitDepth:=btmp.Header.BitDepth;
+  fOldColorType:=btmp.Header.ColorType;
   //обозначили заплатку
-  fDiff.Resize(fRight-fLeft,fBottom-fTop);
-  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),Doc.Btmp.Canvas,
-    Rect(fLeft,fTop,fRight,fBottom));
+  fDiff.Free;
+  fDiff:=TExtendedPNGObject.CreateBlank(Btmp.Header.ColorType,
+    Btmp.Header.BitDepth,fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
+
+//  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),Doc.Btmp.Canvas,
+//    Rect(fLeft,fTop,fRight,fBottom));
+  //copyRect вроде быстрый, но не thread-safe (а мы хотим быть thread-safe, не знаю зачем)
+  //и кто его знает, что он там делает, этот stretchBlt
+  //так надежнее:
+  src:=btmp.CreateIteratorForCropped(fRect);
+  dest:=fDiff.CreateIterator;
+  while not src.isEOF do
+    dest.WriteNextPixel(src.ReadNextPixel);
+  dest.Free;
+  src.Free;
+  //можно еще ввести какой-нибудь пакетный режим, чтоб ещё быстрее
+  //в fUpdateRect загоняем фактически -Inf и +Inf
+  fUpdateRect.Left:=fRect.Right;
+  fUpdateRect.Right:=fRect.Left-1;
+  fUpdateRect.Top:=fRect.Bottom;
+  fUpdateRect.Bottom:=fRect.Top-1;
   //храним в fDiff копию того фрагмента, который начнем мучать
   Result:=InternalExecute;
   if Result then begin
-    fPredictor.Resize(fDiff.Width,fDiff.Height);
-    if UndoPrediction then
+    inc(fUpdateRect.Right);
+    inc(fUpdateRect.Bottom);
+  //после InternalExecute еще могли поменяться границы
+    if (fRect.Left<>fUpdateRect.Left) or (fRect.Right<>fUpdateRect.Right)
+      or (fRect.Top<>fUpdateRect.Top) or (fRect.Bottom<>fUpdateRect.Bottom) then
+    begin
+      tmp:=fDiff;
+      fDiff:=TExtendedPNGObject.CreateBlank(tmp.Header.ColorType,
+        tmp.Header.BitDepth,fUpdateRect.Right-fUpdateRect.Left,fUpdateRect.Bottom-fUpdateRect.Top);
+      src:=tmp.CreateIteratorForCropped(Rect(fUpdateRect.Left-fRect.Left,fUpdateRect.Top-fRect.Top,
+        fUpdateRect.Right-fRect.Left,fUpdateRect.Bottom-fRect.Top));
+      dest:=fDiff.CreateIterator;
+      while not src.isEOF do
+        dest.WriteNextPixel(src.ReadNextPixel);
+      dest.Free;
+      src.Free;
+      tmp.Free;
+      fRect:=fUpdateRect;
+    end;
+    //fPredictor должен иметь те же параметры ColorType,BitDepth, Width, Height
+    fPredictor:=TExtendedPngObject.CreateBlank(fDiff.Header.ColorType,
+      fDiff.Header.BitDepth,fDiff.Width,fDiff.Height);
+    if UndoPrediction then begin
       //нарисует на Predictor исх. картинку исходя из того, что он
       //может знать по конечному результату
       //сейчас "скользкая" часть - вычесть одну картинку из другой
-      //может оказаться довольно долгой
-      for j:=0 to fDiff.Height-1 do
-        for i:=0 to fDiff.Width-1 do begin
-          C1.Color:=fDiff.Pixels[i,j];
-          C2.Color:=fPredictor.Pixels[i,j];
-          C1.R:=128+C1.R-C2.R;
-          C1.G:=128+C1.G-C2.G;
-          C1.B:=128+C1.B-C2.B;
-          fDiff.Pixels[i,j]:=C1.Color;
-        end;
+      //RGB24 - надо вычитать по каждому цвету
+      //Grayscale - значение целиком
+      //Palette - значение целиком, адекватность должен обеспечить UndoPrediction
+      src:=fPredictor.CreateIterator;
+      dest:=fDiff.CreateIterator;
+      //that's how I sub.
+      while not src.isEOF do
+        dest.WriteNextSubpixel((dest.PeekNextSubpixel-src.ReadNextSubpixel) and 255);
+      //ох незадача, он же при "умном сохранении" может ужаться в плане цветности, тогда
+      //мы по нему не восстановим ориг. формат изобр.
+      //поэтому добавили свойства BitDepth и ColorType
+    end;
+    fPredictor.Free;
     //а на нет и суда нет
+    //наконец, сообщим документу, какую область мы изменили
+    doc.AddToChangeRect(fRect);
   end;
   //в противном случае команда вот-вот будет удалена, нет нужды освобождать
   //память впереди паровоза
 end;
 
 function TPatchImageCommand.Undo: Boolean;
-var i,j: Integer;
-    C1,C2: RGBColor;
-    doc: TRasterImageDocument;
+var doc: TRasterImageDocument;
+    src,dest: TPngObjectIterator;
+    tmp: TExtendedPngObject;
 begin
-  getBounds;  //размеры заплатки мы могли бы по изображению понять, но расположение
-  //все равно узнавать надо!
+  //формируем прямоугольник, на котором произошли изменения. Его верхний угол хранится в Top/Left
+  //он по сути на месте, а по размерам заплатки восст. нижний правый угол
+  fRect.Bottom:=fRect.Top+fDiff.Height;
+  fRect.Right:=fRect.Left+fDiff.Width;
   doc:=GetDoc;
-  doc.AddToChangeRect(Rect(fLeft,fTop,fRight,fBottom));
-  fPredictor.Resize(fDiff.Width,fDiff.Height);
-  if UndoPrediction then
-    for j:=0 to fDiff.Height-1 do
-      for i:=0 to fDiff.Width-1 do begin
-        C1.Color:=fDiff.Pixels[i,j];
-        C2.Color:=fPredictor.Pixels[i,j];
-        C1.R:=C1.R+C2.R-128;
-        C1.G:=C1.G+C2.G-128;
-        C1.B:=C1.B+C2.B-128;
-        fDiff.Pixels[i,j]:=C1.Color;
-      end;
-    //а на нет и суда нет
+  doc.AddToChangeRect(fRect); //можно сразу сообщить, мы уже все знаем.
+  if ColorType=0 then ColorType:=doc.Btmp.Header.ColorType;//если формат не поменялся,
+  if BitDepth=0 then BitDepth:=doc.Btmp.Header.BitDepth;//мы его и не сохраняем!
+  //возможно, формат fDiff успел поменяться после сохранения, для уменьшения размера
+  if (fDiff.Header.BitDepth<>BitDepth) or (fDiff.Header.ColorType<>ColorType) then begin
+    tmp:=fDiff.GetInOtherFormat(ColorType,BitDepth);
+    fDiff.Free;
+    fDiff:=tmp;
+  end;
+  fPredictor:=TExtendedPngObject.CreateBlank(ColorType,BitDepth,fDiff.Width,fDiff.Height);
+  if UndoPrediction then begin
+    //в прошлый раз вычитали fPredictor, теперь прибавим назад.
+    src:=fPredictor.CreateIterator;
+    dest:=fDiff.CreateIterator;
+    //that's how I add.
+    while not src.isEOF do
+      dest.WriteNextSubpixel((dest.PeekNextSubpixel+src.ReadNextSubpixel) and 255);
+    dest.Free;
+    src.Free;
+  end;
+  fPredictor.Free;
+  //а на нет и суда нет
   //осталось вправить картинку на место
-  doc.Btmp.Canvas.CopyRect(Rect(fLeft,fTop,fRight,fBottom),fDiff.Canvas,Rect(0,0,fDiff.Width,fDiff.Height));
+  if (doc.Btmp.Header.ColorType<>ColorType) or (doc.Btmp.Header.BitDepth<>BitDepth) then begin
+    tmp:=doc.Btmp.GetInOtherFormat(ColorType,BitDepth);
+    doc.Btmp.Free;
+    doc.Btmp:=tmp;
+  end;
+
+  src:=fDiff.CreateIterator;
+  dest:=doc.Btmp.CreateIteratorForCropped(fRect);
+  while not src.isEOF do
+    dest.WriteNextPixel(src.ReadNextPixel);
   Result:=true;
 end;
 
 function TPatchImageCommand.UndoPrediction: Boolean;
 begin
-  Result:=false;
-end;
-
-(*
-    TRectBrushCommand
-                              *)
-constructor TRectBrushCommand.Create(aX,aY: Integer);
-begin
-  Create(nil);
-  X:=aX;
-  Y:=aY;
-end;
-
-procedure TRectBrushCommand.GetBounds;
-var size: Integer;
-begin
-  size:=Round(GetDoc.BrushSize/GetDoc.scale);
-  fLeft:=X-size;
-  fRight:=X+size;
-  fTop:=Y-size;
-  fBottom:=Y+size;
-end;
-
-function TRectBrushCommand.InternalExecute: Boolean;
-var PrimeCol: TColor;
-    i,j: Integer;
-begin
-  PrimeCol:=GetDoc.PrimaryColor;
-  //пока поступим упрощенно
-  with GetDoc.Btmp.Canvas do begin
-    Brush.Color:=PrimeCol;
-    for i:=fLeft to fRight-1 do
-      for j:=fTop to fBottom-1 do
-        if Pixels[i,j]<>PrimeCol then begin
-          FillRect(Rect(fLeft,fTop,fRight,fBottom));
-          Result:=true;
-          Exit;
-        end;
-  end;
-  //дошли досюда, значит, так ничего и не закрасили
   Result:=false;
 end;
 
@@ -246,6 +287,13 @@ begin
   if Result then index:=(index*maxColorVal) div 255; //к примеру
 end;
 
+constructor TBrushCommand.Create(aOwner: TComponent);
+begin
+  inherited Create(aOwner);
+  fDiff:=TExtendedPngObject.Create;
+  fPoints:=TList.Create;
+end;
+
 constructor TBrushCommand.CreateStandalone(myFutureOwner: TRasterImageDocument);
 var btmp: TExtendedPNGObject;
   fActualCount: Integer;
@@ -255,11 +303,8 @@ begin
 //надо за неё цепляться
 //но если все равно повышать количество бит на пиксель, то не жадничать, а сразу
 //делать побольше, с запасом.
-  inherited Create(nil);
+  Create(nil);
 
-  fDiff:=TExtendedPngObject.Create;
-
-  fPoints:=TList.Create;
   fFutureOwner:=myFutureOwner;
   fBrushColor:=fFutureOwner.PrimaryColor;
   fBrushSize:=fFutureOwner.BrushSize;
@@ -324,29 +369,18 @@ begin
   inherited Destroy;
 end;
 
-procedure TBrushCommand.Draw(aX,aY: Word);
-var i: TPngObjectIterator;
-    changes: Boolean;
-    point: TWordPoint;
+function TBrushCommand.Draw(aX,aY: Word): Boolean;
+var point: TWordPoint;
     ourRect: TRect;
 begin
-  ourRect:=Rect(aX-fBrushSize div 2,aY-fBrushSize div 2,aX+fBrushSize div 2, aY+fBrushSize div 2);
-  //проверяем, окажет ли это хоть какое-то влияние?
-  if fColorExistsInPalette then begin
-    i:=fFutureOwner.Btmp.CreateIteratorForCropped(ourRect);
-    changes:=false;
-    while not i.isEOF do
-      if i.ReadNextPixel<>fColorIndex then begin
-        changes:=true;
-        break;
-      end;
-    i.Free;
-    if not changes then Exit;
-  end;
   point.X:=aX;
   point.Y:=aY;
-  fPoints.Add(point.AsPointer);
-  CoverRect(fRect,ourRect);
+  Result:=(fPoints.IndexOf(point.AsPointer)=-1);
+  if Result then begin
+    fPoints.Add(point.AsPointer);
+    ourRect:=Rect(aX-fBrushSize div 2,aY-fBrushSize div 2,aX+fBrushSize div 2, aY+fBrushSize div 2);
+    CoverRect(fRect,ourRect);
+  end;
 end;
 
 procedure TBrushCommand.DefineProperties(filer: TFiler);
@@ -406,9 +440,14 @@ begin
   fPointsReduced:=true;
 end;
 
-function TBrushCommand.Execute: Boolean;
+procedure TBrushCommand.GetBounds;
+begin
+  //ничего не делаем, fRect уже нами заполнен ранее.
+end;
+
+function TBrushCommand.InternalExecute: Boolean;
 var btmp: TExtendedPngObject;
-    src,dest: TPngObjectIterator;
+    dest: TPngObjectIterator;
     i: Integer;
     point: TWordPoint;
     sizesq: Integer;
@@ -419,19 +458,7 @@ begin
   //потом, когда новую команду будем делать, сообразим,
   //как общие куски вынести в предка
   ReducePoints;
-  fFutureOwner.AddToChangeRect(fRect); //для корректного отобр. изменений
-//  fDiff.Resize(fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);  //сюда сохраним изобр.
-  //перед началом экзекуции
   btmp:=fFutureOwner.Btmp;
-  fDiff.Free;
-  fDiff:=TExtendedPngObject.CreateBlank(Btmp.Header.ColorType,Btmp.Header.BitDepth,
-    fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
-  src:=btmp.CreateIteratorForCropped(fRect);
-  dest:=fDiff.CreateIterator;
-  while not src.isEOF do
-    dest.WriteNextPixel(src.ReadNextPixel); //сейчас режим цвета и бит/пиксель совпадают
-  dest.Free;
-  src.Free;
   //бекап есть, теперь, если надо, переделываем изображение
   if not fColorExistsInPalette then begin
     if fNeedToChangeBitDepth then begin
@@ -453,13 +480,21 @@ begin
     dest:=btmp.CreateIteratorForCropped(Rect(point.X-fBrushSize div 2,point.Y-fBrushSize div 2,
       point.X + fBrushSize div 2, point.Y+fBrushSize div 2));
     if fBrushShape=bsSquare then
-      while dest.isEOF do
-        dest.WriteNextPixel(fColorIndex)
+      while not dest.isEOF do begin
+        if dest.PeekNextPixel<>fColorIndex then
+          PointChanged(dest.CurColumn,dest.CurLine);
+        dest.WriteNextPixel(fColorIndex);
+      end
     else begin
       sizesq:=Sqr(fBrushSize div 2);
-      while dest.isEOF do
-       if sqr(dest.CurLine-point.Y)+sqr(dest.CurColumn-point.X)<sizesq then
-        dest.WriteNextPixel(fColorIndex)
+      while not dest.isEOF do
+       if (sqr(dest.CurLine-point.Y)+sqr(dest.CurColumn-point.X)<sizesq)
+         and (dest.PeekNextPixel<>fColorIndex) then begin
+          dest.WriteNextPixel(fColorIndex);
+          PointChanged(dest.CurColumn,dest.CurLine);
+         end
+       else
+        dest.WriteNextPixel(dest.PeekNextPixel);
     end;
     dest.Free;
   end;
@@ -467,6 +502,6 @@ end;
 
 
 initialization
-  RegisterClasses([TRectBrushCommand]);
+  RegisterClasses([TBrushCommand]);
 
 end.
