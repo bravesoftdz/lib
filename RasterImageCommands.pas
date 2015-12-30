@@ -48,7 +48,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     function Execute: Boolean; override;
     function Undo: Boolean; override;
   published
-    property diff: TExtendedPngObject read fDiff write fDiff;
+    property diff: TExtendedPngObject read fDiff write fDiff stored fActiveBranch;
     property Left: Integer read fRect.Left write fRect.Left;
     property Top: Integer read fRect.Top write fRect.Top;
     property BitDepth: Byte read fOldBitDepth write fOldBitDepth stored fImageFormatChanged;
@@ -136,9 +136,9 @@ end;
 procedure TPatchImageCommand.PointChanged(const X,Y: Integer);
 begin
   fUpdateRect.Left:=min(fUpdateRect.Left,X);
-  fUpdateRect.Right:=max(fUpdateRect.Right,X);
+  fUpdateRect.Right:=max(fUpdateRect.Right,X+1);
   fUpdateRect.Top:=min(fUpdateRect.Top,Y);
-  fUpdateRect.Bottom:=max(fUpdateRect.Bottom,Y);
+  fUpdateRect.Bottom:=max(fUpdateRect.Bottom,Y+1);
 end;
 
 function TPatchImageCommand.Execute: Boolean;
@@ -163,6 +163,8 @@ begin
   //так надежнее:
   src:=btmp.CreateIteratorForCropped(fRect);
   dest:=fDiff.CreateIterator;
+  assert(fRect.Right-fRect.Left=fDiff.width,'execute patch command: width not equal:'+IntToStr(fRect.Right-fRect.Left)+' and '+IntToStr(fDiff.Width));
+  assert(fRect.Bottom-fRect.Top=fDiff.height,'execute patch command: height not equal'+IntToStr(fRect.Bottom-fRect.Top)+' and '+IntToStr(fDiff.Height));
   while not src.isEOF do
     dest.WriteNextPixel(src.ReadNextPixel);
   dest.Free;
@@ -174,10 +176,8 @@ begin
   fUpdateRect.Top:=fRect.Bottom;
   fUpdateRect.Bottom:=fRect.Top-1;
   //храним в fDiff копию того фрагмента, который начнем мучать
-  Result:=InternalExecute;
+  Result:=InternalExecute and not IsRectEmpty(fUpdateRect);
   if Result then begin
-    inc(fUpdateRect.Right);
-    inc(fUpdateRect.Bottom);
   //после InternalExecute еще могли поменяться границы
     if (fRect.Left<>fUpdateRect.Left) or (fRect.Right<>fUpdateRect.Right)
       or (fRect.Top<>fUpdateRect.Top) or (fRect.Bottom<>fUpdateRect.Bottom) then
@@ -266,6 +266,8 @@ begin
 
   src:=fDiff.CreateIterator;
   dest:=doc.Btmp.CreateIteratorForCropped(fRect);
+  assert(fRect.Right-fRect.Left=fDiff.width,'undo patch: width not equal:'+IntToStr(fRect.Right-fRect.Left)+' and '+IntToStr(fDiff.Width));
+  assert(fRect.Bottom-fRect.Top=fDiff.height,'undo patch: height not equal'+IntToStr(fRect.Bottom-fRect.Top)+' and '+IntToStr(fDiff.Height));
   while not src.isEOF do
     dest.WriteNextPixel(src.ReadNextPixel);
   dest.Free;
@@ -495,6 +497,7 @@ var pix: array of array of Byte;
     hasUniquePoint: boolean;
 begin
   if fPointsReduced then Exit;
+
   GetBounds;
   //надеемся малость подсократить количество точек
   SetLength(pix,fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
@@ -531,7 +534,7 @@ begin
             dec(pix[offset.X+k,offset.Y+j]);
     end;
   end;
-  //а пока ничего не делаем
+  
   fPointsReduced:=true;
 end;
 
@@ -546,7 +549,8 @@ begin
   //пока все выполняем в одной TBrushCommand,
   //потом, когда новую команду будем делать, сообразим,
   //как общие куски вынести в предка
-  FigureAboutColorsAndBitdepth;  
+  FigureAboutColorsAndBitdepth;
+  fPointsReduced:=false; //отладка  
   ReducePoints;
   btmp:=GetDoc.Btmp;
   //бекап есть, теперь, если надо, переделываем изображение
@@ -572,8 +576,8 @@ begin
     while not dest.isEOF do
       if fBelongFunc(dest.CurColumn-point.X,dest.CurLine-point.Y)
         and (dest.PeekNextPixel<>fColorIndex) then begin
-        dest.WriteNextPixel(fColorIndex);
         PointChanged(dest.CurColumn,dest.CurLine);
+        dest.WriteNextPixel(fColorIndex);
       end
       else
         dest.SkipPixel;
