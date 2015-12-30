@@ -61,11 +61,15 @@ TWordPoint=record
     1: (AsPointer: Pointer);
 end;
 
+TPixelBelongsToBrushFunc = function (x,y: Integer): Boolean of object;
+
 TBrushCommand = class (TPatchImageCommand)
   private
+    fR2: Integer;
     fBrushColor: TColor;
     fBrushSize: Word;
     fBrushShape: TBrushShape;
+    fBelongFunc: TPixelBelongsToBrushFunc;
     fPoints: TList;
     fColorExistsInPalette: Boolean; //есть ли готовый индекс для цвета, которым
     //закрашиваем
@@ -81,6 +85,11 @@ TBrushCommand = class (TPatchImageCommand)
     procedure ReadPoints(stream: TStream);
     procedure ReducePoints;
     procedure FigureAboutColorsAndBitdepth;
+    procedure SetBrushSize(value: Word);
+    procedure SetBrushShape(value: TBrushShape);
+    function PixelBelongsToRectBrush(x,y: Integer): Boolean;
+    function PixelBelongsToEvenRoundBrush(x,y: Integer): Boolean;
+    function PixelBelongsToOddRoundBrush(x,y: Integer): Boolean;
   protected
     procedure DefineProperties(filer: TFiler); override;
     procedure GetBounds; override;  //заполняет fRect
@@ -94,8 +103,8 @@ TBrushCommand = class (TPatchImageCommand)
     function InternalExecute: Boolean; override;
   published
     property BrushColor: TColor read fBrushColor write fBrushColor;
-    property BrushSize: Word read fBrushSize write fBrushSize;
-    property BrushShape: TBrushShape read fBrushShape write fBrushShape;
+    property BrushSize: Word read fBrushSize write SetBrushSize;
+    property BrushShape: TBrushShape read fBrushShape write SetBrushShape;
   end;
 implementation
 
@@ -295,6 +304,39 @@ begin
   fPoints:=TList.Create;
 end;
 
+procedure TBrushCommand.SetBrushSize(value: Word);
+begin
+  fBrushSize:=value;
+  fR2:=Sqr(value);
+  SetBrushShape(fBrushShape); //может поменяться
+end;
+
+procedure TBrushCommand.SetBrushShape(value: TBrushShape);
+begin
+  fBrushShape:=value;
+  if value=bsSquare then fBelongFunc:=PixelBelongsToRectBrush
+  else if value=bsRound then
+    if fBrushSize div 2 = 0 then
+      fBelongFunc:=PixelBelongsToEvenRoundBrush
+    else
+      fBelongFunc:=PixelBelongsToOddRoundBrush;
+end;
+
+function TBrushCommand.PixelBelongsToRectBrush(x,y: Integer): Boolean;
+begin
+  Result:=true;
+end;
+
+function TBrushCommand.PixelBelongsToEvenRoundBrush(x,y: Integer): Boolean;
+begin
+  Result:=(Sqr(x)+Sqr(y)+x+y<fR2);
+end;
+
+function TBrushCommand.PixelBelongsToOddRoundBrush(x,y: Integer): Boolean;
+begin
+  Result:=(Sqr(x)+Sqr(y)<fR2);
+end;
+
 procedure TBrushCommand.FigureAboutColorsAndBitdepth;
 var btmp: TExtendedPNGObject;
   fActualCount: Integer;
@@ -371,13 +413,15 @@ var ourRect: TRect;
     i: Integer;
     p: TWordPoint;
 begin
-  fBrushColor:=GetDoc.PrimaryColor;
-  fBrushSize:=GetDoc.BrushSize;
-  fBrushShape:=GetDoc.BrushShape;
+  BrushColor:=GetDoc.PrimaryColor;
+  BrushSize:=GetDoc.BrushSize;
+  BrushShape:=GetDoc.BrushShape;
   fRect:=Rect(0,0,0,0);
   for i:=0 to fPoints.Count-1 do begin
     p.AsPointer:=fPoints[i];
-    ourRect:=Rect(p.X-fBrushSize div 2,p.Y-fBrushSize div 2,p.X+fBrushSize div 2, p.Y+fBrushSize div 2);
+    ourRect:=Rect(p.X-fBrushSize div 2,p.Y-fBrushSize div 2,(p.X+(fBrushSize-1) div 2)+1, (p.Y+(fBrushSize-1) div 2)+1);
+    //вертикаль Left и горизонталь Top содержат изменившиеся пиксели,
+    //а Right и Bottom - нет.
     CoverRect(fRect,ourRect);
   end;
 end;
@@ -440,13 +484,53 @@ begin
   end;
   p.Free;
   reader.ReadListEnd;
+  fPointsReduced:=true; //их еще давно редуцировали, перед сохранением!
 end;
 
 
 procedure TBrushCommand.ReducePoints;
+var pix: array of array of Byte;
+    i,j,k: Integer;
+    offset: TWordPoint;
+    hasUniquePoint: boolean;
 begin
   if fPointsReduced then Exit;
+  GetBounds;
   //надеемся малость подсократить количество точек
+  SetLength(pix,fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
+  for i:=0 to fPoints.Count-1 do begin
+    offset.AsPointer:=fPoints[i];
+    dec(offset.X,fRect.Left);
+    dec(offset.Y,fRect.Top);
+    for j:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do
+      for k:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do begin
+        Assert(offset.X+k>=0,'x<0');
+        Assert(offset.X+k<fRect.Right-fRect.Left,'x>=length');
+        Assert(offset.Y+j>=0,'y<0');
+        Assert(offset.Y+j<fRect.Bottom-fRect.Top,'y>=length');
+        if fBelongFunc(k,j) and (pix[offset.X+k,offset.Y+j]<255) then
+          inc(pix[offset.X+k,offset.Y+j])
+      end;
+  end;  //определили, сколько раз "стирается" каждая точка.
+  for i:=fPoints.Count-1 downto 0 do begin //а теперь попробуем удалить хоть что-нибудь
+    offset.AsPointer:=fPoints[i];
+    dec(offset.X,fRect.Left);
+    dec(offset.Y,fRect.Top);
+    HasUniquePoint:=false;
+    for j:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do
+      for k:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do
+        if fBelongFunc(k,j) and (pix[offset.X+k,offset.Y+j]=1) then begin
+          HasUniquePoint:=true;
+          break;
+        end;
+    if not HasUniquePoint then begin
+      fPoints.Delete(i);
+      for j:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do
+        for k:=-(fBrushSize div 2) to ((fBrushSize-1) div 2) do
+          if fBelongFunc(k,j) then
+            dec(pix[offset.X+k,offset.Y+j]);
+    end;
+  end;
   //а пока ничего не делаем
   fPointsReduced:=true;
 end;
@@ -456,7 +540,6 @@ var btmp: TExtendedPngObject;
     dest: TPngObjectIterator;
     i: Integer;
     point: TWordPoint;
-    sizesq: Integer;
 begin
   Result:=fPoints.Count>0;
   if not Result then exit;
@@ -485,24 +568,15 @@ begin
   for i:=0 to fPoints.Count-1 do begin
     point:=TWordPoint(fPoints[i]);
     dest:=btmp.CreateIteratorForCropped(Rect(point.X-fBrushSize div 2,point.Y-fBrushSize div 2,
-      point.X + fBrushSize div 2, point.Y+fBrushSize div 2));
-    if fBrushShape=bsSquare then
-      while not dest.isEOF do begin
-        if dest.PeekNextPixel<>fColorIndex then
-          PointChanged(dest.CurColumn,dest.CurLine);
+      point.X + (fBrushSize-1) div 2 + 1, point.Y+(fBrushSize-1) div 2 + 1));
+    while not dest.isEOF do
+      if fBelongFunc(dest.CurColumn-point.X,dest.CurLine-point.Y)
+        and (dest.PeekNextPixel<>fColorIndex) then begin
         dest.WriteNextPixel(fColorIndex);
+        PointChanged(dest.CurColumn,dest.CurLine);
       end
-    else begin
-      sizesq:=Sqr(fBrushSize div 2);
-      while not dest.isEOF do
-       if (sqr(dest.CurLine-point.Y)+sqr(dest.CurColumn-point.X)<sizesq)
-         and (dest.PeekNextPixel<>fColorIndex) then begin
-          dest.WriteNextPixel(fColorIndex);
-          PointChanged(dest.CurColumn,dest.CurLine);
-         end
-       else
-        dest.WriteNextPixel(dest.PeekNextPixel);
-    end;
+      else
+        dest.SkipPixel;
     dest.Free;
   end;
 end;
