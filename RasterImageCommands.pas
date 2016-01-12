@@ -93,6 +93,9 @@ TBrushCommand = class (TPatchImageCommand)
   protected
     procedure DefineProperties(filer: TFiler); override;
     procedure GetBounds; override;  //заполняет fRect
+    function UndoPrediction: Boolean; override;
+    //просто заносит текущее сост. прямоуг.
+    //тем самым не надо сохранять то, что не изменилось
   public
     constructor Create(aOwner: TComponent); override;
     //поскольку он должен работать с документом (только для чтения) еще до
@@ -583,6 +586,24 @@ begin
         dest.SkipPixel;
     dest.Free;
   end;
+end;
+
+function TBrushCommand.UndoPrediction: Boolean;
+var src,dest: TPngObjectIterator;
+begin
+  src:=GetDoc.Btmp.CreateIteratorForCropped(fRect);
+  dest:=fPredictor.CreateIterator;
+  //src такой же или "ширше", чем dest по цветам.
+  if (GetDoc.Btmp.Header.ColorType=fPredictor.Header.ColorType) and
+    (GetDoc.Btmp.Header.BitDepth=fPredictor.Header.BitDepth) then begin
+      while not src.isEOF do
+        dest.WriteNextPixel(src.ReadNextPixel);
+    Result:=true;
+  end
+  else
+    Result:=false;  //обеспечит корректную работу, но громоздкий DLRN
+  src.Free;
+  dest.Free;
 end;
 
 
