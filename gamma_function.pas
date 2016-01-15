@@ -72,7 +72,7 @@ begin
   assert(x>=0);
   assert(x<=255);
   if x<11 then Result:=x*0.000302341
-    else Result:=power((x/256+0.055)/1.055,2.4);
+    else Result:=power((x/255+0.055)/1.055,2.4);
 end;
 
 function monochrome_from_Real (x:Real): TColor;

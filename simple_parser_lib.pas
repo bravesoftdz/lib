@@ -36,7 +36,7 @@ TSimpleParser=class
     function getIdent: string; //считать символы, пока они укладываются в диап. A..Z, a..z, 0..9, _, А..Я, а..я
     function getPhysUnitIdent: string;
     function getVarPathIdent: string;
-    function getHex: Integer;
+    function getHex(digits: Integer=-1): Integer;
     function getBinary: LongWord;
     property Pos: Integer read _pos;
   end;
@@ -228,7 +228,7 @@ begin
   inc(_pos);
 end;
 
-function TSimpleParser.getHex: Integer;
+function TSimpleParser.getHex(digits: Integer=-1): Integer;
 var x,Int0: Integer;
     ch: Integer;
 begin
@@ -236,11 +236,12 @@ begin
   x:=0;
   skip_spaces;
   fBackupPos:=_pos;
-  while (_pos<=Length(_str)) and (_str[_pos]<='F') and (_str[_pos]>='0') and isIdentSymbol(_str[_pos]) do begin
+  while (_pos<=Length(_str)) and (_str[_pos]<='F') and (_str[_pos]>='0') and isIdentSymbol(_str[_pos]) and (digits<>0) do begin
     ch:=Integer(_str[_pos])-Int0;
     if ch>9 then ch:=ch-7;
     x:=(x shl 4) or ch;
     inc(_pos);
+    dec(digits);
   end;
   Result:=x;
   if (_pos<=Length(_str)) and isDelimiter(_str[_pos]) then inc(_pos);

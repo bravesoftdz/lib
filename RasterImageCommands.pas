@@ -33,8 +33,10 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     fDiff: TExtendedPngObject;
     fPredictor: TExtendedPngObject;
     fRect,fUpdateRect: TRect; //расположение заплатки и вычисление мин. необх.
-    fImageFormatChanged: Boolean;
     fOldBitDepth,fOldColorType: Byte;
+    fImageFormatChanged: Boolean;
+    procedure SetOldBitDepth(value: Byte);
+    procedure SetOldColorType(value: Byte);
     procedure GetBounds; virtual; abstract;//инициализировать fLeft,fTop,fRight,fBottom
     procedure PointChanged(const x,y: Integer); //вызывается из потомка,
     // если в (x,y) произошли изменения, нужна для нахождения минимального прямоуг.
@@ -51,8 +53,8 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     property diff: TExtendedPngObject read fDiff write fDiff stored fActiveBranch;
     property Left: Integer read fRect.Left write fRect.Left;
     property Top: Integer read fRect.Top write fRect.Top;
-    property BitDepth: Byte read fOldBitDepth write fOldBitDepth stored fImageFormatChanged;
-    property ColorType: Byte read fOldColorType write fOldColorType stored fImageFormatChanged;
+    property BitDepth: Byte read fOldBitDepth write SetOldBitDepth stored fImageFormatChanged;
+    property ColorType: Byte read fOldColorType write SetOldColorType stored fImageFormatChanged;
   end;
 
 TWordPoint=record
@@ -144,6 +146,22 @@ begin
   fUpdateRect.Bottom:=max(fUpdateRect.Bottom,Y+1);
 end;
 
+procedure TPatchImageCommand.SetOldBitDepth(value: Byte);
+begin
+  if fOldBitDepth<>value then begin
+    fOldBitDepth:=value;
+    fImageFormatChanged:=true;
+  end;
+end;
+
+procedure TPatchImageCommand.SetOldColorType(value: Byte);
+begin
+  if fOldColorType<>value then begin
+    fOldColorType:=value;
+    fImageFormatChanged:=true;
+  end;
+end;
+
 function TPatchImageCommand.Execute: Boolean;
 var doc: TRasterImageDocument;
   btmp,tmp: TExtendedPNGObject;
@@ -158,7 +176,8 @@ begin
   fDiff.Free;
   fDiff:=TExtendedPNGObject.CreateBlank(Btmp.Header.ColorType,
     Btmp.Header.BitDepth,fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
-
+  //палитра будет стандартной, если ColorType=COLOR_PALETTE
+  //перед сохранением необходимо присвоить реальную
 //  fDiff.Canvas.CopyRect(Rect(0,0,fDiff.Width,fDiff.Height),Doc.Btmp.Canvas,
 //    Rect(fLeft,fTop,fRight,fBottom));
   //copyRect вроде быстрый, но не thread-safe (а мы хотим быть thread-safe, не знаю зачем)
@@ -188,6 +207,7 @@ begin
       tmp:=fDiff;
       fDiff:=TExtendedPNGObject.CreateBlank(tmp.Header.ColorType,
         tmp.Header.BitDepth,fUpdateRect.Right-fUpdateRect.Left,fUpdateRect.Bottom-fUpdateRect.Top);
+      //и снова станд. палитра
       src:=tmp.CreateIteratorForCropped(Rect(fUpdateRect.Left-fRect.Left,fUpdateRect.Top-fRect.Top,
         fUpdateRect.Right-fRect.Left,fUpdateRect.Bottom-fRect.Top));
       dest:=fDiff.CreateIterator;
@@ -201,6 +221,7 @@ begin
     //fPredictor должен иметь те же параметры ColorType,BitDepth, Width, Height
     fPredictor:=TExtendedPngObject.CreateBlank(fDiff.Header.ColorType,
       fDiff.Header.BitDepth,fDiff.Width,fDiff.Height);
+    //и у предиктора тоже палитра стандартная
     if UndoPrediction then begin
       //нарисует на Predictor исх. картинку исходя из того, что он
       //может знать по конечному результату
@@ -376,6 +397,7 @@ begin
         end
         else begin
           fNewColorMode:=COLOR_PALETTE;
+          fNewBitDepth:=Btmp.Header.BitDepth;
           fColorIndex:=fActualCount;
         end;
       end;
@@ -398,6 +420,7 @@ begin
         end
         else begin
           fNewColorMode:=COLOR_PALETTE;
+          fNewBitDepth:=Btmp.Header.BitDepth;
           fColorIndex:=fActualCount;
         end;
       end;
@@ -499,6 +522,7 @@ var pix: array of array of Byte;
     offset: TWordPoint;
     hasUniquePoint: boolean;
 begin
+//  fPointsReduced:=true;  //debug
   if fPointsReduced then Exit;
 
   GetBounds;
@@ -558,16 +582,16 @@ begin
   btmp:=GetDoc.Btmp;
   //бекап есть, теперь, если надо, переделываем изображение
   if not fColorExistsInPalette then begin
-    if fNeedToChangeBitDepth then begin
+//    if fNeedToChangeBitDepth then begin
       //коренное переформатирование
       Btmp:=btmp.GetInOtherFormat(fNewColorMode,fNewBitDepth);
       GetDoc.Btmp.Free;
       GetDoc.Btmp:=Btmp;
-    end
-    else begin
-      raise Exception.Create('convert to palette: dangerous procedure, may corrupt data');
-      Btmp.ConvertToPalette;
-    end;
+//    end
+//    else begin
+//      raise Exception.Create('convert to palette: dangerous procedure, may corrupt data');
+//      Btmp.ConvertToPalette;
+//    end;
     if (fNewColorMode=COLOR_PALETTE) and (Btmp.GetColorIndex(fBrushColor)=-1) then
       fColorIndex:=Btmp.AddToPalette(fBrushColor);
   end;
