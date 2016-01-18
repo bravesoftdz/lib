@@ -181,8 +181,9 @@ begin
   btmp:=doc.Btmp;
   //избавимся от palette, если таковая имелась
   if btmp.GetInMinimalGrayscaleOrRGB(tmp) then begin
-    btmp.Free;
-    btmp:=tmp;
+    doc.btmp.Free;
+    doc.btmp:=tmp;
+    btmp:=doc.Btmp;
   end;
   //вот это и примем за исходную картинку
   fOldBitDepth:=btmp.Header.BitDepth;
@@ -417,29 +418,7 @@ begin
         end;
       end;
     end;
-    COLOR_PALETTE: begin
-      //нужно определить, если ли наш цвет в палитре
-      p:=btmp.GetColorIndex(fBrushColor);
-      fColorExistsInPalette:=(p>=0);
-      if fColorExistsInPalette then
-        fColorIndex:=p
-      else begin
-        //вот ведь незадача
-        fNeedToChangeBitDepth:=not Btmp.IsColorNumberLessThen(1 shl Btmp.Header.BitDepth, fActualCount);
-        if fNeedToChangeBitDepth then begin
-          fNewBitDepth:=8;
-          if fActualCount>=256 then
-            fNewColorMode:=COLOR_RGB
-          else
-            fNewColorMode:=COLOR_PALETTE;
-        end
-        else begin
-          fNewColorMode:=COLOR_PALETTE;
-          fNewBitDepth:=Btmp.Header.BitDepth;
-          fColorIndex:=fActualCount;
-        end;
-      end;
-    end;
+    //COLOR_PALETTE никогда не появится, потому что TPatchImageCommand его не любит
     else
       Raise Exception.Create('sorry, alpha channel support under construction');
   end;
@@ -488,7 +467,6 @@ end;
 
 procedure TBrushCommand.WritePoints(stream: TStream);
 begin
-  ReducePoints;
 
 end;
 
@@ -537,9 +515,7 @@ var pix: array of array of Byte;
     offset: TWordPoint;
     hasUniquePoint: boolean;
 begin
-//  fPointsReduced:=true;  //debug
   if fPointsReduced then Exit;
-
   GetBounds;
   //надеемся малость подсократить количество точек
   SetLength(pix,fRect.Right-fRect.Left,fRect.Bottom-fRect.Top);
@@ -575,8 +551,7 @@ begin
           if fBelongFunc(k,j) then
             dec(pix[offset.X+k,offset.Y+j]);
     end;
-  end;
-  
+  end;  
   fPointsReduced:=true;
 end;
 
@@ -632,14 +607,16 @@ var src,dest: TPngObjectIterator;
 begin
   src:=GetDoc.Btmp.CreateIteratorForCropped(fRect);
   dest:=fPredictor.CreateIterator;
+  Result:=true;
   //src такой же или "ширше", чем dest по цветам.
-  if (GetDoc.Btmp.Header.ColorType=fPredictor.Header.ColorType) and
-    (GetDoc.Btmp.Header.BitDepth=fPredictor.Header.BitDepth) then begin
-      while not src.isEOF do
-        dest.WriteNextPixel(src.ReadNextPixel);
-    Result:=true;
-  end
+  if ColorType=Color_GRAYSCALE then
+    while not src.isEOF do
+      dest.WriteNextAsGrayscale(src.ReadNextAsGrayscale)
+  else if ColorType=COLOR_RGB then
+    while not src.isEOF do
+      dest.WriteNextAsRGB(src.ReadNextAsRGB)
   else
+    //других не поддерживает
     Result:=false;  //обеспечит корректную работу, но громоздкий DLRN
   src.Free;
   dest.Free;
