@@ -12,8 +12,14 @@ TRasterImageDocumentCommand = class (TAbstractTreeCommand)
   end;
 TPatchImageCommand = class (TRasterImageDocumentCommand)
 //базовая команда при работе с растровыми изображениями
+
 //GetBounds выставляет предварительные размеры прямоугольника, где произойдет действие
+
+//если была палитра, преобразуем картинку в RGB или Grayscale, уж больно неудобно
+//с палитрой обращаться.
+
 //и при вызове Execute картинка из него будет сохранена в fDiff, и вызван internalExecute
+
 //в потомках описываем internalExecute - как изменить изображение
 //он может в числе прочего поменять формат всего изображения.
 //при этом для каждой измененной точки внутри прямоуг. вызываем PointChanged, тем самым
@@ -22,7 +28,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
 //наконец, вызывается UndoPrediction, который пытается, располагая только результирующей
 //картинкой и свойствами команды, которые сохраняются в файл (не считая fDiff), восстановить
 //(предсказать) исходное изображение. Если это реализовано, то из fDiff будет вычтен fPredictor.
-//UndoPrediction имеет право узнать ColorMode и BitDepth из fDiff.
+//UndoPrediction имеет право узнать ColorMode и BitDepth.
 
 //при исполнении Undo первым делом запускается UndoPrediction, который дает ровно то же
 //предсказанное изображение, что и раньше. Его мы прибавляем к загруженному fDiff.
@@ -45,7 +51,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     function InternalExecute: Boolean; virtual; abstract; //false означает,
     //что применение команды ничего не изменило и ее стоит изъять из дерева
   public
-    constructor Create(aOwner: TComponent); overload; override;
+    constructor Create(aOwner: TComponent); override;
     destructor Destroy; override;
     function Execute: Boolean; override;
     function Undo: Boolean; override;
@@ -53,8 +59,10 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     property diff: TExtendedPngObject read fDiff write fDiff stored fActiveBranch;
     property Left: Integer read fRect.Left write fRect.Left;
     property Top: Integer read fRect.Top write fRect.Top;
-    property BitDepth: Byte read fOldBitDepth write SetOldBitDepth stored fImageFormatChanged;
-    property ColorType: Byte read fOldColorType write SetOldColorType stored fImageFormatChanged;
+    property BitDepth: Byte read fOldBitDepth write SetOldBitDepth;
+    property ColorType: Byte read fOldColorType write SetOldColorType default 255;
+    //на всякий случай, BitDepth и ColorType сохраняем всегда, "не утянет"
+    //потом подумаем, нельзя ли иногда схалявить
   end;
 
 TWordPoint=record
@@ -113,7 +121,7 @@ TBrushCommand = class (TPatchImageCommand)
   end;
 implementation
 
-uses pngImage,gamma_function,sysUtils,simple_parser_lib,math;
+uses pngImage,gamma_function,sysUtils,simple_parser_lib,math,PNGImageIterators;
 
 (*
       TRasterImageDocumentCommand
@@ -130,6 +138,7 @@ constructor TPatchImageCommand.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
   fDiff:=TExtendedPngObject.Create; //будет сохраняться в файл
+  fOldColorType:=255;
 end;
 
 destructor TPatchImageCommand.Destroy;
@@ -170,6 +179,12 @@ begin
   getBounds;  //инициализирует fRect
   doc:=GetDoc;
   btmp:=doc.Btmp;
+  //избавимся от palette, если таковая имелась
+  if btmp.GetInMinimalGrayscaleOrRGB(tmp) then begin
+    btmp.Free;
+    btmp:=tmp;
+  end;
+  //вот это и примем за исходную картинку
   fOldBitDepth:=btmp.Header.BitDepth;
   fOldColorType:=btmp.Header.ColorType;
   //обозначили заплатку
@@ -260,7 +275,7 @@ begin
   fRect.Right:=fRect.Left+fDiff.Width;
   doc:=GetDoc;
   doc.AddToChangeRect(fRect); //можно сразу сообщить, мы уже все знаем.
-  if ColorType=0 then ColorType:=doc.Btmp.Header.ColorType;//если формат не поменялся,
+  if ColorType=255 then ColorType:=doc.Btmp.Header.ColorType;//если формат не поменялся,
   if BitDepth=0 then BitDepth:=doc.Btmp.Header.BitDepth;//мы его и не сохраняем!
   //возможно, формат fDiff успел поменяться после сохранения, для уменьшения размера
   if (fDiff.Header.BitDepth<>BitDepth) or (fDiff.Header.ColorType<>ColorType) then begin
