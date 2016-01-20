@@ -58,12 +58,15 @@ TScalingThread = class (TAbstractGetImageThread, IGetPngThread, IGetPngScale)
     procedure Execute; override;
   public
     constructor Create(aGetImageIntf: IGetPngThread; ascale: Real); reintroduce; overload;
+    procedure UpdateRect(aRect: TRect); virtual;
     function GetScale: Real;
 end;
 
 T2to3ScalingThread = class (TScalingThread,IGetPngThread,IGetPngScale)
   protected
     procedure Execute; override;
+  public
+    procedure UpdateRect(aRect: TRect); override;
 end;
 
 TBrushShape = (bsSquare,bsRound);
@@ -94,7 +97,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     destructor Destroy; override;
     function Get_Image: TImage; override;
     function Get_Scaled_Btmp: TExtendedPNGObject;
-    function GetRealScale: real;    
+    function Get_Scale: real; override;
     procedure SaveAndFree;  //имя файла уже задано в документе
     procedure FreeWithoutSaving;
     procedure SaveToFile(const filename: string); override;
@@ -103,7 +106,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     procedure ZoomOut;
   published
     property Btmp: TExtendedPNGObject read GetBtmp write SetBtmp stored false;
-    property Scale: Real read GetRealScale stored false;
+    property Scale: Real read Get_Scale stored false;
     property PrimaryColor: TColor read fPrimaryColor write fPrimaryColor;
     property SecondaryColor: TColor read fSecondaryColor write fSecondaryColor;
     property BrushSize: Integer read fBrushSize write fBrushSize;
@@ -577,7 +580,7 @@ begin
   raise Exception.Create('WaitScaleLevelsReady timeout');
 end;
 
-function TRasterImageDocument.GetRealScale: Real;
+function TRasterImageDocument.Get_Scale: Real;
 begin
   WaitScaleLevelsReady;
   assert((scaleNumber>=0) and (scaleNumber<=Length(fScalingThreads)));

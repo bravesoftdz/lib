@@ -3,7 +3,7 @@ unit command_class_lib;
 interface
 
 uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,
-comctrls,messages,abstract_command_lib;
+comctrls,messages,abstract_command_lib,types;
 
 type
   TAbstractTreeCommand=class(TAbstractCommand)  //чтобы историю изменений можно было хранить вместе со всем остальным
@@ -284,6 +284,8 @@ type
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer); virtual; abstract;
     procedure MouseMove(Shift: TShiftState; X,Y: Integer); virtual;
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
+    procedure MouseWheelUp(Shift: TShiftState; MousePos: TPoint; var Handled: Boolean); virtual;
+    procedure MouseWheelDown(Shift: TShiftState; MousePos: TPoint; var Handled: Boolean); virtual;
     procedure KeyDown(var Msg: TWMKey; var Handled: Boolean); virtual;
   end;
 
@@ -1549,6 +1551,18 @@ end;
 procedure TAbstractToolAction.MouseUp(Button: TMouseButton; Shift: TShiftState; X,Y: Integer);
 begin
 
+end;
+
+procedure TAbstractToolAction.MouseWheelUp(Shift: TShiftState; MousePos: TPoint;
+  var Handled: Boolean);
+begin
+  Handled:=false;
+end;
+
+procedure TAbstractToolAction.MouseWheelDown(Shift: TShiftState; MousePos: TPoint;
+  var Handled: Boolean);
+begin
+  Handled:=false;
 end;
 
 initialization

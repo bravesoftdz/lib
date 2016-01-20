@@ -349,7 +349,9 @@ end;
 procedure TBrushCommand.SetBrushSize(value: Word);
 begin
   fBrushSize:=value;
-  fR2:=Sqr(value);
+  fR2:=Sqr((value-1) div 2);
+  if (value and 1) = 0 then
+    fR2:=fR2 + (value-1) div 2;
   SetBrushShape(fBrushShape); //может поменяться
 end;
 
@@ -436,7 +438,7 @@ var ourRect: TRect;
     p: TWordPoint;
 begin
   BrushColor:=GetDoc.PrimaryColor;
-  BrushSize:=GetDoc.BrushSize;
+  BrushSize:=Round(GetDoc.BrushSize/GetDoc.get_Scale);
   BrushShape:=GetDoc.BrushShape;
   fRect:=Rect(0,0,0,0);
   for i:=0 to fPoints.Count-1 do begin
