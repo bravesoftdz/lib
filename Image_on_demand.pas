@@ -316,6 +316,16 @@ begin
   fEvent.SetEvent;
 end;
 
+procedure TScalingThread.UpdateRect(aRect: TRect);
+begin
+  fGetImageIntf.GetImage.DownScale2TimesInto(aRect,fBitmap);
+end;
+
+procedure T2to3ScalingThread.UpdateRect(aRect: TRect);
+begin
+  fGetImageIntf.GetImage.DownScale2To3Into(aRect,fBitmap);
+end;
+
 function TScalingThread.GetScale: Real;
 begin
   Result:=fScale;
