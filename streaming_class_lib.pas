@@ -64,7 +64,7 @@ procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
 implementation
 
 uses SyncObjs;
-
+//{$IFDEF UNICODE} ,Winapi.Windows {$ENDIF}
 var fStreamingCriticalSection: TCriticalSection;  //операции в TFiler не являются
 //thread-safe, меняет на ходу DecimalSeparator. Придется по 1 операции за раз
 
@@ -109,6 +109,10 @@ end;
 procedure SwapVariants(var v1,v2: Variant);
 var t: TVarData;
 begin
+//хитрость некая - если в 8 байтах хранятся указатели на другие области данных,
+//мы эти данные не перемещаем, пущай лежат где лежали.
+//если бы мы написали t:=v1; v1:=v2; v2:=t, произошло бы полноценное копирование,
+//удаление и пр. - гораздо медленнее.
   t:=TVarData(v1); TVarData(v1):=TVarData(v2); TVarData(v2):=t;
 end;
 
@@ -339,7 +343,7 @@ constructor TstreamingClass.LoadFromFile(const filename: string);
 var
   FileStream: TFileStream;
   BinStream: TMemoryStream;
-  s: array [0..5] of char;
+  s: array [0..5] of ANSIchar;
 begin
   Create(nil);
   FileStream := TFileStream.Create(filename, fmOpenRead	);

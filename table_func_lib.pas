@@ -695,6 +695,8 @@ begin
 end;
 
 (*$WARNINGS OFF*)
+//компил€тор боитс€, что cX и cY будут не определены. „то ж, в этом есть смысл
+//если x_column/y_column бред содержат, то так и будет
 procedure table_func.LoadFromTextTable(filename: string; x_column,y_column: Integer);
 var p: TSimpleParser;
     F: TextFile;

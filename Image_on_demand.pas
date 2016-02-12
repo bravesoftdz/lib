@@ -113,7 +113,8 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     property BrushShape: TBrushShape read fBrushShape write fBrushShape;
     property ScaleNumber: integer read fScaleNumber write fScaleNumber;
   end;
-TDocumentsSavingProgress = class (TObject)
+
+  TDocumentsSavingProgress = class (TObject)
   private
     fAllDocsClearEvent: TEvent; //возвращаемся к истокам - работало неплохо
     fPrefetchedDoc: TRasterImageDocument;

@@ -6,7 +6,8 @@ uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,
 comctrls,messages,abstract_command_lib,types;
 
 type
-  TAbstractTreeCommand=class(TAbstractCommand)  //чтобы историю изменений можно было хранить вместе со всем остальным
+//чтобы историю изменений можно было хранить вместе со всем остальным
+  TAbstractTreeCommand=class(TAbstractCommand)
     private
       fNext,fPrev,fBranch: TAbstractTreeCommand;
       fTurnLeft: Boolean;
@@ -17,6 +18,8 @@ type
       procedure ResolveMemory; virtual;
       function EqualsByAnyOtherName(what: TStreamingClass): boolean; override;
     published
+//мы могли бы не сохранять Prev в файл, а восстанавливать его при загрузке
+//cэкономит сколько-нибудь памяти, около 31 байт на команду
       property Prev: TAbstractTreeCommand read fPrev write fPrev;
       property Next: TAbstractTreeCommand read fNext write fNext;
       property Branch: TAbstractTreeCommand read fBranch write fBranch;
@@ -24,6 +27,7 @@ type
       property TurnLeft: Boolean read fTurnLeft write fTurnLeft default false;
     end;
 
+//TInfoCommand ничего не делает, при undo/redo её необходимо пропускать
   TInfoCommand=class(TAbstractTreeCommand)
     public
       constructor Create(AOwner: TComponent); override;
@@ -31,12 +35,13 @@ type
       function Undo: Boolean; override;
       function SmartDateTimeToStr: string;
     end;
-
+//важнейшая разновидность TInfoCommand - с ней начинается каждая новая ветвь
+//фактически, превращает бинарное дерево в обычное (с неограниченным количеством ветвей)
   TBranchCommand=class(TInfoCommand)
     public
       function caption: string; override;
     end;
-
+//"файл сохранен"
   TSavedAsInfoCommand=class(TInfoCommand)
     private
       fFileName: string;
@@ -46,6 +51,15 @@ type
     published
       property FileName: string read fFileName write fFileName;
     end;
+
+//команда, после которой не должно выполняться других команд, взамен - возврат на
+//предыдущий шаг и новое ветвление. Мотивация: сохранение в формат с потерями,
+//запрет на продолжение работы с искаженным документом, возвращение к исходному
+  ITerminalCommand = interface
+  ['{902F14E5-FCFB-4F72-ABCB-B71819D36D8A}']
+    //увы, "классовая дискриминация":функциональность закладывается в TCommandTree,
+    //она по-разному обрабатывает команды в зависимость от их "наследственности"
+  end;
 
   THashedCommand=class(TAbstractTreeCommand)
     private
@@ -73,6 +87,9 @@ type
       constructor Create(command: THashedCommand;isUndo: Boolean);
   end;
 
+//интерфейс-"флаг", что по логике работы программы, в документе имена компонентов
+//зафиксированы, и значит, команды могут смело писать в caption текущие имена и пути,
+//а не возвращаться "во времени" на момент выполнения, и не хранить лишние тексты в файле
   IConstantComponentName = interface
   ['{6BD88A2A-129F-4FEE-8B55-F82906B4D1D7}']
   end;
@@ -194,6 +211,7 @@ type
       property Root: TAbstractTreeCommand read fRoot write fRoot;
       property Current: TAbstractTreeCommand read fCurrent write fCurrent;
     end;
+
   TAbstractToolAction=class;
   TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
     private
@@ -927,10 +945,17 @@ begin
 end;
 
 function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
+var term: ITerminalCommand;
 begin
   fCriticalSection.Acquire;
   try
-    BeginHashEvent.SetEvent;
+    //нужно проверить, имеем ли мы право выполнять команду в данном месте
+    if undotree.Current.GetInterface(ITerminalCommand,term) and
+      Assigned(undotree.Current.Prev) then
+        undotree.Undo;
+
+    BeginHashEvent.SetEvent;        
+
     undotree.InsertComponent(command);
     //может быть, не нужно исполнять конкретно эту команду, она уже есть
     //именно когда обе команды еще не исполнены, их можно сравнивать

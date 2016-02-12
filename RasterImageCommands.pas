@@ -119,9 +119,18 @@ TBrushCommand = class (TPatchImageCommand)
     property BrushSize: Word read fBrushSize write SetBrushSize;
     property BrushShape: TBrushShape read fBrushShape write SetBrushShape;
   end;
+
+TSaveToJPEGCommand = class (TRasterImageDocumentCommand,ITerminalCommand)
+  public
+    function Execute: Boolean; override;
+    function Undo: Boolean; override;
+    function Caption: string; override;
+end;
+
 implementation
 
-uses pngImage,gamma_function,sysUtils,simple_parser_lib,math,PNGImageIterators;
+uses pngImage,gamma_function,sysUtils,simple_parser_lib,math,PNGImageIterators,
+  JPEG,strUtils;
 
 (*
       TRasterImageDocumentCommand
@@ -624,8 +633,63 @@ begin
   dest.Free;
 end;
 
+(*
+    TSaveToJPEGCommand
+                          *)
+function TSaveToJPEGCommand.Execute: Boolean;
+var jpgImg: TJPEGImage;
+    diff: TExtendedPngObject;
+    btmp: TBitmap;
+    s,fn1: string;
+begin
+  btmp:=TBitmap.Create;
+  try
+    GetDoc.Btmp.AssignTo(btmp);
+    jpgImg:=TJPEGImage.Create;
+    try
+      jpgImg.Assign(Btmp);
+      jpgImg.CompressionQuality:=1;  //потом сделаем настройку
+      s:=ExtractFilePath(GetDoc.filename);
+      s:=LeftStr(s,Length(s)-5);
+      fn1:=s+ChangeFileExt(ExtractFileName(GetDoc.filename),'.jpg');
+      jpgImg.SaveToFile(fn1);
+      //теперь снова загружаем и находим разность
+      jpgImg.LoadFromFile(fn1);
+      btmp.Assign(jpgImg);
+      diff:=TExtendedPngObject.Create;
+      try
+        diff.Assign(btmp);
+        
+
+
+        //        GetDoc.Btmp.Assign(btmp);
+      finally
+        diff.Free;
+      end;
+      Result:=true;
+    finally
+      jpgImg.Free;
+    end;
+  finally
+    btmp.Free;
+  end;
+end;
+
+function TSaveToJPEGCommand.Undo: Boolean;
+begin
+  Result:=true;
+end;
+
+function TSaveToJpegCommand.Caption: String;
+var s,fn1: string;
+begin
+  s:=ExtractFilePath(GetDoc.filename);
+  s:=LeftStr(s,Length(s)-5);
+  fn1:=s+ChangeFileExt(ExtractFileName(GetDoc.filename),'.jpg');
+  Result:=Format('saved to %s',[fn1]);
+end;
 
 initialization
-  RegisterClasses([TBrushCommand]);
+  RegisterClasses([TBrushCommand,TSaveToJpegCommand]);
 
 end.
