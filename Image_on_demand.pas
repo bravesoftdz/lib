@@ -81,6 +81,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     fLoadThread: IGetPngThread;
     fScalingThreads: array of IGetPngScale;
     fScaleLevelsReadyEvent: TEvent;
+    fSizesChanged: Boolean;
     procedure LoadThreadTerminate(Sender: TObject);
     procedure WaitScaleLevelsReady;
     function GetBtmp: TExtendedPngObject;
@@ -91,6 +92,7 @@ TRasterImageDocument = class (TDocumentWithImage, IConstantComponentName)
     ChangeRect: TRect;  //0,0,0,0 озн. пустую область
     onSavingProgress: TSavingProgressReport;
     procedure AddToChangeRect(const A: TRect);
+    procedure SizesChanged;
     constructor Create(aOwner: TComponent); override;
     constructor CreateFromImageFile(aFileName: string);
     constructor LoadFromFile(const aFilename: string); override;
@@ -241,7 +243,7 @@ end;
 
 procedure TAbstractGetImageThread.SetImage(value: TExtendedPngObject);
 begin
-  GetImage;
+  GetImage.Free;
   fBitmap:=value;
 end;
 
@@ -680,11 +682,36 @@ begin
   CoverRect(ChangeRect,A);
 end;
 
-procedure TRasterImageDocument.Change;
+procedure TRasterImageDocument.SizesChanged;
 begin
-  inherited Change;
+  fSizesChanged:=true;
+end;
+
+
+procedure TRasterImageDocument.Change;
+var i: Integer;
+begin
   //прорисуем изменения, причем при первом включении ChangeRect должен равняться
   //всему изображению!
+  if fSizesChanged then begin
+    fScalingThreads[0].SetImage(btmp.Get2To3DownScaled);
+    fScalingThreads[1].SetImage(btmp.Get2TimesDownScaled);
+    for i:=0 to (Length(fScalingThreads) div 2)-2 do begin
+      fScalingThreads[i*2+2].SetImage(fScalingThreads[i*2].GetImage.Get2TimesDownscaled);
+      fScalingThreads[i*2+3].SetImage(fScalingThreads[i*2+1].GetImage.Get2TimesDownscaled);
+    end;
+  end
+  else if not IsRectEmpty(ChangeRect) then begin
+    btmp.DownScale2To3Into(ChangeRect,fScalingThreads[0].getImage);
+    btmp.DownScale2TimesInto(ChangeRect,fScalingThreads[1].getImage);
+    for i:=0 to (Length(fScalingThreads) div 2)-2 do begin
+      fScalingThreads[i*2].GetImage.DownScale2TimesInto(ChangeRect,fScalingThreads[i*2+2].getImage);
+      fScalingThreads[i*2+1].GetImage.DownScale2TimesInto(ChangeRect,fScalingThreads[i*2+3].getImage);
+    end;
+  end;
+  fSizesChanged:=false;
+  ChangeRect:=Rect(0,0,0,0);
+  inherited Change;
 end;
 
 procedure TRasterImageDocument.ZoomIn;

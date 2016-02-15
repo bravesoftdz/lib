@@ -120,12 +120,35 @@ TBrushCommand = class (TPatchImageCommand)
     property BrushShape: TBrushShape read fBrushShape write SetBrushShape;
   end;
 
-TSaveToJPEGCommand = class (TRasterImageDocumentCommand,ITerminalCommand)
+TSaveToJPEGCommand = class (TPatchImageCommand,ITerminalCommand)
+  protected
+    procedure GetBounds; override;
+    function UndoPrediction: Boolean; override;
+  public
+    function InternalExecute: Boolean; override;
+    function Caption: string; override;
+end;
+
+TRotate90CWCommand = class (TRasterImageDocumentCommand)
   public
     function Execute: Boolean; override;
     function Undo: Boolean; override;
     function Caption: string; override;
-end;
+  end;
+
+TRotate90CCWCommand = class (TRasterImageDocumentCommand)
+  public
+    function Execute: Boolean; override;
+    function Undo: Boolean; override;
+    function Caption: string; override;
+  end;
+
+TRotate180Command = class (TRasterImageDocumentCommand)
+  public
+    function Execute: Boolean; override;
+    function Undo: Boolean; override;
+    function Caption: string; override;
+  end;
 
 implementation
 
@@ -636,9 +659,13 @@ end;
 (*
     TSaveToJPEGCommand
                           *)
-function TSaveToJPEGCommand.Execute: Boolean;
+procedure TSaveToJPEGCommand.GetBounds;
+begin
+  fRect:=Rect(0,0,GetDoc.btmp.width,GetDoc.btmp.height);
+end;
+
+function TSaveToJPEGCommand.InternalExecute: Boolean;
 var jpgImg: TJPEGImage;
-    diff: TExtendedPngObject;
     btmp: TBitmap;
     s,fn1: string;
 begin
@@ -648,7 +675,7 @@ begin
     jpgImg:=TJPEGImage.Create;
     try
       jpgImg.Assign(Btmp);
-      jpgImg.CompressionQuality:=1;  //потом сделаем настройку
+      jpgImg.CompressionQuality:=85;  //потом сделаем настройку
       s:=ExtractFilePath(GetDoc.filename);
       s:=LeftStr(s,Length(s)-5);
       fn1:=s+ChangeFileExt(ExtractFileName(GetDoc.filename),'.jpg');
@@ -656,17 +683,10 @@ begin
       //теперь снова загружаем и находим разность
       jpgImg.LoadFromFile(fn1);
       btmp.Assign(jpgImg);
-      diff:=TExtendedPngObject.Create;
-      try
-        diff.Assign(btmp);
-        
-
-
-        //        GetDoc.Btmp.Assign(btmp);
-      finally
-        diff.Free;
-      end;
+      GetDoc.Btmp.Assign(btmp);
       Result:=true;
+      //и еще одно: updateRect надо выставить. Для начала так:
+      fUpdateRect:=fRect;
     finally
       jpgImg.Free;
     end;
@@ -675,9 +695,25 @@ begin
   end;
 end;
 
-function TSaveToJPEGCommand.Undo: Boolean;
+function TSaveToJpegCommand.UndoPrediction: Boolean;
+var src,dest: TPngObjectIterator;
 begin
+  //уже искаженная картинка у нас в Btmp
+  src:=GetDoc.Btmp.CreateIteratorForCropped(fRect);
+  dest:=fPredictor.CreateIterator;
   Result:=true;
+  //src такой же или "ширше", чем dest по цветам.
+  if ColorType=Color_GRAYSCALE then
+    while not src.isEOF do
+      dest.WriteNextAsGrayscale(src.ReadNextAsGrayscale)
+  else if ColorType=COLOR_RGB then
+    while not src.isEOF do
+      dest.WriteNextAsRGB(src.ReadNextAsRGB)
+  else
+    //других не поддерживает
+    Result:=false;  //обеспечит корректную работу, но громоздкий DLRN
+  src.Free;
+  dest.Free;
 end;
 
 function TSaveToJpegCommand.Caption: String;
@@ -689,7 +725,76 @@ begin
   Result:=Format('saved to %s',[fn1]);
 end;
 
+(*
+    TRotate90CWCommand
+                          *)
+function TRotate90CWCommand.Execute: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.Btmp.Rotate270;
+  Result:=true;
+end;
+
+function TRotate90CWCommand.Undo: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.Btmp.Rotate90;
+  Result:=true;
+end;
+
+function TRotate90CWCommand.Caption: string;
+begin
+  Result:='Rotate 90CW';
+end;
+
+(*
+    TRotate90CCWCommand
+                          *)
+function TRotate90CCWCommand.Execute: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.Btmp.Rotate90;
+  Result:=true;
+end;
+
+function TRotate90CCWCommand.Undo: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.Btmp.Rotate270;
+  Result:=true;
+end;
+
+function TRotate90CCWCommand.Caption: string;
+begin
+  Result:='Rotate 90°CCW';
+end;
+
+(*
+    TRotate180Command
+                          *)
+function TRotate180Command.Execute: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.btmp.Rotate180;
+  Result:=true;
+end;
+
+function TRotate180Command.Undo: Boolean;
+begin
+  GetDoc.SizesChanged;
+  GetDoc.btmp.Rotate180;
+  Result:=true;
+end;
+
+function TRotate180Command.Caption: string;
+begin
+  Result:='Rotate 180°';
+end;
+
+
+
 initialization
-  RegisterClasses([TBrushCommand,TSaveToJpegCommand]);
+  RegisterClasses([TBrushCommand,TSaveToJpegCommand,TRotate90CWCommand,
+    TRotate90CCWCommand,TRotate180Command]);
 
 end.
