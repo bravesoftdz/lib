@@ -24,6 +24,7 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
 //он может в числе прочего поменять формат всего изображения.
 //при этом для каждой измененной точки внутри прямоуг. вызываем PointChanged, тем самым
 //находим минимально необх. прямоугольник, который нужен для undo.
+// (либо, назначаем fUpdateRect самостоятельно)
 //далее, Top/Left принимают окончательное значение.
 //наконец, вызывается UndoPrediction, который пытается, располагая только результирующей
 //картинкой и свойствами команды, которые сохраняются в файл (не считая fDiff), восстановить
@@ -41,6 +42,8 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     fRect,fUpdateRect: TRect; //расположение заплатки и вычисление мин. необх.
     fOldBitDepth,fOldColorType: Byte;
     fImageFormatChanged: Boolean;
+    fSizeChanged: Boolean;
+    fOldHeight,fOldWidth: Integer;
     procedure SetOldBitDepth(value: Byte);
     procedure SetOldColorType(value: Byte);
     procedure GetBounds; virtual; abstract;//инициализировать fLeft,fTop,fRight,fBottom
@@ -59,6 +62,8 @@ TPatchImageCommand = class (TRasterImageDocumentCommand)
     property diff: TExtendedPngObject read fDiff write fDiff stored fActiveBranch;
     property Left: Integer read fRect.Left write fRect.Left;
     property Top: Integer read fRect.Top write fRect.Top;
+    property Width: Integer read fOldWidth write fOldWidth stored fSizeChanged;
+    property Height: Integer read fOldHeight write fOldHeight stored fSizeChanged;
     property BitDepth: Byte read fOldBitDepth write SetOldBitDepth;
     property ColorType: Byte read fOldColorType write SetOldColorType default 255;
     //на всякий случай, BitDepth и ColorType сохраняем всегда, "не утянет"
@@ -129,6 +134,20 @@ TSaveToJPEGCommand = class (TPatchImageCommand,ITerminalCommand)
     function Caption: string; override;
 end;
 
+TArbitraryRotateCommand = class (TPatchImageCommand)
+  private
+    fAngle: Real;
+  protected
+    procedure GetBounds; override;
+    function UndoPrediction: Boolean; override;
+  public
+    constructor Create(aAngle: Real); reintroduce; overload;
+    function InternalExecute: Boolean; override;
+    function Caption: string; override;
+  published
+    property Angle: Real read fAngle write fAngle;
+end;
+
 TRotate90CWCommand = class (TRasterImageDocumentCommand)
   public
     function Execute: Boolean; override;
@@ -171,6 +190,8 @@ begin
   inherited Create(aOwner);
   fDiff:=TExtendedPngObject.Create; //будет сохраняться в файл
   fOldColorType:=255;
+  fOldWidth:=-1;
+  fOldHeight:=-1;
 end;
 
 destructor TPatchImageCommand.Destroy;
@@ -220,6 +241,8 @@ begin
   //вот это и примем за исходную картинку
   fOldBitDepth:=btmp.Header.BitDepth;
   fOldColorType:=btmp.Header.ColorType;
+  fOldWidth:=btmp.Width;
+  fOldHeight:=btmp.Height;
   //обозначили заплатку
   fDiff.Free;
   fDiff:=TExtendedPNGObject.CreateBlank(Btmp.Header.ColorType,
@@ -248,6 +271,8 @@ begin
   //храним в fDiff копию того фрагмента, который начнем мучать
   Result:=InternalExecute and not IsRectEmpty(fUpdateRect);
   if Result then begin
+    if (btmp.Height<>fOldHeight) or (btmp.Width<>fOldWidth) then
+      fSizeChanged:=true;
   //после InternalExecute еще могли поменяться границы
     if (fRect.Left<>fUpdateRect.Left) or (fRect.Right<>fUpdateRect.Right)
       or (fRect.Top<>fUpdateRect.Top) or (fRect.Bottom<>fUpdateRect.Bottom) then
@@ -308,6 +333,7 @@ begin
   fRect.Right:=fRect.Left+fDiff.Width;
   doc:=GetDoc;
   doc.AddToChangeRect(fRect); //можно сразу сообщить, мы уже все знаем.
+
   if ColorType=255 then ColorType:=doc.Btmp.Header.ColorType;//если формат не поменялся,
   if BitDepth=0 then BitDepth:=doc.Btmp.Header.BitDepth;//мы его и не сохраняем!
   //возможно, формат fDiff успел поменяться после сохранения, для уменьшения размера
@@ -317,6 +343,8 @@ begin
     fDiff:=tmp;
   end;
   fPredictor:=TExtendedPngObject.CreateBlank(ColorType,BitDepth,fDiff.Width,fDiff.Height);
+  //если после вып. команды изображение изменило размеры, не спешим их возращать - для
+  //UndoPrediction оно нужно как есть!
   if UndoPrediction then begin
     //в прошлый раз вычитали fPredictor, теперь прибавим назад.
     src:=fPredictor.CreateIterator;
@@ -330,6 +358,10 @@ begin
   fPredictor.Free;
   //а на нет и суда нет
   //осталось вправить картинку на место
+  if ((fOldWidth<>-1) and (fOldWidth<>doc.Btmp.Width)) or
+    ((fOldHeight<>-1) and (fOldHeight<>doc.Btmp.Height)) then
+    doc.Btmp.Resize(fOldWidth,fOldHeight);
+
   if (doc.Btmp.Header.ColorType<>ColorType) or (doc.Btmp.Header.BitDepth<>BitDepth) then begin
     tmp:=doc.Btmp.GetInOtherFormat(ColorType,BitDepth);
     doc.Btmp.Free;
@@ -416,7 +448,7 @@ end;
 procedure TBrushCommand.FigureAboutColorsAndBitdepth;
 var btmp: TExtendedPNGObject;
   fActualCount: Integer;
-  p: Integer;
+//  p: Integer;
   fFutureOwner: TRasterImageDocument;
   //можно было бы обойтись и без него
 begin
@@ -726,6 +758,42 @@ begin
 end;
 
 (*
+    TArbitraryRotateCommand
+                              *)
+constructor TArbitraryRotateCommand.Create(aAngle: Real);
+begin
+  inherited Create(nil);
+  fAngle:=aAngle;
+end;
+
+procedure TArbitraryRotateCommand.GetBounds;
+begin
+  fRect:=Rect(0,0,GetDoc.btmp.width,GetDoc.btmp.height);
+end;
+
+function TArbitraryRotateCommand.InternalExecute: Boolean;
+begin
+  GetDoc.Btmp.ArbitraryRotateNearestNeighbour(fAngle);
+  GetDoc.SizesChanged;
+  fUpdateRect:=fRect;
+  Result:=true;
+end;
+
+function TArbitraryRotateCommand.UndoPrediction: Boolean;
+begin
+  GetDoc.Btmp.GetInverseRotationNearestNeighbourInto(fAngle,fPredictor);
+  GetDoc.SizesChanged;
+  Result:=true;
+  //неужели всё так просто??
+  //НЕ ВЕРЮ
+end;
+
+function TArbitraryRotateCommand.Caption: string;
+begin
+  Result:=Format('rotate %f degrees',[Angle]);
+end;
+
+(*
     TRotate90CWCommand
                           *)
 function TRotate90CWCommand.Execute: Boolean;
@@ -795,6 +863,6 @@ end;
 
 initialization
   RegisterClasses([TBrushCommand,TSaveToJpegCommand,TRotate90CWCommand,
-    TRotate90CCWCommand,TRotate180Command]);
+    TRotate90CCWCommand,TRotate180Command,TArbitraryRotateCommand]);
 
 end.
