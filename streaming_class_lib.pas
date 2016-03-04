@@ -60,8 +60,18 @@ TStreamingClassClass=class of TStreamingClass;
 TSaveToFileProc = procedure (const filename: string) of object;
 TStreamConvertFunc = procedure (input,output: TStream);
 
+TStreamingFormatEntry = record
+  signature: AnsiString;
+  convertToBinary: TStreamConvertFunc;
+  convertFromBinary: TStreamConvertFunc;
+end;
+PStreamingFormatEntry = ^TStreamingFormatEntry;
+
 procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
-procedure RegisterStreamingFormat(formatIdent: Integer; signature: AnsiString; convertFunc: TStreamConvertFunc);
+procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
+  convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
+
+const sfBin = 0;
 
 implementation
 
@@ -74,16 +84,28 @@ var gStreamingCriticalSection: TCriticalSection;
 //and not to change it ever, using thread-safe routines with FormatSettings,
 //then you can load/save several StreamingClasses simultaneously
     gStreamingFormatList: TBucketList;
+    gMaxSignatureLength: Integer;
 
 
 (*
       General procedures
                             *)
-procedure RegisterStreamingFormat(formatIdent: Integer; convertFunc: TStreamConvertFunc);
+procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
+  convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
+var Entry: PStreamingFormatEntry;
 begin
   if gStreamingFormatList.Exists(Pointer(formatIdent)) then
     Raise EStreamingClassError.CreateFmt('Streaming format %d already registered',[formatIdent]);
-  gStreamingFormatList.Add(Pointer(formatIdent),@convertFunc);
+  GetMem(Entry,SizeOf(TStreamingFormatEntry));
+  Entry.signature:=signature;
+  Entry.convertToBinary:=convertToBinaryFunc;
+  Entry.convertFromBinary:=convertFromBinaryFunc;
+
+  //could use max function, but don't want to include math unit just for this
+  if Length(signature)>gMaxSignatureLength then
+    gMaxSignatureLength:=Length(signature);
+
+  gStreamingFormatList.Add(Pointer(formatIdent),Entry);
 end;
 
 //if file exists already, we rename it to .BAK at first, if successful,
@@ -156,17 +178,21 @@ end;
 procedure TStreamingClass.SaveToStream(stream: TStream);
 var
   BinStream: TMemoryStream;
-  convertProc: TStreamConvertFunc;
+  entry: PStreamingFormatEntry;
 begin
-  if not gStreamingFormatList.Find(Pointer(saveFormat),@convertProc) then
+  if not gStreamingFormatList.Find(Pointer(saveFormat),Pointer(entry)) then
     Raise Exception.CreateFmt('Streaming format %d not registered',[saveFormat]);
-  if not Assigned(convertProc) then
+  if not Assigned(entry.convertFromBinary) then
     ThreadSafeWriteComponent(stream,Self)
   else begin
     BinStream:=TMemoryStream.Create;
-    ThreadSafeWriteComponent(BinStream,self);
-    BinStream.Seek(0, soFromBeginning);
-    convertProc(BinStream,stream);
+    try
+      ThreadSafeWriteComponent(BinStream,self);
+      BinStream.Seek(0, soFromBeginning);
+      entry.convertFromBinary(BinStream,stream);
+    finally
+      BinStream.Free;
+    end;
   end;
 end;
 
@@ -197,10 +223,12 @@ end;
 constructor TStreamingClass.LoadFromStream(stream: TStream);
 var
   BinStream: TMemoryStream;
-//  s: array [0..5] of ANSIchar;
+  s: AnsiString;
 begin
   Create(nil);
-
+  SetLength(s,gMaxSignatureLength);
+  stream.Read(s[1],gMaxSignatureLength);
+  
 
 
 
@@ -407,7 +435,7 @@ begin
   else Result:=false;
 end;
 
-constructor TStreamingClass.Clone(const source: TStreamingClass; const owner: TComponent=nil);
+constructor TStreamingClass.Clone(source: TStreamingClass; owner: TComponent=nil);
 begin
   Create(Owner);
   self.Assign(source);
@@ -456,26 +484,42 @@ begin
   end;
 end;
 
-procedure RegisterBinaryStreamingFormat;
+procedure InitializeStreamingClassLib;
 //we've got a lot of headache because classes unit hides signature for binary files
 //we know it's 'TPF0' but who knows, maybe it changes sometimes...
 var w: TWriter;
     stream: TStream;
     sig: AnsiString;
 begin
+  gStreamingCriticalSection:=TCriticalSection.Create;
+  gStreamingFormatList:=TBucketList.Create(bl2);
 //we won't use try/finally here, absolute sure it'll handle 4 bytes all right
   stream:=TStringStream.Create(sig);
   w:=TWriter.Create(stream,4);
   w.WriteSignature;
   w.Free;
   stream.Free;
-  RegisterStreamingFormat(sfBin,nil); //nil corresponds to no transformation at all
+  RegisterStreamingFormat(sfBin,sig,nil,nil) //nil corresponds to no transformation at all
+end;
+
+
+procedure DeleteEntry(AInfo, AItem, AData: Pointer; out AContinue: Boolean);
+begin
+  FreeMem(AData);
+  AContinue:=true;
+end;
+
+procedure FinalizeStreamingClassLib;
+var i: Integer;
+begin
+  gStreamingFormatList.ForEach(DeleteEntry,nil);
+
+  FreeAndNil(gStreamingFormatList);
+  FreeAndNil(gStreamingCriticalSection);
 end;
 
 initialization
-  gStreamingCriticalSection:=TCriticalSection.Create;
-  gStreamingFormatList:=TBucketList.Create(bl2);
+  InitializeStreamingClassLib;
 finalization
-  FreeAndNil(gStreamingFormatList);
-  FreeAndNil(gStreamingCriticalSection);
+  FinalizeStreamingClassLib;
 end.
