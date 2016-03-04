@@ -17,10 +17,21 @@ type
 
 TStreamingClassSaveFormat=Integer;
 
+TStreamConvertFunc = procedure (input,output: TStream);
+TStreamingFormatEntry = record
+  ident: TStreamingClassSaveFormat;
+  signature: AnsiString;
+  convertToBinary: TStreamConvertFunc;
+  convertFromBinary: TStreamConvertFunc;
+end;
+PStreamingFormatEntry = ^TStreamingFormatEntry;
+
 TstreamingClass=class(TComponent)
   protected
     procedure   GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     function    GetChildOwner: TComponent; override;
+    //converts other load formats to binary, if needed
+    class function GetStreamFormat(stream: TStream): PStreamingFormatEntry;
   public
     saveFormat: TStreamingClassSaveFormat;
     //these constructors are easiest to use, but you should already know what class
@@ -58,14 +69,6 @@ EStreamingClassError = class (Exception);
 
 TStreamingClassClass=class of TStreamingClass;
 TSaveToFileProc = procedure (const filename: string) of object;
-TStreamConvertFunc = procedure (input,output: TStream);
-
-TStreamingFormatEntry = record
-  signature: AnsiString;
-  convertToBinary: TStreamConvertFunc;
-  convertFromBinary: TStreamConvertFunc;
-end;
-PStreamingFormatEntry = ^TStreamingFormatEntry;
 
 procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
 procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
@@ -77,35 +80,42 @@ implementation
 
 uses SyncObjs, Contnrs;
 
-var gStreamingCriticalSection: TCriticalSection;
+var gCriticalSection: TCriticalSection;
 //TFiler operations are not thread-safe unfortunately
 //it changes DecimalSeparator in the middle of operation
 //It is possible to set DecimalSeparator to '.' at the beginning of your program
 //and not to change it ever, using thread-safe routines with FormatSettings,
 //then you can load/save several StreamingClasses simultaneously
-    gStreamingFormatList: TBucketList;
-    gMaxSignatureLength: Integer;
+    gFormatList: TList;
 
 
 (*
       General procedures
                             *)
+function GetFormatEntry(ident: TStreamingClassSaveFormat): PStreamingFormatEntry;
+var i: Integer;
+begin
+  for i:=0 to gFormatList.Count-1 do begin
+    Result:=gFormatList[i];
+    if Result.ident=ident then Exit;
+  end;
+  Result:=nil;
+end;
+
 procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
   convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
 var Entry: PStreamingFormatEntry;
+    i,len: Integer;
 begin
-  if gStreamingFormatList.Exists(Pointer(formatIdent)) then
+  Entry:=GetFormatEntry(formatIdent);
+  if Assigned(Entry) then
     Raise EStreamingClassError.CreateFmt('Streaming format %d already registered',[formatIdent]);
   GetMem(Entry,SizeOf(TStreamingFormatEntry));
+  Entry.ident:=formatIdent;
   Entry.signature:=signature;
   Entry.convertToBinary:=convertToBinaryFunc;
   Entry.convertFromBinary:=convertFromBinaryFunc;
-
-  //could use max function, but don't want to include math unit just for this
-  if Length(signature)>gMaxSignatureLength then
-    gMaxSignatureLength:=Length(signature);
-
-  gStreamingFormatList.Add(Pointer(formatIdent),Entry);
+  gFormatList.Add(Entry);
 end;
 
 //if file exists already, we rename it to .BAK at first, if successful,
@@ -138,21 +148,21 @@ end;
 //silly problem with DecimalSeparator
 procedure ThreadSafeWriteComponent(stream: TStream; component: TComponent);
 begin
-  gStreamingCriticalSection.Acquire;
+  gCriticalSection.Acquire;
   try
     stream.WriteComponent(component);
   finally
-    gStreamingCriticalSection.Release;
+    gCriticalSection.Release;
   end;
 end;
 
 function ThreadSafeReadComponent(stream: TStream; component: TComponent): TComponent;
 begin
-  gStreamingCriticalSection.Acquire;
+  gCriticalSection.Acquire;
   try
     Result:=stream.ReadComponent(component);
   finally
-    gStreamingCriticalSection.Release;
+    gCriticalSection.Release;
   end;
 end;
 
@@ -180,7 +190,8 @@ var
   BinStream: TMemoryStream;
   entry: PStreamingFormatEntry;
 begin
-  if not gStreamingFormatList.Find(Pointer(saveFormat),Pointer(entry)) then
+  entry:=GetFormatEntry(saveFormat);
+  if not Assigned(entry) then
     Raise Exception.CreateFmt('Streaming format %d not registered',[saveFormat]);
   if not Assigned(entry.convertFromBinary) then
     ThreadSafeWriteComponent(stream,Self)
@@ -220,27 +231,92 @@ begin
 end;
 
 
+class function TStreamingClass.GetStreamFormat(stream: Tstream): PStreamingFormatEntry;
+var i: Integer;
+    s: AnsiString;
+begin
+  for i:=0 to gFormatList.Count-1 do begin
+    Result:=gFormatList[i];
+    SetLength(s,Length(Result.signature));
+    stream.Read(s[1],Length(Result.signature));
+    if s=Result.signature then Exit;
+  end;
+  Result:=nil;
+end;
+
 constructor TStreamingClass.LoadFromStream(stream: TStream);
-var
-  BinStream: TMemoryStream;
-  s: AnsiString;
+var BinStream: TMemoryStream;
+    streamFormat: PStreamingFormatEntry;
 begin
   Create(nil);
-  SetLength(s,gMaxSignatureLength);
-  stream.Read(s[1],gMaxSignatureLength);
-  
-
-
-
+  streamFormat:=GetStreamFormat(stream);
+  if not Assigned(streamFormat) then
+    Raise EStreamingClassError.Create('Load from stream: unknown format of data');
+  if not Assigned(streamFormat.convertToBinary) then
+    ThreadSafeReadComponent(stream,self)
+  else begin
+    BinStream:=TMemoryStream.Create;
+    try
+      streamFormat.convertToBinary(stream,binStream);
+      binStream.Seek(0,soFromBeginning);
+      ThreadSafeReadComponent(BinStream,self);
+    finally
+      binStream.Free;
+    end;
+  end;
 end;
 
 constructor TstreamingClass.LoadFromFile(const filename: string);
+var fileStream: TFileStream;
+begin
+  Create(nil);
+  fileStream:=TFileStream.Create(filename,fmOpenRead);
+  try
+    LoadFromStream(fileStream);
+  finally
+    fileStream.Free;
+  end;
+end;
+
+constructor TstreamingClass.LoadFromString(const text: string);
+var StrStream: TStringStream;
+begin
+  Create(nil);
+  StrStream:=TStringStream.Create(text);
+  try
+    LoadFromStream(strStream);
+  finally
+    StrStream.Free;
+  end;
+end;
+
+class function TStreamingClass.LoadComponentFromStream(stream: TStream): TComponent;
+var BinStream: TMemoryStream;
+    StreamFormat: PStreamingFormatEntry;
+begin
+  streamFormat:=GetStreamFormat(stream);
+  if not Assigned(streamFormat) then
+    Raise EStreamingClassError.Create('Load component from stream: unknown format of data');
+  if not Assigned(streamFormat.convertToBinary) then
+    Result:=ThreadSafeReadComponent(stream,nil)
+  else begin
+    BinStream:=TMemoryStream.Create;
+    try
+      streamFormat.convertToBinary(stream,binStream);
+      binStream.Seek(0,soFromBeginning);
+      Result:=ThreadSafeReadComponent(BinStream,nil);
+    finally
+      binStream.Free;
+    end;
+  end;
+end;
+
+class function TStreamingClass.LoadComponentFromFile(const FileName: string): TComponent;
 var
   FileStream: TFileStream;
   BinStream: TMemoryStream;
-  s: array [0..5] of ANSIchar;
+  s: array [0..5] of char;
 begin
-  Create(nil);
   FileStream := TFileStream.Create(filename, fmOpenRead	);
   try
     FileStream.Read(s,6);
@@ -250,41 +326,15 @@ begin
       try
         ObjectTextToBinary(FileStream, BinStream);
         BinStream.Seek(0, soFromBeginning);
-        ThreadSafeReadComponent(BinStream,self);
+        Result:=ThreadSafeReadComponent(BinStream,nil);
       finally
         BinStream.Free;
       end;
-// пожалуй, не стоит. Если нам это так важно, то добавим отдельным property!
-//      saveFormat:=fAscii;
     end
-    else begin
-      ThreadSafeReadComponent(FileStream,self);
-//      saveFormat:=fBinary;
-    end;
+    else
+      Result:=ThreadSafeReadComponent(FileStream,nil);
   finally
     FileStream.Free;
-  end;
-end;
-
-
-constructor TstreamingClass.LoadFromString(const text: string);
-var
-  StrStream: TStringStream;
-  BinStream: TMemoryStream;
-begin
-  Create(nil);
-  BinStream:=TMemoryStream.Create;
-  try
-    StrStream:=TStringStream.Create(text);
-    try
-      ObjectTextToBinary(StrStream,BinStream);
-      BinStream.Seek(0, soFromBeginning);
-      ThreadSafeReadComponent(BinStream,self);
-    finally
-      StrStream.Free;
-    end;
-  finally
-    BinStream.Free;
   end;
 end;
 
@@ -319,33 +369,6 @@ begin
     Result:=BinStream.ReadComponent(aowner);
   finally
     BinStream.Free;
-  end;
-end;
-
-class function TStreamingClass.LoadComponentFromFile(const FileName: string): TComponent;
-var
-  FileStream: TFileStream;
-  BinStream: TMemoryStream;
-  s: array [0..5] of char;
-begin
-  FileStream := TFileStream.Create(filename, fmOpenRead	);
-  try
-    FileStream.Read(s,6);
-    FileStream.Seek(0,soFromBeginning);
-    if uppercase(s)='OBJECT' then begin
-      BinStream := TMemoryStream.Create;
-      try
-        ObjectTextToBinary(FileStream, BinStream);
-        BinStream.Seek(0, soFromBeginning);
-        Result:=ThreadSafeReadComponent(BinStream,nil);
-      finally
-        BinStream.Free;
-      end;
-    end
-    else
-      Result:=ThreadSafeReadComponent(FileStream,nil);
-  finally
-    FileStream.Free;
   end;
 end;
 
@@ -487,12 +510,13 @@ end;
 procedure InitializeStreamingClassLib;
 //we've got a lot of headache because classes unit hides signature for binary files
 //we know it's 'TPF0' but who knows, maybe it changes sometimes...
+//problem is, it's not in any standart as gzip header is.
 var w: TWriter;
     stream: TStream;
     sig: AnsiString;
 begin
-  gStreamingCriticalSection:=TCriticalSection.Create;
-  gStreamingFormatList:=TBucketList.Create(bl2);
+  gCriticalSection:=TCriticalSection.Create;
+  gFormatList:=TList.Create;
 //we won't use try/finally here, absolute sure it'll handle 4 bytes all right
   stream:=TStringStream.Create(sig);
   w:=TWriter.Create(stream,4);
@@ -502,20 +526,13 @@ begin
   RegisterStreamingFormat(sfBin,sig,nil,nil) //nil corresponds to no transformation at all
 end;
 
-
-procedure DeleteEntry(AInfo, AItem, AData: Pointer; out AContinue: Boolean);
-begin
-  FreeMem(AData);
-  AContinue:=true;
-end;
-
 procedure FinalizeStreamingClassLib;
 var i: Integer;
 begin
-  gStreamingFormatList.ForEach(DeleteEntry,nil);
-
-  FreeAndNil(gStreamingFormatList);
-  FreeAndNil(gStreamingCriticalSection);
+  for i:=0 to gFormatList.Count-1 do
+    FreeMem(gFormatList[i]);
+  FreeAndNil(gFormatList);
+  FreeAndNil(gCriticalSection);
 end;
 
 initialization

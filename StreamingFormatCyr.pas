@@ -6,6 +6,8 @@ const sfCyr = 3;
 
 implementation
 
+uses classes, sysUtils;
+
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;
     i: Integer;

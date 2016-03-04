@@ -2,13 +2,13 @@ unit IntrospectionLib;
 
 interface
 
-uses streaming_class_lib;
+uses classes,streaming_class_lib, TypInfo;
 
 type
 
   TIntrospectedStreamingClass = class (TStreamingClass)
     private
-      procedure RecursiveEnsure(our_root,aowner: TStreamingClass);
+      procedure RecursiveEnsure(our_root,aowner: TIntrospectedStreamingClass);
     protected
       procedure myGetPropInfo(propPath: string; out instance: TPersistent; out fPropInfo: PPropInfo);
       function OwnedBy(Component, Owner: TComponent): Boolean;
@@ -19,11 +19,13 @@ type
       //есть ли "внутри нас" компонент с таким именем
       procedure ensureCorrectName(proposedName: string; aowner: TComponent);
       //убедиться, что при вставке в aowner не возникнет проблемы с нашим именем
-      procedure ensureCorrectNames(aowner: TStreamingClass);
+      procedure ensureCorrectNames(aowner: TIntrospectedStreamingClass);
       //и у всех наших "подчиненных" имена нормальные
   end;
 
 implementation
+
+uses sysUtils;
 
 function TIntrospectedStreamingClass.NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean;
 var i: integer;
@@ -33,8 +35,8 @@ begin
   Result:=Assigned(c) and (c<>me);
   if not Result then
     for i:=0 to ComponentCount-1 do begin
-      if Components[i] is TStreamingClass then begin
-        Result:=Result or TStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
+      if Components[i] is TIntrospectedStreamingClass then begin
+        Result:=Result or TIntrospectedStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
         if Result=true then break;
       end;
     end;
@@ -48,7 +50,7 @@ begin
   if assigned(aowner) then begin
     i:=0;
 //    while aowner.FindComponent(FullName)<>nil do begin
-    while (aowner as TStreamingClass).NameExistsSomewhere(FullName,self) do begin
+    while (aowner as TIntrospectedStreamingClass).NameExistsSomewhere(FullName,self) do begin
       FullName:=proposedName+IntToStr(i);
       inc(i);
     end;
@@ -57,7 +59,7 @@ begin
   Name:=FullName;
 end;
 
-procedure TIntrospectedStreamingClass.RecursiveEnsure(our_root,aowner: TStreamingClass);
+procedure TIntrospectedStreamingClass.RecursiveEnsure(our_root,aowner: TIntrospectedStreamingClass);
 var i: Integer;
     fullName: string;
 begin
@@ -70,11 +72,11 @@ begin
   Name:=FullName;
   //себя переименовали
   for i:=0 to ComponentCount-1 do
-    if Components[i] is TStreamingClass then
-      TStreamingClass(Components[i]).RecursiveEnsure(our_root,aowner);
+    if Components[i] is TIntrospectedStreamingClass then
+      TIntrospectedStreamingClass(Components[i]).RecursiveEnsure(our_root,aowner);
 end;
 
-procedure TIntrospectedStreamingClass.ensureCorrectNames(aowner: TStreamingClass);
+procedure TIntrospectedStreamingClass.ensureCorrectNames(aowner: TIntrospectedStreamingClass);
 begin
   RecursiveEnsure(self,aowner);
 end;
