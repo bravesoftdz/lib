@@ -56,13 +56,10 @@ TstreamingClass=class(TComponent)
     procedure SaveToFile(const filename: string);
     function SaveToString: string;
 
-    procedure SaveBinaryToFile(const filename: string);
-    procedure LoadBinaryFromFile(const filename: string);
-
     function IsEqual(what: TStreamingClass): boolean; virtual;
     function EqualsByAnyOtherName(what: TStreamingClass): boolean; virtual;
 
-    function FindOwner: TComponent; //доходит до самого высокого уровня
+    function FindOwner: TComponent; //finds ultimate owner
   end;
 
 EStreamingClassError = class (Exception);
@@ -75,6 +72,7 @@ procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signat
   convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
 
 const sfBin = 0;
+      sfASCII = 1;
 
 implementation
 
@@ -110,7 +108,7 @@ begin
   Entry:=GetFormatEntry(formatIdent);
   if Assigned(Entry) then
     Raise EStreamingClassError.CreateFmt('Streaming format %d already registered',[formatIdent]);
-  GetMem(Entry,SizeOf(TStreamingFormatEntry));
+  New(Entry);
   Entry.ident:=formatIdent;
   Entry.signature:=signature;
   Entry.convertToBinary:=convertToBinaryFunc;
@@ -239,7 +237,8 @@ begin
     Result:=gFormatList[i];
     SetLength(s,Length(Result.signature));
     stream.Read(s[1],Length(Result.signature));
-    if s=Result.signature then Exit;
+    stream.Seek(0,soFromBeginning);
+    if CompareText(s,Result.signature)=0 then Exit;
   end;
   Result:=nil;
 end;
@@ -312,47 +311,22 @@ begin
 end;
 
 class function TStreamingClass.LoadComponentFromFile(const FileName: string): TComponent;
-var
-  FileStream: TFileStream;
-  BinStream: TMemoryStream;
-  s: array [0..5] of char;
+var FileStream: TFileStream;
 begin
   FileStream := TFileStream.Create(filename, fmOpenRead	);
   try
-    FileStream.Read(s,6);
-    FileStream.Seek(0,soFromBeginning);
-    if uppercase(s)='OBJECT' then begin
-      BinStream := TMemoryStream.Create;
-      try
-        ObjectTextToBinary(FileStream, BinStream);
-        BinStream.Seek(0, soFromBeginning);
-        Result:=ThreadSafeReadComponent(BinStream,nil);
-      finally
-        BinStream.Free;
-      end;
-    end
-    else
-      Result:=ThreadSafeReadComponent(FileStream,nil);
+    Result:=LoadComponentFromStream(FileStream);
   finally
     FileStream.Free;
   end;
 end;
 
 class function TStreamingClass.LoadComponentFromString(const text: string): TComponent;
-var
-  StrStream: TStringStream;
-  BinStream: TMemoryStream;
+var StrStream: TStringStream;
 begin
   StrStream:=TStringStream.Create(text);
   try
-    BinStream:=TMemoryStream.Create;
-    try
-      ObjectTextToBinary(StrStream,BinStream);
-      BinStream.Seek(0, soFromBeginning);
-      Result:=ThreadSafeReadComponent(BinStream,nil);
-    finally
-      BinStream.Free;
-    end;
+    Result:=LoadComponentFromStream(StrStream);
   finally
     StrStream.Free;
   end;
@@ -366,32 +340,8 @@ begin
     ThreadSafeWriteComponent(BinStream,source);
     BinStream.Seek(0,soFromBeginning);
     Result:=ThreadSafeReadComponent(BinStream,aowner);
-    Result:=BinStream.ReadComponent(aowner);
   finally
     BinStream.Free;
-  end;
-end;
-
-procedure TstreamingClass.SaveBinaryToFile(const filename: string);
-var FileStream: TFileStream;
-begin
-  FileStream:=TFileStream.Create(filename,fmCreate);
-  try
-    ThreadSafeWriteComponent(FileStream,self);
-  finally
-    FileStream.Free;
-  end;
-end;
-
-procedure TstreamingClass.LoadBinaryFromFile(const filename: string);
-var FileStream: TFileStream;
-begin
-  FileStream:=TFileStream.Create(filename,fmOpenRead);
-  try
-    FileStream.Seek(0, soFromBeginning);
-    ThreadSafeReadComponent(FileStream,self);
-  finally
-    FileStream.Free;
   end;
 end;
 
@@ -412,6 +362,12 @@ begin
   else inherited Assign(source);
 end;
 
+constructor TStreamingClass.Clone(source: TStreamingClass; owner: TComponent=nil);
+begin
+  Create(Owner);
+  self.Assign(source);
+end;
+
 function TStreamingClass.IsEqual(what: TStreamingClass): boolean;
 var bin1,bin2: TMemoryStream;
 begin
@@ -423,16 +379,7 @@ begin
     try
       ThreadSafeWriteComponent(bin2,what);
       bin2.Seek(0,soFromBeginning);
-      if bin1.Size<>bin2.Size then begin
-        Result:=false;
-        //для отладки искл.
-        (*
-          self.saveFormat:=fCyr;
-          self.SaveToFile('wtf1.txt');
-          what.saveFormat:=fCyr;
-          what.SaveToFile('wtf2.txt');
-        *)
-      end
+      if bin1.Size<>bin2.Size then Result:=false
       else Result:=Comparemem(bin1.Memory,bin2.Memory,bin1.Size);
     finally
       bin2.Free;
@@ -446,8 +393,9 @@ function TStreamingClass.EqualsByAnyOtherName(what: TStreamingClass): boolean;
 var our_class: TStreamingClassClass;
     t: TStreamingClass;
 begin
-//не самый надежный метод,
-//клон может потерять связи с документом
+// we don't want to temporary change any object, so we'll have little workaround
+// not very fast procedure, if you know that temporary change of name won't harm,
+// better do it and call IsEqual
   if ClassType=what.ClassType then begin
     our_class:=TStreamingClassClass(ClassType);
     t:=our_class.Clone(what);
@@ -458,12 +406,6 @@ begin
   else Result:=false;
 end;
 
-constructor TStreamingClass.Clone(source: TStreamingClass; owner: TComponent=nil);
-begin
-  Create(Owner);
-  self.Assign(source);
-end;
-
 function TStreamingClass.FindOwner: TComponent;
 var tmp: TComponent;
 begin
@@ -472,18 +414,6 @@ begin
     Result:=tmp;
     tmp:=tmp.Owner;
   until tmp=nil;
-end;
-
-
-procedure TStreamingClass.Clear;
-var i: Integer;
-begin
-  //в производных классах в этой процедуре нужно описывать процесс возврата в
-  //первоначальное состояние
-  SetDefaultProperties;
-  for i:=0 to ComponentCount-1 do
-    if Components[i] is TStreamingClass then
-      TStreamingClass(Components[i]).Clear;
 end;
 
 procedure TStreamingClass.SetDefaultProperties;
@@ -507,12 +437,23 @@ begin
   end;
 end;
 
+procedure TStreamingClass.Clear;
+var i: Integer;
+begin
+  //pretty generic approach: all properties are set to default values,
+  //nested components supporting 'clear' are cleared recursively.
+  SetDefaultProperties;
+  for i:=0 to ComponentCount-1 do
+    if Components[i] is TStreamingClass then
+      TStreamingClass(Components[i]).Clear;
+end;
+
 procedure InitializeStreamingClassLib;
 //we've got a lot of headache because classes unit hides signature for binary files
 //we know it's 'TPF0' but who knows, maybe it changes sometimes...
 //problem is, it's not in any standart as gzip header is.
 var w: TWriter;
-    stream: TStream;
+    stream: TStringStream;
     sig: AnsiString;
 begin
   gCriticalSection:=TCriticalSection.Create;
@@ -522,15 +463,16 @@ begin
   w:=TWriter.Create(stream,4);
   w.WriteSignature;
   w.Free;
+  RegisterStreamingFormat(sfBin,stream.DataString,nil,nil); //nil corresponds to no transformation at all
+  RegisterStreamingFormat(sfASCII,'object',ObjectTextToBinary,ObjectBinaryToText);
   stream.Free;
-  RegisterStreamingFormat(sfBin,sig,nil,nil) //nil corresponds to no transformation at all
 end;
 
 procedure FinalizeStreamingClassLib;
 var i: Integer;
 begin
   for i:=0 to gFormatList.Count-1 do
-    FreeMem(gFormatList[i]);
+    Dispose(gFormatList[i]);
   FreeAndNil(gFormatList);
   FreeAndNil(gCriticalSection);
 end;

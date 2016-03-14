@@ -129,14 +129,11 @@ uses sysutils,reinit,simple_parser_lib;
     General functions
                         *)
 function GetDefaultLanguageInEnglish: string;
-var loc_str: PChar;
-    size: Integer;
+var size: Integer;
 begin
   Size:=GetLocaleInfo(LANG_USER_DEFAULT,LOCALE_SENGLANGUAGE,nil,0);
-  loc_Str:=AllocMem(Size);
-  GetLocaleInfo(LANG_USER_DEFAULT,LOCALE_SENGLANGUAGE,loc_str,size);
-  Result:=loc_str;
-  FreeMem(loc_str);
+  SetLength(Result,size);
+  GetLocaleInfo(LANG_USER_DEFAULT,LOCALE_SENGLANGUAGE,@Result[1],size);
 end;
 
 function GetDefaultLanguageID: Integer;

@@ -2,11 +2,11 @@ unit StreamingFormatCyr;
 
 interface
 
-const sfCyr = 3;
+const sfCyr = 2;
 
 implementation
 
-uses classes, sysUtils;
+uses classes, sysUtils, streaming_class_lib;
 
 procedure ObjectTextToCyr(input,output: TStream);
 var c: Char;
@@ -86,5 +86,19 @@ begin
   end;
 end;
 
+procedure ObjectBinaryToCyr(input,output: TStream);
+var temp: TMemoryStream;
+begin
+  temp:=TMemoryStream.Create;
+  try
+    ObjectBinaryToText(input,temp);
+    temp.Seek(0,soFromBeginning);
+    ObjectTextToCyr(temp,output);
+  finally
+    temp.Free;
+  end;
+end;
 
+initialization
+  RegisterStreamingFormat(sfCYR,'object',ObjectTextToBinary,ObjectBinaryToCyr);
 end.

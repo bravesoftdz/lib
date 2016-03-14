@@ -2,7 +2,7 @@ unit linear_eq;
 
 interface
 
-uses classes,variants,VariantWrapper;
+uses classes,variants,VariantWrapper,littleFuncs;
 
 type
 

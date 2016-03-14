@@ -1,14 +1,14 @@
 unit new_phys_unit_lib;
 
 interface
-uses set_english_locale_if_not_sure,streaming_class_lib,classes,
+uses set_english_locale_if_not_sure,streaming_class_lib,IntrospectionLib,classes,
   variantWrapper,Contnrs,sysUtils,simple_parser_lib,linear_eq,
   autocomplete_string_list,syncObjs,variants;
 {$DEFINE DirtyHack}
 type
   TPhysUnit =class;
   TUnitsWithExponents = class;
-  TPhysFamily=class(TStreamingClass) //можно будет и к TComponent вернуться
+  TPhysFamily=class(TIntrospectedStreamingClass) //можно будет и к TComponent вернуться
     private
       fIsBase: Boolean;
       fIsGoodName: Boolean;
@@ -42,7 +42,7 @@ type
       property formula: string read fstrformula write fstrformula;
   end;
 
-  TPhysUnit=class(TStreamingClass)
+  TPhysUnit=class(TIntrospectedStreamingClass)
     private
       fShortName,fCaption: TLocalizedName;
       fScaledUp,fScaledDown: TPhysUnit;
@@ -154,7 +154,7 @@ type
       property IsPreferred: Boolean read fIsPreferred write fIsPreferred default true;
     end;
 
-  TUnitPrefixes = class(TStreamingClass)
+  TUnitPrefixes = class(TIntrospectedStreamingClass)
   //соберем в одном месте все префиксы и отсортируем по множителю
   private
     fHigher,fLower,fOther: TList;
@@ -182,7 +182,7 @@ type
     property enabled: Boolean read fIsEnabled write SetEnabled;
   end;
 
-  TPhysConsts = class(TStreamingClass)
+  TPhysConsts = class(TIntrospectedStreamingClass)
   private
     fList: TObjectList;
     fsolver: IAbstractSLEQ;
@@ -208,7 +208,7 @@ type
     property Lang: string read fLang write fLang;
   end;
 
-  TPhysUnitData = class(TStreamingClass)
+  TPhysUnitData = class(TIntrospectedStreamingClass)
   private
     fFamilyList: TObjectList;
     fBaseFamilyList: TObjectList;

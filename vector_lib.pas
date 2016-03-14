@@ -18,9 +18,9 @@ TVector=class(TStreamingClass)
     constructor CopyFrom(vector: TVector);
 
     procedure Clear; override;
-    procedure VectorAssign(source: TVector); 
+    procedure VectorAssign(source: TVector);  //быстрее, чем обычный Assign
     procedure Assign(source: TPersistent); overload; override;
-    procedure Assign(_x,_y,_z: Real); reintroduce; overload;
+    procedure Assign(ax,ay,az: Real); reintroduce; overload;
 
     procedure add(source: TVector);
     procedure sub(by: TVector);
@@ -156,11 +156,11 @@ begin
   z:=source.Z;
 end;
 
-procedure TVector.Assign(_x,_y,_z: Real);
+procedure TVector.Assign(ax,ay,az: Real);
 begin
-  x:=_x;
-  y:=_y;
-  z:=_z;
+  x:=ax;
+  y:=ay;
+  z:=az;
 end;
 
 function TVector.vector2str: string;
