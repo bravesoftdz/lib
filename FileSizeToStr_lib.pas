@@ -15,15 +15,15 @@ const megabyteSize = 1024*1024;
       terabyteSize: Int64 = Int64(1024*1024*1024)*1024;
 
 resourcestring
-  Bstr = 'ม';
-  KiBstr = 'ส่ม';
-  MiBstr = 'ฬ่ม';
-  GiBstr = 'ร่ม';
-  TiBstr = 'า่ม';
-  KBstr = 'สม';
-  MBstr = 'ฬม';
-  GBstr = 'รม';
-  TBstr = 'าม';
+  Bstr = 'B';
+  KiBstr = 'KiB';
+  MiBstr = 'MiB';
+  GiBstr = 'GiB';
+  TiBstr = 'TiB';
+  KBstr = 'KB';
+  MBstr = 'MB';
+  GBstr = 'GB';
+  TBstr = 'TB';
 
 
 function FileSizeToStr(size: Int64): string;
