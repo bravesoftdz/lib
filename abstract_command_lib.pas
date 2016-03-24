@@ -2,11 +2,11 @@ unit abstract_command_lib;
 
 interface
 
-uses streaming_class_lib,classes;
+uses IntrospectionLib,classes;
 
 type
 
-TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
+TAbstractCommand=class(TIntrospectedStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
   protected
     fImageIndex: Integer; //картиночку показать
   public
@@ -21,7 +21,7 @@ TAbstractCommand=class(TStreamingClass)  //чтобы историю изменений можно было хр
   end;
 //самые-самые "зайчатки", заработает даже в command_list
 
-TAbstractCommandContainer=class(TStreamingClass)
+TAbstractCommandContainer=class(TIntrospectedStreamingClass)
   public
     procedure Add(command: TAbstractCommand); virtual; abstract;
     procedure Undo; virtual; abstract;

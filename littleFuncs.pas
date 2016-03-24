@@ -9,8 +9,12 @@ interface
   function ByteSwap(const a: integer): integer;
   function ByteSwap16(inp:word): word;
 
+  function DataToHex(aData: Pointer; aSize: Cardinal):String;
+
 
 implementation
+
+uses sysUtils, windows;
 
 procedure SwapIntegers(var i1,i2: Integer);
 var t: Integer;
@@ -46,6 +50,32 @@ asm
   shr   eax, 16
 end;
 
+type T2Char = array [0..1] of Char;
+      P2Char = ^T2Char;
+
+var DataToHexArray: Array [0..255] of T2Char;
 
 
+function DataToHex(aData: Pointer; aSize: Cardinal): string;
+var
+  i: Integer;
+  DataArray: PByteArray absolute aData;
+begin
+  SetLength(Result,aSize*2);
+  for i := 0 to aSize-1 do
+    CopyMemory(@Result[1+i shl 1],@DataToHexArray[DataArray^[i]],SizeOf(T2Char));
+end;
+
+procedure PrepareDataToHexArray;
+var i: Integer;
+    str: string;
+begin
+  for i := 0 to 255 do begin
+    str:=IntToHex(i,2);
+    DataToHexArray[i]:=P2Char(@str[1])^;
+  end;
+end;
+
+initialization
+  PrepareDataToHexArray;
 end.

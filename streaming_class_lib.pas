@@ -39,7 +39,7 @@ TstreamingClass=class(TComponent)
     //If you don't know which class you're loading, use class functions LoadComponent,
     //and cast them accordingly.
     constructor LoadFromStream(stream: TStream); virtual;//yup, it must be constructor,
-    constructor LoadFromFile(const filename: string); //not a function or class function
+    constructor LoadFromFile(const filename: string); virtual; //not a function or class function
     constructor LoadFromString(const text: string);
 
     class function LoadComponentFromStream(stream: TStream): TComponent;
@@ -53,7 +53,7 @@ TstreamingClass=class(TComponent)
     class function CloneComponent(source: TStreamingClass; aowner: TComponent=nil): TComponent;
 
     procedure SaveToStream(stream: TStream); virtual;
-    procedure SaveToFile(const filename: string);
+    procedure SaveToFile(const filename: string); virtual;  
     function SaveToString: string;
 
     function IsEqual(what: TStreamingClass): boolean; virtual;
@@ -103,7 +103,6 @@ end;
 procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
   convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
 var Entry: PStreamingFormatEntry;
-    i,len: Integer;
 begin
   Entry:=GetFormatEntry(formatIdent);
   if Assigned(Entry) then
@@ -238,7 +237,7 @@ begin
     SetLength(s,Length(Result.signature));
     stream.Read(s[1],Length(Result.signature));
     stream.Seek(0,soFromBeginning);
-    if CompareText(s,Result.signature)=0 then Exit;
+    if AnsiCompareText(s,Result.signature)=0 then Exit;
   end;
   Result:=nil;
 end;
@@ -463,7 +462,7 @@ begin
   w:=TWriter.Create(stream,4);
   w.WriteSignature;
   w.Free;
-  RegisterStreamingFormat(sfBin,stream.DataString,nil,nil); //nil corresponds to no transformation at all
+  RegisterStreamingFormat(sfBin,AnsiString(stream.DataString),nil,nil); //nil corresponds to no transformation at all
   RegisterStreamingFormat(sfASCII,'object',ObjectTextToBinary,ObjectBinaryToText);
   stream.Free;
 end;

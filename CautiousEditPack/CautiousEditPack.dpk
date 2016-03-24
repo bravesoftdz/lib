@@ -27,7 +27,6 @@ package CautiousEditPack;
 requires
   rtl,
   vcl,
-  indy,
   tee;
 
 contains

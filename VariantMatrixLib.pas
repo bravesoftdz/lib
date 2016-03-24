@@ -84,7 +84,7 @@ function VarZRotationMatrix(angle: Real): Variant;
 
 implementation
 
-uses simple_parser_lib,vector_lib;
+uses simple_parser_lib,vector_lib,littlefuncs;
 
 var
 MatrixVariantType: TMatrixVariantType;

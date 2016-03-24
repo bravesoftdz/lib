@@ -1,8 +1,14 @@
 unit command_class_lib;
 
+{$IFDEF CONDITIONALEXPRESSIONS}
+  {$IF CompilerVersion >= 17.0 }
+    {$DEFINE NEW_HASH}
+  {$IFEND}
+{$ENDIF}
+
 interface
 
-uses streaming_class_lib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,
+uses streaming_class_lib,IntrospectionLib,classes,TypInfo,IdHash,SyncObjs,actnlist,controls,
 comctrls,messages,abstract_command_lib,types;
 
 type
@@ -60,6 +66,10 @@ type
     //увы, "классовая дискриминация":функциональность закладывается в TCommandTree,
     //она по-разному обрабатывает команды в зависимость от их "наследственности"
   end;
+
+  {$IFDEF NEW_HASH}
+    T4x4LongWordRecord =array [0..3] of LongWord;
+  {$ENDIF}
 
   THashedCommand=class(TAbstractTreeCommand)
     private
@@ -213,7 +223,7 @@ type
     end;
 
   TAbstractToolAction=class;
-  TAbstractDocument=class(TStreamingClass) //документ вместе со списком undo/redo
+  TAbstractDocument=class(TIntrospectedStreamingClass) //документ вместе со списком undo/redo
     private
       fOnDocumentChange: TNotifyEvent;
       fOnLoad: TNotifyEvent;
@@ -309,16 +319,18 @@ type
 
   TAbstractToolActionClass=class of TAbstractToolAction;
 
+var DocumentHashTimeout: Cardinal = 3000; //ms
+
 implementation
 
 uses SysUtils,StrUtils,IdHashMessageDigest,abstract_document_actions,forms,
-set_english_locale_if_not_sure;
+set_english_locale_if_not_sure, StreamingFormatCyr;
 
 var BeginHashEvent: TEvent;
 
 procedure WaitForHashEvent;
 begin
-  case BeginHashEvent.WaitFor(3000) of
+  case BeginHashEvent.WaitFor(DocumentHashTimeout) of
     wrTimeout: raise Exception.Create('DispatchCommand: wait for hash begin timeout');
     wrError: raise Exception.Create('DispatchCommand: wait for hash begin error');
     wrAbandoned: raise Exception.Create('DispatchCommand: Hashing Thread abandoned');
@@ -541,7 +553,7 @@ end;
 
 procedure THashingThread.ShowError;
 begin
-  application.MessageBox(PAnsiChar(fErrorString),'HashedCommand');
+  application.MessageBox(PChar(fErrorString),'HashedCommand');
 end;
 
 procedure THashingThread.Execute;
@@ -553,7 +565,9 @@ begin
   if (fcommand.HashNotEmpty) and not (fcommand.HashIsEqual(tmpHash)) then begin
     if fIsUndo then fErrorString:='отмене' else fErrorString:='повторе';
 //    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.Name+' ('+fcommand.ClassName+')';
-    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+fcommand.ClassName+',было '+TIDHash128.AsHex(fcommand.Hash)+', стало '+TIDHash128.AsHex(TmpHash);
+    fErrorString:='Несовпадение хэша при '+fErrorString+' команды '+
+      fcommand.ClassName+',было '+TIDHash128.AsHex(fcommand.Hash)+', стало '+
+      TIDHash128.AsHex(TmpHash);
   end
   else
     fcommand.fHash:=tmpHash;
@@ -913,7 +927,7 @@ begin
   if not Result then
     for i:=0 to ComponentCount-1 do begin
       if (Components[i] is TStreamingClass) and not (Components[i] is TCommandTree) and not (Components[i] is TAbstractToolAction) then begin
-        Result:=Result or TStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
+        Result:=Result or TIntrospectedStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
         if Result=true then break;
       end;
     end;
@@ -1002,14 +1016,14 @@ end;
 
 procedure TAbstractDocument.Autosave;
 var buCurDir: string;
-    buSaveFormat: StreamingClassSaveFormat;
+    buSaveFormat: TStreamingClassSaveFormat;
     buSaveWithUndo: boolean;
 begin
   buCurDir:=GetCurrentDir;
   buSaveFormat:=saveFormat;
   buSaveWithUndo:=SaveWithUndo;
   SetCurrentDir(default_dir);
-  SaveFormat:=fCyr;
+  SaveFormat:=sfCyr;
   SaveWithUndo:=true;
   SaveToFile(CurProjectFileName);
 
@@ -1071,7 +1085,7 @@ end;
 
 function TAbstractDocument.Hash: T4x4LongWordRecord;
 var buSaveWithUndo: boolean;
-    buSaveFormat: streamingClassSaveFormat;
+    buSaveFormat: TstreamingClassSaveFormat;
     str: TMemoryStream;
 //    filestr: TFileStream;
 begin
@@ -1079,7 +1093,7 @@ begin
   buSaveWithUndo:=SaveWithUndo; //потом вернем
   buSaveFormat:=SaveFormat;
   SaveWithUndo:=false;  //чтобы найти хэш
-  SaveFormat:=fCyr;
+  SaveFormat:=sfCyr;
   str:=TMemoryStream.Create;
   str.WriteComponent(self);
   str.Seek(0,soFromBeginning);

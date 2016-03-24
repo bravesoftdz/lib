@@ -2,13 +2,13 @@ unit streamable_component_list;
 
 interface
 
-uses classes,streaming_class_lib;
+uses classes,introspectionLib, streaming_class_lib;
 
 type
 
 TComponentClass=class of TComponent;
 
-TStreamableComponentList=class(TStreamingClass)
+TStreamableComponentList=class(TIntrospectedStreamingClass)
   private
     fResolved: boolean;
     fList: TStrings;

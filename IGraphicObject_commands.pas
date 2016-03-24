@@ -205,7 +205,7 @@ procedure ResizeRect(var aRect: TRect;dx1,dy1,dx2,dy2: Integer);
 
 implementation
 
-uses sysutils,streaming_class_lib,bitstream_lib,math;
+uses sysutils,streaming_class_lib,bitstream_lib,math, littleFuncs;
 
 procedure ResizeRect(var aRect: TRect; dx1,dy1,dx2,dy2: Integer);
 begin

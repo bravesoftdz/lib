@@ -137,7 +137,8 @@ procedure Register;
 
 implementation
 
-uses forms,sysutils,math,formMergeOrRewrite,streaming_class_lib,abstract_command_lib;
+uses forms,sysutils,math,formMergeOrRewrite,streaming_class_lib,
+  abstract_command_lib, streamingFormatCyr;
 
 procedure Register;
 begin
@@ -567,9 +568,9 @@ begin
       Exit;
     doc.FileName:=fSaveDialog.filename;
     case fSaveDialog.FilterIndex of
-      1: doc.saveFormat:=fCyr;
-      2: doc.saveFormat:=fAscii;
-      3: doc.saveFormat:=fbinary;
+      1: doc.saveFormat:=sfCyr;
+      2: doc.saveFormat:=sfAscii;
+      3: doc.saveFormat:=sfbin;
     end;
     doc.DispatchCommand(TSavedAsInfoCommand.Create(doc.FileName));
     doc.Save;

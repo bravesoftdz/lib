@@ -60,9 +60,12 @@ end;
 
 function inverse_gamma(x: Integer): Real;
 begin
-  assert(x>=0);
-  assert(x<=255);
-  Result:=inverseGammaTable[x];
+  if x<0 then REsult:=0
+  else if x>255 then Result:=1
+  else
+//  assert(x>=0);
+//  assert(x<=255);
+    Result:=inverseGammaTable[x];
 end;
 
 function honest_inverse_gamma(x: Integer): Real;

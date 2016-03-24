@@ -216,7 +216,8 @@ const //crRotate = crHandPoint;
 
 implementation
 
-uses actnList,extCtrls,sysUtils,menus,clipbrd,streaming_class_lib,math;
+uses actnList,extCtrls,sysUtils,menus,clipbrd,streaming_class_lib,math,
+  littleFuncs, introspectionLib;
 
 procedure Register;
 begin
@@ -1525,7 +1526,7 @@ begin
   while BinStream.Position<BinStream.Size do begin
     c:=BinStream.ReadComponent(nil);
     if c.GetInterface(IGraphicObject,intf) then begin
-      (c as TStreamingClass).ensureCorrectNames(doc);
+      (c as TIntrospectedStreamingClass).ensureCorrectNames(doc);
       doc.InsertComponent(c);
       if intf.isOkToPaste then gr.Add(c)
       else begin
