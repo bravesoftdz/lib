@@ -138,7 +138,7 @@ procedure Register;
 implementation
 
 uses forms,sysutils,math,formMergeOrRewrite,streaming_class_lib,
-  abstract_command_lib, streamingFormatCyr;
+  abstract_command_lib, streaming_Format_Cyr;
 
 procedure Register;
 begin

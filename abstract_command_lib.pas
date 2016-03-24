@@ -2,24 +2,27 @@ unit abstract_command_lib;
 
 interface
 
-uses IntrospectionLib,classes;
+uses Introspected_streaming_class,classes;
 
 type
 
 TAbstractCommand=class(TIntrospectedStreamingClass)  //чтобы историю изменений можно было хранить вместе со всем остальным
-  protected
-    fImageIndex: Integer; //картиночку показать
   public
+    class function ImageIndex: Integer; virtual;
     constructor Create(Aowner: TComponent); override;
     function Execute: Boolean; virtual; abstract;
     function Undo: boolean; virtual; abstract;
     function caption: string; virtual;
+    procedure ResolveMemory; virtual;
     function NameToDateTime: TDateTime;
     function NameToDate(aName: TComponentName): Integer;
-  published
-    property ImageIndex: Integer read fImageIndex write fImageIndex;
   end;
 //самые-самые "зайчатки", заработает даже в command_list
+
+TAbstractCommandIterator = class
+  public
+    function GetCommand(out command: TAbstractCommand): Boolean; virtual; abstract;
+end;
 
 TAbstractCommandContainer=class(TIntrospectedStreamingClass)
   public
@@ -32,13 +35,22 @@ TAbstractCommandContainer=class(TIntrospectedStreamingClass)
     procedure JumpToBranch(command: TAbstractCommand); virtual; abstract;
     function currentExecutedCommand: TAbstractCommand; virtual; abstract;  //и просто тек. команду возвр.
     //и как начало итератора. Executed-чтобы помнить, мы стоим на состоянии ПОСЛЕ ее вып.
-    function PrevCommand: TAbstractCommand; virtual; abstract;
-    function NextCommand: TAbstractCommand; virtual; abstract;
+    function GetUndoIterator: TAbstractCommandIterator; virtual; abstract;
+    function GetRedoIterator: TAbstractCommandIterator; virtual; abstract;  //для списков undo/redo
+    function GetAllCommandsIterator: TAbstractCommandIterator; virtual; abstract;
+
   end;
+
+TAbstractCommandContainerClass = class of TAbstractCommandContainer;
+
+procedure RegisterCommandContainerClass(value: TAbstractCommandContainerClass);
+function GetCommandContainerClass: TAbstractCommandContainerClass;
 
 implementation
 
 uses sysutils,strutils;
+
+var ContainerClass: TAbstractCommandContainerClass;
 
 constructor TAbstractCommand.Create(AOwner: TComponent);
 var t: TTimeStamp;
@@ -69,6 +81,33 @@ end;
 function TAbstractCommand.NameToDate(aname: TComponentName): Integer;
 begin
   Result:=StrToInt('0x'+midstr(aName,2,8));
+end;
+
+procedure TAbstractCommand.ResolveMemory;
+begin
+  //здесь можно отправиться в прошлое/альтернат. вселенную,
+  //чтобы узнать необходимую информацию
+  //назад в будущее можно не возвращаться, эту процедуру вызовет только CommandTree,
+  //он сам потом возвратится в настоящее.
+end;
+
+class function TAbstractCommand.ImageIndex: Integer;
+begin
+  Result:=-1;
+end;
+
+procedure RegisterCommandContainerClass(value: TAbstractCommandContainerClass);
+begin
+  if Assigned(ContainerClass) then
+    raise Exception.CreateFMT(
+      'Cannot register command container %s because %s already registered',
+      [value.ClassName,ContainerClass.ClassName]);
+  ContainerClass:=value;
+end;
+
+function GetCommandContainerClass: TAbstractCommandContainerClass;
+begin
+  Result:=ContainerClass;
 end;
 
 end.

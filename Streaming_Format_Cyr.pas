@@ -1,4 +1,4 @@
-unit StreamingFormatCyr;
+unit Streaming_Format_Cyr;
 
 interface
 

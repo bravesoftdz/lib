@@ -19,7 +19,7 @@ type
 
 implementation
 
-uses SysUtils,StrUtils,set_english_locale_if_not_sure;
+uses SysUtils,StrUtils,localized_string_lib;
 
 function GoodOlCompareStrings(List: TStringList; Index1, Index2: Integer): Integer;
 begin

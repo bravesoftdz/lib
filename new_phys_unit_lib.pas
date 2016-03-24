@@ -1,7 +1,7 @@
 unit new_phys_unit_lib;
 
 interface
-uses set_english_locale_if_not_sure,streaming_class_lib,IntrospectionLib,classes,
+uses localized_string_lib,streaming_class_lib,IntrospectionLib,classes,
   variantWrapper,Contnrs,sysUtils,simple_parser_lib,linear_eq,
   autocomplete_string_list,syncObjs,variants;
 {$DEFINE DirtyHack}

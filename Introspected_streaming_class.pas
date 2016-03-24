@@ -1,4 +1,4 @@
-unit IntrospectionLib;
+unit Introspected_streaming_class;
 
 interface
 
