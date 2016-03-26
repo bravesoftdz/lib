@@ -1,0 +1,45 @@
+package CautiousEditPack;
+
+{$R *.res}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO ON}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS ON}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION ON}
+{$OVERFLOWCHECKS OFF}
+{$RANGECHECKS OFF}
+{$REFERENCEINFO ON}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES OFF}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  vcl,
+  indy,
+  tee;
+
+contains
+  Cautious_Edit in 'Cautious_Edit.pas',
+  PersistentStringGrid in 'PersistentStringGrid.pas',
+  simple_parser_lib in '..\simple_parser_lib.pas',
+  abstract_document_actions in 'abstract_document_actions.pas',
+  command_class_lib in '..\command_class_lib.pas',
+  streaming_class_lib in '..\streaming_class_lib.pas',
+  formMergeOrRewrite in 'formMergeOrRewrite.pas' {frmMergeOrRewrite},
+  abstract_command_lib in '..\abstract_command_lib.pas',
+  Cautious_controls in 'Cautious_controls.pas',
+  HistoryFrame in 'HistoryFrame.pas' {FrameHistory: TFrame};
+
+end.

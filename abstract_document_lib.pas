@@ -3,7 +3,7 @@ unit abstract_document_lib;
 interface
 
 uses classes,sysUtils,actnList,introspected_streaming_class,abstract_command_lib,
-  comCtrls, UITypes, Types, Messages;
+  comCtrls, UITypes, Types, Messages, streaming_class_lib;
 
 type
 
@@ -68,7 +68,7 @@ type
       constructor Create(docToSave: TAbstractDocument);
   end;
 
-    TAbstractDocumentAction=class(TCustomAction)
+  TAbstractDocumentAction=class(TCustomAction)
   protected
     function GetDoc: TAbstractDocument;
   public
@@ -97,10 +97,25 @@ type
 
   TAbstractToolActionClass=class of TAbstractToolAction;
 
+  IHistoryEvents = interface
+  ['{9514240A-83A8-41A6-A6EC-6644F1EA98CC}']
+    procedure RefreshHistoryHighlights;
+    procedure ChangeHistory;
+  end;
+
+//интерфейс-"флаг", что по логике работы программы, в документе имена компонентов
+//зафиксированы, и значит, команды могут смело писать в caption текущие имена и пути,
+//а не возвращаться "во времени" на момент выполнения, и не хранить лишние тексты в файле
+  IConstantComponentName = interface
+  ['{6BD88A2A-129F-4FEE-8B55-F82906B4D1D7}']
+  end;
+
+var CurProjectFileName: string='current_project.txt'; //not to translate
+    DocumentDefaultDir: string;
+    DocumentDefaultSaveFormat: TStreamingClassSaveFormat = sfAscii;
 
 
 implementation
-
 (*
               TAbstractDocument
                                       *)
@@ -168,19 +183,11 @@ end;
 procedure TAbstractDocument.GetChildren(Proc: TGetChildProc; Root: TComponent);
 var
   i : Integer;
-  fList: TStringList;
 begin
-  fList:=TStringList.Create;
   for i := 0 to ComponentCount-1 do
-    if not (csSubComponent in Components[i].ComponentStyle) and (((Components[i]<>UndoTree) and (Components[i]<>Tool))  or SaveWithUndo) then
-      fList.AddObject(Components[i].Name,Components[i]);
-  fList.Sort;
-  //тем самым объекты расположатся в алфавитном порядке а не в порядке создания
-  //поскольку разные манипуляции могут изменить порядок и не совпадет хэш
-  //нам этого не надо!
-  for i:=0 to fList.Count-1 do
-    Proc( TComponent(fList.Objects[i]) );
-  fList.Free;
+    if not (csSubComponent in Components[i].ComponentStyle) and
+    (((Components[i]<>UndoContainer) and (Components[i]<>Tool)) or SaveWithUndo) then
+      Proc(Components[i]);
 end;
 
 function TAbstractDocument.NameExistsSomewhere(proposedName: string; me: TComponent=nil): boolean;
@@ -192,8 +199,8 @@ begin
   if not Result then
     for i:=0 to ComponentCount-1 do begin
       if (Components[i] is TIntrospectedStreamingClass) and
-         not (Components[i] is TCommandTree) and
-         not (Components[i] is TAbstractToolAction) then begin
+         not (Components[i]=UndoContainer) and
+         not (Components[i]=Tool) then begin
         Result:=Result or
           TIntrospectedStreamingClass(Components[i]).NameExistsSomewhere(proposedName,me);
         if Result=true then break;
@@ -208,14 +215,9 @@ begin
   inherited;
 end;
 
-function TAbstractDocument.isEmpty: Boolean;
-begin
-  Result:=(UndoTree.Root.Next=nil);
-end;
-
 function TAbstractDocument.Changed: Boolean;
 begin
-  Result:=(UndoTree.current<>initial_pos) or new_commands_added;
+  Result:=(UndoContainer.currentExecutedCommand<>initial_pos) or new_commands_added;
 end;
 
 procedure TAbstractDocument.RegisterActionList(value: TActionList);
@@ -228,57 +230,46 @@ end;
 
 function TAbstractDocument.DispatchCommand(command: TAbstractCommand): Boolean;
 var term: ITerminalCommand;
+    historyEvents: IHistoryEvents;
 begin
-  fCriticalSection.Acquire;
-  try
-    //нужно проверить, имеем ли мы право выполнять команду в данном месте
-    if undotree.Current.GetInterface(ITerminalCommand,term) and
-      Assigned(undotree.Current.Prev) then
-        undotree.Undo;
+  //нужно проверить, имеем ли мы право выполнять команду в данном месте
+  if undoContainer.currentExecutedCommand.GetInterface(ITerminalCommand,term)
+    and undoContainer.UndoEnabled then
+      UndoContainer.Undo;
 
-    BeginHashEvent.SetEvent;
-
-    undotree.InsertComponent(command);
-    //может быть, не нужно исполнять конкретно эту команду, она уже есть
-    //именно когда обе команды еще не исполнены, их можно сравнивать
-    if undotree.CheckForExistingCommand(command) then begin
-      //состояние уже поменялось, мы выполнили существующую команду
-      change;
-      //но history не надо перестраивать, лишь указать тек. команду
-      if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
-        TAbstractDocumentActionList(fActionList).RefreshHistoryHighlights;
-      command.Free;
-      Result:=false;
-    end
-    else
-      if command.Execute then begin
-        undotree.RemoveComponent(command);
-        UndoTree.Add(command);
-        Change;
-        if Assigned(fActionList) and (fActionList is TAbstractDocumentActionList) then
-          TAbstractDocumentActionList(fActionList).ChangeHistory;
-        new_commands_added:=true;
-        if (command is THashedCommand) then begin
-          BeginHashEvent.ResetEvent;
-          THashingThread.Create(THashedCommand(command),false);
-        end;
-        Result:=true;
-      end
-      else begin
-        command.Free;
-        Result:=false;
-      end;
-    WaitForHashEvent;
-  finally
-    fCriticalSection.Leave;
+  undoContainer.InsertComponent(command);
+  //может быть, не нужно исполнять конкретно эту команду, она уже есть
+  //именно когда обе команды еще не исполнены, их можно сравнивать
+  if undoContainer.CheckForExistingCommand(command) then begin
+    //состояние уже поменялось, мы выполнили существующую команду
+    change;
+    //но history не надо перестраивать, лишь указать тек. команду
+    if Assigned(fActionList) and
+      fActionList.GetInterface(IHistoryEvents,historyEvents) then
+        historyEvents.RefreshHistoryHighlights;
+    command.Free;
+    Result:=false;
+  end
+  else if command.Execute then begin
+    undoContainer.RemoveComponent(command);
+    undoContainer.Add(command);
+    Change;
+    if Assigned(fActionList) and
+      fActionList.GetInterface(IHistoryEvents, historyEvents) then
+        historyEvents.ChangeHistory;
+    new_commands_added:=true;
+    Result:=true;
+  end
+  else begin
+    command.Free;
+    Result:=false;
   end;
 end;
 
 procedure TAbstractDocument.Save;
 begin
-  Assert(FileName<>'','WTF: empty filename');
   TSavingThread.Create(self);
-  initial_pos:=UndoTree.current;
+  initial_pos:=UndoContainer.currentExecutedCommand;
   new_commands_added:=false;
 end;
 
@@ -290,8 +281,8 @@ begin
   buCurDir:=GetCurrentDir;
   buSaveFormat:=saveFormat;
   buSaveWithUndo:=SaveWithUndo;
-  SetCurrentDir(default_dir);
-  SaveFormat:=sfCyr;
+  SetCurrentDir(DocumentDefaultDir);
+  SaveFormat:=DocumentDefaultSaveFormat;
   SaveWithUndo:=true;
   SaveToFile(CurProjectFileName);
 
