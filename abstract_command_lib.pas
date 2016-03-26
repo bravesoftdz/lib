@@ -38,8 +38,20 @@ TAbstractCommandContainer=class(TIntrospectedStreamingClass)
     function GetUndoIterator: TAbstractCommandIterator; virtual; abstract;
     function GetRedoIterator: TAbstractCommandIterator; virtual; abstract;  //для списков undo/redo
     function GetAllCommandsIterator: TAbstractCommandIterator; virtual; abstract;
-
+    function IsEmpty: Boolean; virtual; abstract;
   end;
+
+//команда, после которой не должно выполняться других команд, взамен - возврат на
+//предыдущий шаг и новое ветвление. Мотивация: сохранение в формат с потерями,
+//запрет на продолжение работы с искаженным документом, возвращение к исходному
+  ITerminalCommand = interface
+  ['{902F14E5-FCFB-4F72-ABCB-B71819D36D8A}']
+    //увы, "классовая дискриминация":функциональность закладывается в TCommandTree,
+    //она по-разному обрабатывает команды в зависимость от их "наследственности"
+  end;
+
+
+
 
 TAbstractCommandContainerClass = class of TAbstractCommandContainer;
 

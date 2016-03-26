@@ -24,6 +24,7 @@ type
       procedure Undo; override;
       procedure Redo; override;
       procedure JumpToBranch(command: TAbstractCommand); override;
+      function IsEmpty: Boolean; override;
 
       function CurrentExecutedCommand: TAbstractCommand; override;
       function PrevCommand: TAbstractCommand; override;
@@ -57,6 +58,11 @@ procedure TCommandTree.Clear;
 begin
   fRoot:=nil;
   fCurrent:=nil;
+end;
+
+function TCommandTree.isEmpty: Boolean;
+begin
+  Result:=Root.Next=nil;
 end;
 
 function TCommandTree.FindExistingCommand(command: TAbstractTreeCommand;position: TAbstractTreeCommand): boolean;

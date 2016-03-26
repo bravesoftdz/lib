@@ -21,6 +21,8 @@ TStreamConvertFunc = procedure (input,output: TStream);
 TStreamingFormatEntry = record
   ident: TStreamingClassSaveFormat;
   signature: AnsiString;
+  name: string;
+  Filter: string;
   convertToBinary: TStreamConvertFunc;
   convertFromBinary: TStreamConvertFunc;
 end;
@@ -39,7 +41,7 @@ TstreamingClass=class(TComponent)
     //If you don't know which class you're loading, use class functions LoadComponent,
     //and cast them accordingly.
     constructor LoadFromStream(stream: TStream); virtual;//yup, it must be constructor,
-    constructor LoadFromFile(const filename: string); virtual; //not a function or class function
+    constructor LoadFromFile(filename: string); virtual; //not a function or class function
     constructor LoadFromString(const text: string);
 
     class function LoadComponentFromStream(stream: TStream): TComponent;
@@ -68,8 +70,13 @@ TStreamingClassClass=class of TStreamingClass;
 TSaveToFileProc = procedure (const filename: string) of object;
 
 procedure SafeSaveToFile(saveProc: TSaveToFileProc; const filename: string);
-procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
-  convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
+procedure RegisterStreamingFormat(aFormatIdent: TStreamingClassSaveFormat;
+  aSignature: AnsiString; aName, aFilter: String;
+  aConvertToBinaryFunc, aConvertFromBinaryFunc: TStreamConvertFunc);
+
+function GetStreamingFormatsCount: Integer;
+function GetStreamingFormatEntry(ident: TStreamingClassSaveFormat):
+  PStreamingFormatEntry;
 
 const sfBin = 0;
       sfASCII = 1;
@@ -86,11 +93,20 @@ var gCriticalSection: TCriticalSection;
 //then you can load/save several StreamingClasses simultaneously
     gFormatList: TList;
 
+resourcestring
+  BinaryFormatFilter = 'Binary file|*.dat';
+  AsciiFormatFilter = 'Text file|*.bin';
+
 
 (*
       General procedures
                             *)
-function GetFormatEntry(ident: TStreamingClassSaveFormat): PStreamingFormatEntry;
+function GetStreamingFormatsCount: Integer;
+begin
+  Result:=gFormatList.Count;
+end;
+
+function GetStreamingFormatEntry(ident: TStreamingClassSaveFormat): PStreamingFormatEntry;
 var i: Integer;
 begin
   for i:=0 to gFormatList.Count-1 do begin
@@ -100,19 +116,54 @@ begin
   Result:=nil;
 end;
 
-procedure RegisterStreamingFormat(formatIdent: TStreamingClassSaveFormat; signature: AnsiString;
-  convertToBinaryFunc, convertFromBinaryFunc: TStreamConvertFunc);
+procedure RegisterStreamingFormat(aFormatIdent: TStreamingClassSaveFormat;
+   aSignature: AnsiString; aName, aFilter: String;
+  aConvertToBinaryFunc, aConvertFromBinaryFunc: TStreamConvertFunc);
 var Entry: PStreamingFormatEntry;
 begin
-  Entry:=GetFormatEntry(formatIdent);
+  Entry:=GetStreamingFormatEntry(aFormatIdent);
   if Assigned(Entry) then
-    Raise EStreamingClassError.CreateFmt('Streaming format %d already registered',[formatIdent]);
+    Raise EStreamingClassError.CreateFmt('Streaming format %d already registered',[aFormatIdent]);
   New(Entry);
-  Entry.ident:=formatIdent;
-  Entry.signature:=signature;
-  Entry.convertToBinary:=convertToBinaryFunc;
-  Entry.convertFromBinary:=convertFromBinaryFunc;
+  with Entry^ do begin
+    ident:=aFormatIdent;
+    signature:=aSignature;
+    name:=aName;
+    Filter:=aFilter;
+    convertToBinary:=aConvertToBinaryFunc;
+    convertFromBinary:=aConvertFromBinaryFunc;
+  end;
   gFormatList.Add(Entry);
+end;
+
+function NameToSaveFormat(const Ident: string; var Int: Longint): Boolean;
+var i: Integer;
+  entry: PStreamingFormatEntry;
+begin
+  for i := 0 to gFormatList.Count-1 do begin
+    entry:=gFormatList[i];
+    if SameText(entry^.name,Ident) then begin
+      Result:=true;
+      Int:=entry^.ident;
+      Exit;
+    end;
+  end;
+  Result:=false;
+end;
+
+function SaveFormatToName(Int: LongInt; var Ident: string): Boolean;
+var i: Integer;
+  entry: PStreamingFormatEntry;
+begin
+  for i := 0 to gFormatList.Count-1 do begin
+    entry:=gFormatList[i];
+    if entry^.ident=Int then begin
+      Result:=true;
+      Ident:=entry^.name;
+      Exit;
+    end;
+  end;
+  Result:=false;
 end;
 
 //if file exists already, we rename it to .BAK at first, if successful,
@@ -187,7 +238,7 @@ var
   BinStream: TMemoryStream;
   entry: PStreamingFormatEntry;
 begin
-  entry:=GetFormatEntry(saveFormat);
+  entry:=GetStreamingFormatEntry(saveFormat);
   if not Assigned(entry) then
     Raise Exception.CreateFmt('Streaming format %d not registered',[saveFormat]);
   if not Assigned(entry.convertFromBinary) then
@@ -264,7 +315,7 @@ begin
   end;
 end;
 
-constructor TstreamingClass.LoadFromFile(const filename: string);
+constructor TstreamingClass.LoadFromFile(filename: string);
 var fileStream: TFileStream;
 begin
   Create(nil);
@@ -457,13 +508,15 @@ var w: TWriter;
 begin
   gCriticalSection:=TCriticalSection.Create;
   gFormatList:=TList.Create;
+  RegisterIntegerConsts(TypeInfo(TStreamingClassSaveFormat),NameToSaveFormat,SaveFormatToName);
+
 //we won't use try/finally here, absolute sure it'll handle 4 bytes all right
   stream:=TStringStream.Create(sig);
   w:=TWriter.Create(stream,4);
   w.WriteSignature;
   w.Free;
-  RegisterStreamingFormat(sfBin,AnsiString(stream.DataString),nil,nil); //nil corresponds to no transformation at all
-  RegisterStreamingFormat(sfASCII,'object',ObjectTextToBinary,ObjectBinaryToText);
+  RegisterStreamingFormat(sfBin,AnsiString(stream.DataString),'sfBin',BinaryFormatFilter,nil,nil); //nil corresponds to no transformation at all
+  RegisterStreamingFormat(sfASCII,'object','sfAscii',AsciiFormatFilter, ObjectTextToBinary,ObjectBinaryToText);
   stream.Free;
 end;
 
