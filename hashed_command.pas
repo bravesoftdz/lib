@@ -18,11 +18,6 @@ interface
       property Hash: T4x4LongWordRecord read fHash;
     end;
 
-  THashedDocument = class(TAbstractDocument)
-    protected
-      procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
-  end;
-
   THashingThread=class(TThread)
     private
       fcommand: THashedCommand;
@@ -157,27 +152,5 @@ begin
 //  fCriticalSection.Leave;
 end;
 
-
-procedure THashedDocument.GetChildren(Proc: TGetChildProc; Root: TComponent);
-var
-  i : Integer;
-  fList: TStringList;
-begin
-  fList:=TStringList.Create;
-  try
-    for i := 0 to ComponentCount-1 do
-      if not (csSubComponent in Components[i].ComponentStyle) and
-        (((Components[i]<>UndoContainer) and (Components[i]<>Tool)) or SaveWithUndo) then
-        fList.AddObject(Components[i].Name,Components[i]);
-    fList.Sort;
-    //тем самым объекты расположатс€ в алфавитном пор€дке а не в пор€дке создани€
-    //поскольку разные манипул€ции могут изменить пор€док и не совпадет хэш
-    //нам этого не надо!
-    for i:=0 to fList.Count-1 do
-      Proc( TComponent(fList.Objects[i]) );
-  finally
-    fList.Free;
-  end;
-end;
 
 end.

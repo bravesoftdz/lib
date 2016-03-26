@@ -2,7 +2,7 @@ unit abstract_document_actions;
 
 interface
 
-uses windows,actnlist,abstract_document_lib,classes,dialogs,menus,controls,
+uses windows,actnlist,command_class_lib,classes,dialogs,menus,controls,
   HistoryFrame,graphics,buttons;
 
 type
@@ -11,7 +11,7 @@ TAbstractDocumentClass=class of TAbstractDocument;
 
 PAbstractDocument=^TabstractDocument;
 
-TAbstractDocumentActionList=class(TActionList,IHistoryEvents)
+TAbstractDocumentActionList=class(TActionList)
   private
     btmp: TBitmap; //тестовая картинка, проверять длину текста
     ColumnsCount: Integer;
@@ -129,6 +129,9 @@ TRedoPopup=class(TUndoPopup)
   protected
     procedure DoPopup(Sender: TObject); override;
   end;
+
+const CurProjectFileName: string='current_project.txt'; //not to translate
+var default_dir: string;
 
 procedure Register;
 
